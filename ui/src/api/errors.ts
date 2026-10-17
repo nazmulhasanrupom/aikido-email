@@ -3,13 +3,22 @@ export class ApiProblem extends Error {
   readonly status: number;
   readonly code: string;
   readonly retryAfter: number | undefined;
+  /** The whole `error` object of the answer (some codes carry a list such as `problems`). */
+  readonly details: Record<string, unknown>;
 
-  constructor(status: number, code: string, message: string, retryAfter?: number) {
+  constructor(
+    status: number,
+    code: string,
+    message: string,
+    retryAfter?: number,
+    details: Record<string, unknown> = {},
+  ) {
     super(message);
     this.name = "ApiProblem";
     this.status = status;
     this.code = code;
     this.retryAfter = retryAfter;
+    this.details = details;
   }
 }
 
@@ -54,7 +63,7 @@ export function messageOf(error: unknown): string {
 }
 
 interface ErrorBody {
-  error?: { code?: string; message?: string };
+  error?: { code?: string; message?: string; [key: string]: unknown };
 }
 
 export function problemFrom(response: Response, body: unknown): ApiProblem {
@@ -65,5 +74,6 @@ export function problemFrom(response: Response, body: unknown): ApiProblem {
     e?.code ?? "unknown_error",
     e?.message ?? `The server answered ${response.status}.`,
     Number.isFinite(retry) && retry > 0 ? retry : undefined,
+    (e as Record<string, unknown> | undefined) ?? {},
   );
 }

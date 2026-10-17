@@ -63,7 +63,8 @@ test("setup with the code makes the owner and shows the app", async ({ page }) =
   await page.getByRole("button", { name: "Create account" }).click();
 
   await expect(page).toHaveURL(/\/onboarding\/connect-email$/);
-  await page.getByRole("link", { name: "Go to the app" }).click();
+  await expect(page.getByRole("heading", { name: "Connect an email account" })).toBeVisible();
+  await page.goto("/w/default/campaigns");
   await expect(page).toHaveURL(/\/w\/default\/campaigns$/);
   await expectInApp(page);
   await expect(page.getByRole("button", { name: `Workspace ${OWNER.workspace}` })).toBeVisible();
@@ -132,8 +133,12 @@ authed(
     expect(darkBg).toBe("rgb(38, 38, 36)");
 
     // saved on the account too
-    const prefs = await page.evaluate(async () => (await fetch("/v1/users/me")).json());
-    expect(prefs.preferences.theme).toBe("dark");
+    await expect
+      .poll(async () => {
+        const me = await page.evaluate(async () => (await fetch("/v1/users/me")).json());
+        return me.preferences.theme;
+      })
+      .toBe("dark");
 
     // No flash: hold back the app script. The page must already be dark before the app starts.
     await page.route(/\/assets\/index-.*\.js$/, async (route) => {
@@ -229,19 +234,19 @@ authed("a login link cannot send you to another site", async ({ page }) => {
 authed(
   "when the session ends in the middle of work, the next call goes to the login",
   async ({ page }) => {
-    await page.goto("/w/default/inbox");
+    await page.goto("/w/default/reports");
     await expectInApp(page);
     // the server forgets this session (here: the cookie is gone)
     await page.context().clearCookies();
     // a change that calls the server: the theme is saved on the account
     await page.getByRole("button", { name: `Account menu for ${OWNER.name}` }).click();
     await page.getByRole("menuitemradio", { name: "Dark" }).click();
-    await expect(page).toHaveURL(/\/login\?next=%2Fw%2Fdefault%2Finbox$/);
+    await expect(page).toHaveURL(/\/login\?next=%2Fw%2Fdefault%2Freports$/);
     // after logging in again you are back where you were
     await page.getByLabel("Email", { exact: true }).fill(OWNER.email);
     await page.getByLabel("Password", { exact: true }).fill(OWNER.password);
     await page.getByRole("button", { name: "Log in" }).click();
-    await expect(page).toHaveURL(/\/w\/default\/inbox$/);
+    await expect(page).toHaveURL(/\/w\/default\/reports$/);
   },
 );
 

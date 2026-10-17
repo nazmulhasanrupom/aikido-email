@@ -1,3 +1,4 @@
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
   ChartColumn,
@@ -15,11 +16,17 @@ import {
   Sun,
   Users,
 } from "lucide-react";
-import type { ReactNode } from "react";
-import type { AuthState, User } from "@/api/auth";
+import { type ReactNode, useState } from "react";
+import { toast } from "sonner";
+import { type AuthState, authStateKey, type User } from "@/api/auth";
+import { messageOf } from "@/api/errors";
+import { http, type S } from "@/api/http";
+import { useUser } from "@/features/settings/useUser";
 import { cn } from "@/lib/cn";
 import { type ThemeChoice, useThemeChoice } from "@/theme/theme";
+import { Button } from "../Button";
 import { Logo } from "../Logo";
+import { Field, Modal, Notice } from "../ui";
 import {
   MenuContent,
   MenuItem,
@@ -42,7 +49,6 @@ interface NavItem {
   label: string;
   icon: typeof Send;
   soon?: boolean;
-  badge?: number;
 }
 
 const NAV: NavItem[] = [
@@ -77,6 +83,17 @@ interface Props {
 export function Sidebar(p: Props) {
   // The icon-only mode is for wide screens. In the phone drawer the labels always show.
   const slim = p.collapsed;
+  const seen = (p.user.preferences as { last_seen_inbox_at?: string } | undefined)
+    ?.last_seen_inbox_at;
+  const unread = useQuery({
+    queryKey: ["inbox", "badge", seen],
+    queryFn: () =>
+      http.get<S["ListMessagesReply"]>("/v1/replies/messages", {
+        query: { label: "reply", since: seen, limit: 100 },
+      }),
+    refetchInterval: 60_000,
+  });
+  const inboxCount = unread.data?.messages.length ?? 0;
   return (
     <>
       {p.drawerOpen && (
@@ -127,9 +144,12 @@ export function Sidebar(p: Props) {
                   Soon
                 </span>
               )}
-              {item.badge ? (
-                <span className="rounded-full bg-accent px-1.5 text-xs text-accent-fg">
-                  {item.badge}
+              {item.to === "/w/$ws/inbox" && inboxCount > 0 ? (
+                <span
+                  className="rounded-full bg-accent px-1.5 text-xs text-accent-fg"
+                  aria-label={`${inboxCount} new replies`}
+                >
+                  {inboxCount > 99 ? "99+" : inboxCount}
                 </span>
               ) : null}
             </Link>
@@ -162,44 +182,137 @@ function WorkspaceMenu({
   logo?: string | null | undefined;
   slim: boolean;
 }) {
+  const [editing, setEditing] = useState(false);
+  const { isAdmin } = useUser();
   return (
-    <MenuRoot>
-      <MenuTrigger
-        aria-label={`Workspace ${name}`}
-        className={cn(
-          "flex h-10 min-w-0 items-center gap-2.5 rounded-(--radius-control) px-1.5 hover:bg-surface-2",
-          slim ? "md:w-10 md:justify-center" : "flex-1",
-        )}
-      >
-        {logo ? (
-          <img src={logo} alt="" className="size-7 shrink-0 rounded-md object-cover" />
-        ) : (
-          <Logo size={28} />
-        )}
-        <span className={cn("flex-1 truncate text-left font-semibold", slim && "md:hidden")}>
-          {name}
-        </span>
-        <ChevronsUpDown
-          size={14}
-          className={cn("shrink-0 text-muted", slim && "md:hidden")}
-          aria-hidden="true"
-        />
-      </MenuTrigger>
-      <MenuContent align="start">
-        <MenuLabel>Workspace</MenuLabel>
-        <MenuItem disabled>
-          {name}
-          <span className="ml-auto text-xs text-muted">Current</span>
-        </MenuItem>
-        <MenuSeparator />
-        <MenuItem disabled>
-          New workspace
-          <span className="ml-auto rounded bg-surface-2 px-1.5 py-0.5 text-xs text-muted">
-            Later
+    <>
+      <WorkspaceSettings open={editing} onClose={() => setEditing(false)} name={name} logo={logo} />
+      <MenuRoot>
+        <MenuTrigger
+          aria-label={`Workspace ${name}`}
+          className={cn(
+            "flex h-10 min-w-0 items-center gap-2.5 rounded-(--radius-control) px-1.5 hover:bg-surface-2",
+            slim ? "md:w-10 md:justify-center" : "flex-1",
+          )}
+        >
+          {logo ? (
+            <img src={logo} alt="" className="size-7 shrink-0 rounded-md object-cover" />
+          ) : (
+            <Logo size={28} />
+          )}
+          <span className={cn("flex-1 truncate text-left font-semibold", slim && "md:hidden")}>
+            {name}
           </span>
-        </MenuItem>
-      </MenuContent>
-    </MenuRoot>
+          <ChevronsUpDown
+            size={14}
+            className={cn("shrink-0 text-muted", slim && "md:hidden")}
+            aria-hidden="true"
+          />
+        </MenuTrigger>
+        <MenuContent align="start">
+          <MenuLabel>Workspace</MenuLabel>
+          <MenuItem disabled>
+            {name}
+            <span className="ml-auto text-xs text-muted">Current</span>
+          </MenuItem>
+          {isAdmin && <MenuItem onSelect={() => setEditing(true)}>Workspace settings</MenuItem>}
+          <MenuSeparator />
+          <MenuItem disabled>
+            New workspace
+            <span className="ml-auto rounded bg-surface-2 px-1.5 py-0.5 text-xs text-muted">
+              Later
+            </span>
+          </MenuItem>
+        </MenuContent>
+      </MenuRoot>
+    </>
+  );
+}
+
+function WorkspaceSettings({
+  open,
+  onClose,
+  name,
+  logo,
+}: {
+  open: boolean;
+  onClose: () => void;
+  name: string;
+  logo?: string | null | undefined;
+}) {
+  const qc = useQueryClient();
+  const [n, setN] = useState(name);
+  const [l, setL] = useState<string | null>(logo ?? null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  function pick(f: File | undefined) {
+    if (!f) return;
+    if (f.size > 150_000) {
+      setError("The logo must be smaller than 150 KB.");
+      return;
+    }
+    const r = new FileReader();
+    r.onload = () => {
+      setL(String(r.result));
+      setError(null);
+    };
+    r.readAsDataURL(f);
+  }
+  async function save() {
+    setBusy(true);
+    try {
+      await http.patch("/v1/ui/workspace", { body: { name: n, logo: l } });
+      await qc.invalidateQueries({ queryKey: authStateKey });
+      toast.success("Saved.");
+      onClose();
+    } catch (e) {
+      setError(messageOf(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      size="sm"
+      title="Workspace settings"
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button busy={busy} disabled={!n.trim()} onClick={save}>
+            Save
+          </Button>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-3">
+        <Field label="Name" value={n} onChange={(e) => setN(e.target.value)} />
+        <div className="flex items-center gap-3">
+          {l ? (
+            <img src={l} alt="" className="size-10 rounded-md object-cover" />
+          ) : (
+            <Logo size={40} />
+          )}
+          <label className="text-sm">
+            <span className="mb-1 block font-medium">Logo (PNG or JPG, under 150 KB)</span>
+            <input
+              type="file"
+              accept="image/png,image/jpeg"
+              onChange={(e) => pick(e.target.files?.[0])}
+            />
+          </label>
+          {l && (
+            <Button variant="ghost" onClick={() => setL(null)}>
+              Remove
+            </Button>
+          )}
+        </div>
+        {error && <Notice tone="danger">{error}</Notice>}
+      </div>
+    </Modal>
   );
 }
 

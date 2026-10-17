@@ -2,6 +2,7 @@
 name = "aikido_email"
 version = "0.1.0"
 edition = "2024"
+license = "Apache-2.0"
 
 [features]
 # `ui` embeds the web app from ui/dist into the binary. `--no-default-features` builds an API-only server.

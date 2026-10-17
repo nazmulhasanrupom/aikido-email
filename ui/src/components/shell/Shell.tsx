@@ -6,6 +6,8 @@ import { type AuthState, logout, saveThemePreference } from "@/api/auth";
 import { messageOf } from "@/api/errors";
 import { readStored, writeStored } from "@/lib/safe-storage";
 import { applyChoice, type ThemeChoice } from "@/theme/theme";
+import { Banners } from "./Banners";
+import { Palette } from "./Palette";
 import { Sidebar } from "./Sidebar";
 import { TopBar } from "./TopBar";
 
@@ -19,12 +21,25 @@ export function Shell({ ws, state }: { ws: string; state: AuthState }) {
   const router = useRouter();
   const [collapsed, setCollapsed] = useState(() => readStored(SIDEBAR_KEY) === "collapsed");
   const [drawer, setDrawer] = useState(false);
+  const [search, setSearch] = useState(false);
 
   // The theme of the account follows the user to a new browser.
   const saved = user?.preferences?.theme;
   useEffect(() => {
     if (saved === "light" || saved === "dark" || saved === "system") applyChoice(saved);
   }, [saved]);
+
+  // Ctrl/Cmd + K opens the search.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setSearch(true);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   // A page change closes the phone drawer.
   useEffect(() => router.subscribe("onResolved", () => setDrawer(false)), [router]);
@@ -71,11 +86,13 @@ export function Shell({ ws, state }: { ws: string; state: AuthState }) {
         onLogout={onLogout}
       />
       <div className="flex min-w-0 flex-1 flex-col">
-        <TopBar onOpenDrawer={() => setDrawer(true)} />
+        <TopBar onOpenDrawer={() => setDrawer(true)} onOpenSearch={() => setSearch(true)} />
+        <Banners ws={ws} />
         <main id="content" className="min-h-0 flex-1 overflow-auto">
           <Outlet />
         </main>
       </div>
+      <Palette open={search} onClose={() => setSearch(false)} ws={ws} />
     </div>
   );
 }

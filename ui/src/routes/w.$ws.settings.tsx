@@ -1,15 +1,32 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { Settings } from "lucide-react";
-import { ComingSoon } from "@/components/ComingSoon";
+import { createFileRoute, Outlet } from "@tanstack/react-router";
+import { LinkTabs, Page, PageHeader } from "@/components/ui";
+import { useUser } from "@/features/settings/useUser";
 
-export const Route = createFileRoute("/w/$ws/settings")({ component: Page });
+export const Route = createFileRoute("/w/$ws/settings")({ component: SettingsLayout });
 
-function Page() {
+function SettingsLayout() {
+  const { ws } = Route.useParams();
+  const { isAdmin } = useUser();
+  const p = { ws };
   return (
-    <ComingSoon
-      icon={Settings}
-      title="Settings"
-      text="Account, API keys, notifications, integrations, team and sending defaults. This page is built in a later phase."
-    />
+    <Page>
+      <PageHeader title="Settings" />
+      <LinkTabs
+        label="Settings pages"
+        items={[
+          { to: "/w/$ws/settings/account", params: p, label: "Account" },
+          ...(isAdmin ? [{ to: "/w/$ws/settings/api", params: p, label: "API" }] : []),
+          { to: "/w/$ws/settings/notifications", params: p, label: "Notifications" },
+          { to: "/w/$ws/settings/integrations", params: p, label: "Integrations" },
+          ...(isAdmin
+            ? [
+                { to: "/w/$ws/settings/team", params: p, label: "Team" },
+                { to: "/w/$ws/settings/sending", params: p, label: "Sending" },
+              ]
+            : []),
+        ]}
+      />
+      <Outlet />
+    </Page>
   );
 }

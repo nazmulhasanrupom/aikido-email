@@ -1,0 +1,11 @@
+target
+data
+.git
+.env
+token.json
+**/node_modules
+ui/dist
+ui/test-results
+ui/playwright-report
+*.md
+!README.md

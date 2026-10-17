@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Run the browser tests against a fresh server and a fresh database.
-#   needs: docker compose up -d (Postgres), cargo build (the binary with the UI inside), pnpm build in ui/
+#   needs: docker compose -f docker-compose.dev.yml up -d (Postgres), cargo build (the binary with the UI inside), pnpm build in ui/
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 PORT="${E2E_PORT:-18090}"

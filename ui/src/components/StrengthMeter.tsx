@@ -35,7 +35,6 @@ export function StrengthMeter({ password, inputs = [] }: Props) {
   const [score, setScore] = useState<number | null>(null);
   const key = inputs.join("|");
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: `key` stands for `inputs`
   useEffect(() => {
     if (!password) {
       setScore(null);

@@ -25,6 +25,29 @@ import { Route as WWsLeadsRouteImport } from './routes/w.$ws.leads'
 import { Route as WWsReportsRouteImport } from './routes/w.$ws.reports'
 import { Route as WWsSettingsRouteImport } from './routes/w.$ws.settings'
 import { Route as WWsStatusRouteImport } from './routes/w.$ws.status'
+import { Route as WWsAccountsIndexRouteImport } from './routes/w.$ws.accounts.index'
+import { Route as WWsAccountsIdRouteImport } from './routes/w.$ws.accounts.$id'
+import { Route as WWsCampaignsIndexRouteImport } from './routes/w.$ws.campaigns.index'
+import { Route as WWsCampaignsIdRouteImport } from './routes/w.$ws.campaigns.$id'
+import { Route as WWsSettingsIndexRouteImport } from './routes/w.$ws.settings.index'
+import { Route as WWsSettingsAccountRouteImport } from './routes/w.$ws.settings.account'
+import { Route as WWsSettingsApiRouteImport } from './routes/w.$ws.settings.api'
+import { Route as WWsSettingsIntegrationsRouteImport } from './routes/w.$ws.settings.integrations'
+import { Route as WWsSettingsNotificationsRouteImport } from './routes/w.$ws.settings.notifications'
+import { Route as WWsSettingsSendingRouteImport } from './routes/w.$ws.settings.sending'
+import { Route as WWsSettingsTeamRouteImport } from './routes/w.$ws.settings.team'
+import { Route as WWsAccountsIdIndexRouteImport } from './routes/w.$ws.accounts.$id.index'
+import { Route as WWsAccountsIdActivityRouteImport } from './routes/w.$ws.accounts.$id.activity'
+import { Route as WWsAccountsIdReplyCheckRouteImport } from './routes/w.$ws.accounts.$id.reply-check'
+import { Route as WWsAccountsIdSendingRouteImport } from './routes/w.$ws.accounts.$id.sending'
+import { Route as WWsCampaignsIdIndexRouteImport } from './routes/w.$ws.campaigns.$id.index'
+import { Route as WWsCampaignsIdEditorRouteImport } from './routes/w.$ws.campaigns.$id.editor'
+import { Route as WWsCampaignsIdFollowupsRouteImport } from './routes/w.$ws.campaigns.$id.followups'
+import { Route as WWsCampaignsIdLeadsRouteImport } from './routes/w.$ws.campaigns.$id.leads'
+import { Route as WWsCampaignsIdReportsRouteImport } from './routes/w.$ws.campaigns.$id.reports'
+import { Route as WWsCampaignsIdSettingsRouteImport } from './routes/w.$ws.campaigns.$id.settings'
+import { Route as WWsSettingsIntegrationsIndexRouteImport } from './routes/w.$ws.settings.integrations.index'
+import { Route as WWsSettingsIntegrationsIdRouteImport } from './routes/w.$ws.settings.integrations.$id'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -106,6 +129,124 @@ const WWsStatusRoute = WWsStatusRouteImport.update({
   path: '/status',
   getParentRoute: () => WWsRoute,
 } as any)
+const WWsAccountsIndexRoute = WWsAccountsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => WWsAccountsRoute,
+} as any)
+const WWsAccountsIdRoute = WWsAccountsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => WWsAccountsRoute,
+} as any)
+const WWsCampaignsIndexRoute = WWsCampaignsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => WWsCampaignsRoute,
+} as any)
+const WWsCampaignsIdRoute = WWsCampaignsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => WWsCampaignsRoute,
+} as any)
+const WWsSettingsIndexRoute = WWsSettingsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => WWsSettingsRoute,
+} as any)
+const WWsSettingsAccountRoute = WWsSettingsAccountRouteImport.update({
+  id: '/account',
+  path: '/account',
+  getParentRoute: () => WWsSettingsRoute,
+} as any)
+const WWsSettingsApiRoute = WWsSettingsApiRouteImport.update({
+  id: '/api',
+  path: '/api',
+  getParentRoute: () => WWsSettingsRoute,
+} as any)
+const WWsSettingsIntegrationsRoute = WWsSettingsIntegrationsRouteImport.update({
+  id: '/integrations',
+  path: '/integrations',
+  getParentRoute: () => WWsSettingsRoute,
+} as any)
+const WWsSettingsNotificationsRoute =
+  WWsSettingsNotificationsRouteImport.update({
+    id: '/notifications',
+    path: '/notifications',
+    getParentRoute: () => WWsSettingsRoute,
+  } as any)
+const WWsSettingsSendingRoute = WWsSettingsSendingRouteImport.update({
+  id: '/sending',
+  path: '/sending',
+  getParentRoute: () => WWsSettingsRoute,
+} as any)
+const WWsSettingsTeamRoute = WWsSettingsTeamRouteImport.update({
+  id: '/team',
+  path: '/team',
+  getParentRoute: () => WWsSettingsRoute,
+} as any)
+const WWsAccountsIdIndexRoute = WWsAccountsIdIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => WWsAccountsIdRoute,
+} as any)
+const WWsAccountsIdActivityRoute = WWsAccountsIdActivityRouteImport.update({
+  id: '/activity',
+  path: '/activity',
+  getParentRoute: () => WWsAccountsIdRoute,
+} as any)
+const WWsAccountsIdReplyCheckRoute = WWsAccountsIdReplyCheckRouteImport.update({
+  id: '/reply-check',
+  path: '/reply-check',
+  getParentRoute: () => WWsAccountsIdRoute,
+} as any)
+const WWsAccountsIdSendingRoute = WWsAccountsIdSendingRouteImport.update({
+  id: '/sending',
+  path: '/sending',
+  getParentRoute: () => WWsAccountsIdRoute,
+} as any)
+const WWsCampaignsIdIndexRoute = WWsCampaignsIdIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => WWsCampaignsIdRoute,
+} as any)
+const WWsCampaignsIdEditorRoute = WWsCampaignsIdEditorRouteImport.update({
+  id: '/editor',
+  path: '/editor',
+  getParentRoute: () => WWsCampaignsIdRoute,
+} as any)
+const WWsCampaignsIdFollowupsRoute = WWsCampaignsIdFollowupsRouteImport.update({
+  id: '/followups',
+  path: '/followups',
+  getParentRoute: () => WWsCampaignsIdRoute,
+} as any)
+const WWsCampaignsIdLeadsRoute = WWsCampaignsIdLeadsRouteImport.update({
+  id: '/leads',
+  path: '/leads',
+  getParentRoute: () => WWsCampaignsIdRoute,
+} as any)
+const WWsCampaignsIdReportsRoute = WWsCampaignsIdReportsRouteImport.update({
+  id: '/reports',
+  path: '/reports',
+  getParentRoute: () => WWsCampaignsIdRoute,
+} as any)
+const WWsCampaignsIdSettingsRoute = WWsCampaignsIdSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => WWsCampaignsIdRoute,
+} as any)
+const WWsSettingsIntegrationsIndexRoute =
+  WWsSettingsIntegrationsIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => WWsSettingsIntegrationsRoute,
+  } as any)
+const WWsSettingsIntegrationsIdRoute =
+  WWsSettingsIntegrationsIdRouteImport.update({
+    id: '/$id',
+    path: '/$id',
+    getParentRoute: () => WWsSettingsIntegrationsRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -115,15 +256,38 @@ export interface FileRoutesByFullPath {
   '/onboarding/$step': typeof OnboardingStepRoute
   '/reset/$token': typeof ResetTokenRoute
   '/w/$ws': typeof WWsRouteWithChildren
-  '/w/$ws/accounts': typeof WWsAccountsRoute
+  '/w/$ws/accounts': typeof WWsAccountsRouteWithChildren
   '/w/$ws/ai': typeof WWsAiRoute
-  '/w/$ws/campaigns': typeof WWsCampaignsRoute
+  '/w/$ws/campaigns': typeof WWsCampaignsRouteWithChildren
   '/w/$ws/inbox': typeof WWsInboxRoute
   '/w/$ws/leads': typeof WWsLeadsRoute
   '/w/$ws/reports': typeof WWsReportsRoute
-  '/w/$ws/settings': typeof WWsSettingsRoute
+  '/w/$ws/settings': typeof WWsSettingsRouteWithChildren
   '/w/$ws/status': typeof WWsStatusRoute
   '/w/$ws/': typeof WWsIndexRoute
+  '/w/$ws/accounts/$id': typeof WWsAccountsIdRouteWithChildren
+  '/w/$ws/campaigns/$id': typeof WWsCampaignsIdRouteWithChildren
+  '/w/$ws/settings/account': typeof WWsSettingsAccountRoute
+  '/w/$ws/settings/api': typeof WWsSettingsApiRoute
+  '/w/$ws/settings/integrations': typeof WWsSettingsIntegrationsRouteWithChildren
+  '/w/$ws/settings/notifications': typeof WWsSettingsNotificationsRoute
+  '/w/$ws/settings/sending': typeof WWsSettingsSendingRoute
+  '/w/$ws/settings/team': typeof WWsSettingsTeamRoute
+  '/w/$ws/accounts/': typeof WWsAccountsIndexRoute
+  '/w/$ws/campaigns/': typeof WWsCampaignsIndexRoute
+  '/w/$ws/settings/': typeof WWsSettingsIndexRoute
+  '/w/$ws/accounts/$id/activity': typeof WWsAccountsIdActivityRoute
+  '/w/$ws/accounts/$id/reply-check': typeof WWsAccountsIdReplyCheckRoute
+  '/w/$ws/accounts/$id/sending': typeof WWsAccountsIdSendingRoute
+  '/w/$ws/campaigns/$id/editor': typeof WWsCampaignsIdEditorRoute
+  '/w/$ws/campaigns/$id/followups': typeof WWsCampaignsIdFollowupsRoute
+  '/w/$ws/campaigns/$id/leads': typeof WWsCampaignsIdLeadsRoute
+  '/w/$ws/campaigns/$id/reports': typeof WWsCampaignsIdReportsRoute
+  '/w/$ws/campaigns/$id/settings': typeof WWsCampaignsIdSettingsRoute
+  '/w/$ws/settings/integrations/$id': typeof WWsSettingsIntegrationsIdRoute
+  '/w/$ws/accounts/$id/': typeof WWsAccountsIdIndexRoute
+  '/w/$ws/campaigns/$id/': typeof WWsCampaignsIdIndexRoute
+  '/w/$ws/settings/integrations/': typeof WWsSettingsIntegrationsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -132,15 +296,32 @@ export interface FileRoutesByTo {
   '/invite/$token': typeof InviteTokenRoute
   '/onboarding/$step': typeof OnboardingStepRoute
   '/reset/$token': typeof ResetTokenRoute
-  '/w/$ws/accounts': typeof WWsAccountsRoute
   '/w/$ws/ai': typeof WWsAiRoute
-  '/w/$ws/campaigns': typeof WWsCampaignsRoute
   '/w/$ws/inbox': typeof WWsInboxRoute
   '/w/$ws/leads': typeof WWsLeadsRoute
   '/w/$ws/reports': typeof WWsReportsRoute
-  '/w/$ws/settings': typeof WWsSettingsRoute
   '/w/$ws/status': typeof WWsStatusRoute
   '/w/$ws': typeof WWsIndexRoute
+  '/w/$ws/settings/account': typeof WWsSettingsAccountRoute
+  '/w/$ws/settings/api': typeof WWsSettingsApiRoute
+  '/w/$ws/settings/notifications': typeof WWsSettingsNotificationsRoute
+  '/w/$ws/settings/sending': typeof WWsSettingsSendingRoute
+  '/w/$ws/settings/team': typeof WWsSettingsTeamRoute
+  '/w/$ws/accounts': typeof WWsAccountsIndexRoute
+  '/w/$ws/campaigns': typeof WWsCampaignsIndexRoute
+  '/w/$ws/settings': typeof WWsSettingsIndexRoute
+  '/w/$ws/accounts/$id/activity': typeof WWsAccountsIdActivityRoute
+  '/w/$ws/accounts/$id/reply-check': typeof WWsAccountsIdReplyCheckRoute
+  '/w/$ws/accounts/$id/sending': typeof WWsAccountsIdSendingRoute
+  '/w/$ws/campaigns/$id/editor': typeof WWsCampaignsIdEditorRoute
+  '/w/$ws/campaigns/$id/followups': typeof WWsCampaignsIdFollowupsRoute
+  '/w/$ws/campaigns/$id/leads': typeof WWsCampaignsIdLeadsRoute
+  '/w/$ws/campaigns/$id/reports': typeof WWsCampaignsIdReportsRoute
+  '/w/$ws/campaigns/$id/settings': typeof WWsCampaignsIdSettingsRoute
+  '/w/$ws/settings/integrations/$id': typeof WWsSettingsIntegrationsIdRoute
+  '/w/$ws/accounts/$id': typeof WWsAccountsIdIndexRoute
+  '/w/$ws/campaigns/$id': typeof WWsCampaignsIdIndexRoute
+  '/w/$ws/settings/integrations': typeof WWsSettingsIntegrationsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -151,15 +332,38 @@ export interface FileRoutesById {
   '/onboarding/$step': typeof OnboardingStepRoute
   '/reset/$token': typeof ResetTokenRoute
   '/w/$ws': typeof WWsRouteWithChildren
-  '/w/$ws/accounts': typeof WWsAccountsRoute
+  '/w/$ws/accounts': typeof WWsAccountsRouteWithChildren
   '/w/$ws/ai': typeof WWsAiRoute
-  '/w/$ws/campaigns': typeof WWsCampaignsRoute
+  '/w/$ws/campaigns': typeof WWsCampaignsRouteWithChildren
   '/w/$ws/inbox': typeof WWsInboxRoute
   '/w/$ws/leads': typeof WWsLeadsRoute
   '/w/$ws/reports': typeof WWsReportsRoute
-  '/w/$ws/settings': typeof WWsSettingsRoute
+  '/w/$ws/settings': typeof WWsSettingsRouteWithChildren
   '/w/$ws/status': typeof WWsStatusRoute
   '/w/$ws/': typeof WWsIndexRoute
+  '/w/$ws/accounts/$id': typeof WWsAccountsIdRouteWithChildren
+  '/w/$ws/campaigns/$id': typeof WWsCampaignsIdRouteWithChildren
+  '/w/$ws/settings/account': typeof WWsSettingsAccountRoute
+  '/w/$ws/settings/api': typeof WWsSettingsApiRoute
+  '/w/$ws/settings/integrations': typeof WWsSettingsIntegrationsRouteWithChildren
+  '/w/$ws/settings/notifications': typeof WWsSettingsNotificationsRoute
+  '/w/$ws/settings/sending': typeof WWsSettingsSendingRoute
+  '/w/$ws/settings/team': typeof WWsSettingsTeamRoute
+  '/w/$ws/accounts/': typeof WWsAccountsIndexRoute
+  '/w/$ws/campaigns/': typeof WWsCampaignsIndexRoute
+  '/w/$ws/settings/': typeof WWsSettingsIndexRoute
+  '/w/$ws/accounts/$id/activity': typeof WWsAccountsIdActivityRoute
+  '/w/$ws/accounts/$id/reply-check': typeof WWsAccountsIdReplyCheckRoute
+  '/w/$ws/accounts/$id/sending': typeof WWsAccountsIdSendingRoute
+  '/w/$ws/campaigns/$id/editor': typeof WWsCampaignsIdEditorRoute
+  '/w/$ws/campaigns/$id/followups': typeof WWsCampaignsIdFollowupsRoute
+  '/w/$ws/campaigns/$id/leads': typeof WWsCampaignsIdLeadsRoute
+  '/w/$ws/campaigns/$id/reports': typeof WWsCampaignsIdReportsRoute
+  '/w/$ws/campaigns/$id/settings': typeof WWsCampaignsIdSettingsRoute
+  '/w/$ws/settings/integrations/$id': typeof WWsSettingsIntegrationsIdRoute
+  '/w/$ws/accounts/$id/': typeof WWsAccountsIdIndexRoute
+  '/w/$ws/campaigns/$id/': typeof WWsCampaignsIdIndexRoute
+  '/w/$ws/settings/integrations/': typeof WWsSettingsIntegrationsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -180,6 +384,29 @@ export interface FileRouteTypes {
     | '/w/$ws/settings'
     | '/w/$ws/status'
     | '/w/$ws/'
+    | '/w/$ws/accounts/$id'
+    | '/w/$ws/campaigns/$id'
+    | '/w/$ws/settings/account'
+    | '/w/$ws/settings/api'
+    | '/w/$ws/settings/integrations'
+    | '/w/$ws/settings/notifications'
+    | '/w/$ws/settings/sending'
+    | '/w/$ws/settings/team'
+    | '/w/$ws/accounts/'
+    | '/w/$ws/campaigns/'
+    | '/w/$ws/settings/'
+    | '/w/$ws/accounts/$id/activity'
+    | '/w/$ws/accounts/$id/reply-check'
+    | '/w/$ws/accounts/$id/sending'
+    | '/w/$ws/campaigns/$id/editor'
+    | '/w/$ws/campaigns/$id/followups'
+    | '/w/$ws/campaigns/$id/leads'
+    | '/w/$ws/campaigns/$id/reports'
+    | '/w/$ws/campaigns/$id/settings'
+    | '/w/$ws/settings/integrations/$id'
+    | '/w/$ws/accounts/$id/'
+    | '/w/$ws/campaigns/$id/'
+    | '/w/$ws/settings/integrations/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -188,15 +415,32 @@ export interface FileRouteTypes {
     | '/invite/$token'
     | '/onboarding/$step'
     | '/reset/$token'
-    | '/w/$ws/accounts'
     | '/w/$ws/ai'
-    | '/w/$ws/campaigns'
     | '/w/$ws/inbox'
     | '/w/$ws/leads'
     | '/w/$ws/reports'
-    | '/w/$ws/settings'
     | '/w/$ws/status'
     | '/w/$ws'
+    | '/w/$ws/settings/account'
+    | '/w/$ws/settings/api'
+    | '/w/$ws/settings/notifications'
+    | '/w/$ws/settings/sending'
+    | '/w/$ws/settings/team'
+    | '/w/$ws/accounts'
+    | '/w/$ws/campaigns'
+    | '/w/$ws/settings'
+    | '/w/$ws/accounts/$id/activity'
+    | '/w/$ws/accounts/$id/reply-check'
+    | '/w/$ws/accounts/$id/sending'
+    | '/w/$ws/campaigns/$id/editor'
+    | '/w/$ws/campaigns/$id/followups'
+    | '/w/$ws/campaigns/$id/leads'
+    | '/w/$ws/campaigns/$id/reports'
+    | '/w/$ws/campaigns/$id/settings'
+    | '/w/$ws/settings/integrations/$id'
+    | '/w/$ws/accounts/$id'
+    | '/w/$ws/campaigns/$id'
+    | '/w/$ws/settings/integrations'
   id:
     | '__root__'
     | '/'
@@ -215,6 +459,29 @@ export interface FileRouteTypes {
     | '/w/$ws/settings'
     | '/w/$ws/status'
     | '/w/$ws/'
+    | '/w/$ws/accounts/$id'
+    | '/w/$ws/campaigns/$id'
+    | '/w/$ws/settings/account'
+    | '/w/$ws/settings/api'
+    | '/w/$ws/settings/integrations'
+    | '/w/$ws/settings/notifications'
+    | '/w/$ws/settings/sending'
+    | '/w/$ws/settings/team'
+    | '/w/$ws/accounts/'
+    | '/w/$ws/campaigns/'
+    | '/w/$ws/settings/'
+    | '/w/$ws/accounts/$id/activity'
+    | '/w/$ws/accounts/$id/reply-check'
+    | '/w/$ws/accounts/$id/sending'
+    | '/w/$ws/campaigns/$id/editor'
+    | '/w/$ws/campaigns/$id/followups'
+    | '/w/$ws/campaigns/$id/leads'
+    | '/w/$ws/campaigns/$id/reports'
+    | '/w/$ws/campaigns/$id/settings'
+    | '/w/$ws/settings/integrations/$id'
+    | '/w/$ws/accounts/$id/'
+    | '/w/$ws/campaigns/$id/'
+    | '/w/$ws/settings/integrations/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -341,29 +608,298 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WWsStatusRouteImport
       parentRoute: typeof WWsRoute
     }
+    '/w/$ws/accounts/': {
+      id: '/w/$ws/accounts/'
+      path: '/'
+      fullPath: '/w/$ws/accounts/'
+      preLoaderRoute: typeof WWsAccountsIndexRouteImport
+      parentRoute: typeof WWsAccountsRoute
+    }
+    '/w/$ws/accounts/$id': {
+      id: '/w/$ws/accounts/$id'
+      path: '/$id'
+      fullPath: '/w/$ws/accounts/$id'
+      preLoaderRoute: typeof WWsAccountsIdRouteImport
+      parentRoute: typeof WWsAccountsRoute
+    }
+    '/w/$ws/campaigns/': {
+      id: '/w/$ws/campaigns/'
+      path: '/'
+      fullPath: '/w/$ws/campaigns/'
+      preLoaderRoute: typeof WWsCampaignsIndexRouteImport
+      parentRoute: typeof WWsCampaignsRoute
+    }
+    '/w/$ws/campaigns/$id': {
+      id: '/w/$ws/campaigns/$id'
+      path: '/$id'
+      fullPath: '/w/$ws/campaigns/$id'
+      preLoaderRoute: typeof WWsCampaignsIdRouteImport
+      parentRoute: typeof WWsCampaignsRoute
+    }
+    '/w/$ws/settings/': {
+      id: '/w/$ws/settings/'
+      path: '/'
+      fullPath: '/w/$ws/settings/'
+      preLoaderRoute: typeof WWsSettingsIndexRouteImport
+      parentRoute: typeof WWsSettingsRoute
+    }
+    '/w/$ws/settings/account': {
+      id: '/w/$ws/settings/account'
+      path: '/account'
+      fullPath: '/w/$ws/settings/account'
+      preLoaderRoute: typeof WWsSettingsAccountRouteImport
+      parentRoute: typeof WWsSettingsRoute
+    }
+    '/w/$ws/settings/api': {
+      id: '/w/$ws/settings/api'
+      path: '/api'
+      fullPath: '/w/$ws/settings/api'
+      preLoaderRoute: typeof WWsSettingsApiRouteImport
+      parentRoute: typeof WWsSettingsRoute
+    }
+    '/w/$ws/settings/integrations': {
+      id: '/w/$ws/settings/integrations'
+      path: '/integrations'
+      fullPath: '/w/$ws/settings/integrations'
+      preLoaderRoute: typeof WWsSettingsIntegrationsRouteImport
+      parentRoute: typeof WWsSettingsRoute
+    }
+    '/w/$ws/settings/notifications': {
+      id: '/w/$ws/settings/notifications'
+      path: '/notifications'
+      fullPath: '/w/$ws/settings/notifications'
+      preLoaderRoute: typeof WWsSettingsNotificationsRouteImport
+      parentRoute: typeof WWsSettingsRoute
+    }
+    '/w/$ws/settings/sending': {
+      id: '/w/$ws/settings/sending'
+      path: '/sending'
+      fullPath: '/w/$ws/settings/sending'
+      preLoaderRoute: typeof WWsSettingsSendingRouteImport
+      parentRoute: typeof WWsSettingsRoute
+    }
+    '/w/$ws/settings/team': {
+      id: '/w/$ws/settings/team'
+      path: '/team'
+      fullPath: '/w/$ws/settings/team'
+      preLoaderRoute: typeof WWsSettingsTeamRouteImport
+      parentRoute: typeof WWsSettingsRoute
+    }
+    '/w/$ws/accounts/$id/': {
+      id: '/w/$ws/accounts/$id/'
+      path: '/'
+      fullPath: '/w/$ws/accounts/$id/'
+      preLoaderRoute: typeof WWsAccountsIdIndexRouteImport
+      parentRoute: typeof WWsAccountsIdRoute
+    }
+    '/w/$ws/accounts/$id/activity': {
+      id: '/w/$ws/accounts/$id/activity'
+      path: '/activity'
+      fullPath: '/w/$ws/accounts/$id/activity'
+      preLoaderRoute: typeof WWsAccountsIdActivityRouteImport
+      parentRoute: typeof WWsAccountsIdRoute
+    }
+    '/w/$ws/accounts/$id/reply-check': {
+      id: '/w/$ws/accounts/$id/reply-check'
+      path: '/reply-check'
+      fullPath: '/w/$ws/accounts/$id/reply-check'
+      preLoaderRoute: typeof WWsAccountsIdReplyCheckRouteImport
+      parentRoute: typeof WWsAccountsIdRoute
+    }
+    '/w/$ws/accounts/$id/sending': {
+      id: '/w/$ws/accounts/$id/sending'
+      path: '/sending'
+      fullPath: '/w/$ws/accounts/$id/sending'
+      preLoaderRoute: typeof WWsAccountsIdSendingRouteImport
+      parentRoute: typeof WWsAccountsIdRoute
+    }
+    '/w/$ws/campaigns/$id/': {
+      id: '/w/$ws/campaigns/$id/'
+      path: '/'
+      fullPath: '/w/$ws/campaigns/$id/'
+      preLoaderRoute: typeof WWsCampaignsIdIndexRouteImport
+      parentRoute: typeof WWsCampaignsIdRoute
+    }
+    '/w/$ws/campaigns/$id/editor': {
+      id: '/w/$ws/campaigns/$id/editor'
+      path: '/editor'
+      fullPath: '/w/$ws/campaigns/$id/editor'
+      preLoaderRoute: typeof WWsCampaignsIdEditorRouteImport
+      parentRoute: typeof WWsCampaignsIdRoute
+    }
+    '/w/$ws/campaigns/$id/followups': {
+      id: '/w/$ws/campaigns/$id/followups'
+      path: '/followups'
+      fullPath: '/w/$ws/campaigns/$id/followups'
+      preLoaderRoute: typeof WWsCampaignsIdFollowupsRouteImport
+      parentRoute: typeof WWsCampaignsIdRoute
+    }
+    '/w/$ws/campaigns/$id/leads': {
+      id: '/w/$ws/campaigns/$id/leads'
+      path: '/leads'
+      fullPath: '/w/$ws/campaigns/$id/leads'
+      preLoaderRoute: typeof WWsCampaignsIdLeadsRouteImport
+      parentRoute: typeof WWsCampaignsIdRoute
+    }
+    '/w/$ws/campaigns/$id/reports': {
+      id: '/w/$ws/campaigns/$id/reports'
+      path: '/reports'
+      fullPath: '/w/$ws/campaigns/$id/reports'
+      preLoaderRoute: typeof WWsCampaignsIdReportsRouteImport
+      parentRoute: typeof WWsCampaignsIdRoute
+    }
+    '/w/$ws/campaigns/$id/settings': {
+      id: '/w/$ws/campaigns/$id/settings'
+      path: '/settings'
+      fullPath: '/w/$ws/campaigns/$id/settings'
+      preLoaderRoute: typeof WWsCampaignsIdSettingsRouteImport
+      parentRoute: typeof WWsCampaignsIdRoute
+    }
+    '/w/$ws/settings/integrations/': {
+      id: '/w/$ws/settings/integrations/'
+      path: '/'
+      fullPath: '/w/$ws/settings/integrations/'
+      preLoaderRoute: typeof WWsSettingsIntegrationsIndexRouteImport
+      parentRoute: typeof WWsSettingsIntegrationsRoute
+    }
+    '/w/$ws/settings/integrations/$id': {
+      id: '/w/$ws/settings/integrations/$id'
+      path: '/$id'
+      fullPath: '/w/$ws/settings/integrations/$id'
+      preLoaderRoute: typeof WWsSettingsIntegrationsIdRouteImport
+      parentRoute: typeof WWsSettingsIntegrationsRoute
+    }
   }
 }
 
+interface WWsAccountsIdRouteChildren {
+  WWsAccountsIdActivityRoute: typeof WWsAccountsIdActivityRoute
+  WWsAccountsIdReplyCheckRoute: typeof WWsAccountsIdReplyCheckRoute
+  WWsAccountsIdSendingRoute: typeof WWsAccountsIdSendingRoute
+  WWsAccountsIdIndexRoute: typeof WWsAccountsIdIndexRoute
+}
+
+const WWsAccountsIdRouteChildren: WWsAccountsIdRouteChildren = {
+  WWsAccountsIdActivityRoute: WWsAccountsIdActivityRoute,
+  WWsAccountsIdReplyCheckRoute: WWsAccountsIdReplyCheckRoute,
+  WWsAccountsIdSendingRoute: WWsAccountsIdSendingRoute,
+  WWsAccountsIdIndexRoute: WWsAccountsIdIndexRoute,
+}
+
+const WWsAccountsIdRouteWithChildren = WWsAccountsIdRoute._addFileChildren(
+  WWsAccountsIdRouteChildren,
+)
+
+interface WWsAccountsRouteChildren {
+  WWsAccountsIdRoute: typeof WWsAccountsIdRouteWithChildren
+  WWsAccountsIndexRoute: typeof WWsAccountsIndexRoute
+}
+
+const WWsAccountsRouteChildren: WWsAccountsRouteChildren = {
+  WWsAccountsIdRoute: WWsAccountsIdRouteWithChildren,
+  WWsAccountsIndexRoute: WWsAccountsIndexRoute,
+}
+
+const WWsAccountsRouteWithChildren = WWsAccountsRoute._addFileChildren(
+  WWsAccountsRouteChildren,
+)
+
+interface WWsCampaignsIdRouteChildren {
+  WWsCampaignsIdEditorRoute: typeof WWsCampaignsIdEditorRoute
+  WWsCampaignsIdFollowupsRoute: typeof WWsCampaignsIdFollowupsRoute
+  WWsCampaignsIdLeadsRoute: typeof WWsCampaignsIdLeadsRoute
+  WWsCampaignsIdReportsRoute: typeof WWsCampaignsIdReportsRoute
+  WWsCampaignsIdSettingsRoute: typeof WWsCampaignsIdSettingsRoute
+  WWsCampaignsIdIndexRoute: typeof WWsCampaignsIdIndexRoute
+}
+
+const WWsCampaignsIdRouteChildren: WWsCampaignsIdRouteChildren = {
+  WWsCampaignsIdEditorRoute: WWsCampaignsIdEditorRoute,
+  WWsCampaignsIdFollowupsRoute: WWsCampaignsIdFollowupsRoute,
+  WWsCampaignsIdLeadsRoute: WWsCampaignsIdLeadsRoute,
+  WWsCampaignsIdReportsRoute: WWsCampaignsIdReportsRoute,
+  WWsCampaignsIdSettingsRoute: WWsCampaignsIdSettingsRoute,
+  WWsCampaignsIdIndexRoute: WWsCampaignsIdIndexRoute,
+}
+
+const WWsCampaignsIdRouteWithChildren = WWsCampaignsIdRoute._addFileChildren(
+  WWsCampaignsIdRouteChildren,
+)
+
+interface WWsCampaignsRouteChildren {
+  WWsCampaignsIdRoute: typeof WWsCampaignsIdRouteWithChildren
+  WWsCampaignsIndexRoute: typeof WWsCampaignsIndexRoute
+}
+
+const WWsCampaignsRouteChildren: WWsCampaignsRouteChildren = {
+  WWsCampaignsIdRoute: WWsCampaignsIdRouteWithChildren,
+  WWsCampaignsIndexRoute: WWsCampaignsIndexRoute,
+}
+
+const WWsCampaignsRouteWithChildren = WWsCampaignsRoute._addFileChildren(
+  WWsCampaignsRouteChildren,
+)
+
+interface WWsSettingsIntegrationsRouteChildren {
+  WWsSettingsIntegrationsIdRoute: typeof WWsSettingsIntegrationsIdRoute
+  WWsSettingsIntegrationsIndexRoute: typeof WWsSettingsIntegrationsIndexRoute
+}
+
+const WWsSettingsIntegrationsRouteChildren: WWsSettingsIntegrationsRouteChildren =
+  {
+    WWsSettingsIntegrationsIdRoute: WWsSettingsIntegrationsIdRoute,
+    WWsSettingsIntegrationsIndexRoute: WWsSettingsIntegrationsIndexRoute,
+  }
+
+const WWsSettingsIntegrationsRouteWithChildren =
+  WWsSettingsIntegrationsRoute._addFileChildren(
+    WWsSettingsIntegrationsRouteChildren,
+  )
+
+interface WWsSettingsRouteChildren {
+  WWsSettingsAccountRoute: typeof WWsSettingsAccountRoute
+  WWsSettingsApiRoute: typeof WWsSettingsApiRoute
+  WWsSettingsIntegrationsRoute: typeof WWsSettingsIntegrationsRouteWithChildren
+  WWsSettingsNotificationsRoute: typeof WWsSettingsNotificationsRoute
+  WWsSettingsSendingRoute: typeof WWsSettingsSendingRoute
+  WWsSettingsTeamRoute: typeof WWsSettingsTeamRoute
+  WWsSettingsIndexRoute: typeof WWsSettingsIndexRoute
+}
+
+const WWsSettingsRouteChildren: WWsSettingsRouteChildren = {
+  WWsSettingsAccountRoute: WWsSettingsAccountRoute,
+  WWsSettingsApiRoute: WWsSettingsApiRoute,
+  WWsSettingsIntegrationsRoute: WWsSettingsIntegrationsRouteWithChildren,
+  WWsSettingsNotificationsRoute: WWsSettingsNotificationsRoute,
+  WWsSettingsSendingRoute: WWsSettingsSendingRoute,
+  WWsSettingsTeamRoute: WWsSettingsTeamRoute,
+  WWsSettingsIndexRoute: WWsSettingsIndexRoute,
+}
+
+const WWsSettingsRouteWithChildren = WWsSettingsRoute._addFileChildren(
+  WWsSettingsRouteChildren,
+)
+
 interface WWsRouteChildren {
-  WWsAccountsRoute: typeof WWsAccountsRoute
+  WWsAccountsRoute: typeof WWsAccountsRouteWithChildren
   WWsAiRoute: typeof WWsAiRoute
-  WWsCampaignsRoute: typeof WWsCampaignsRoute
+  WWsCampaignsRoute: typeof WWsCampaignsRouteWithChildren
   WWsInboxRoute: typeof WWsInboxRoute
   WWsLeadsRoute: typeof WWsLeadsRoute
   WWsReportsRoute: typeof WWsReportsRoute
-  WWsSettingsRoute: typeof WWsSettingsRoute
+  WWsSettingsRoute: typeof WWsSettingsRouteWithChildren
   WWsStatusRoute: typeof WWsStatusRoute
   WWsIndexRoute: typeof WWsIndexRoute
 }
 
 const WWsRouteChildren: WWsRouteChildren = {
-  WWsAccountsRoute: WWsAccountsRoute,
+  WWsAccountsRoute: WWsAccountsRouteWithChildren,
   WWsAiRoute: WWsAiRoute,
-  WWsCampaignsRoute: WWsCampaignsRoute,
+  WWsCampaignsRoute: WWsCampaignsRouteWithChildren,
   WWsInboxRoute: WWsInboxRoute,
   WWsLeadsRoute: WWsLeadsRoute,
   WWsReportsRoute: WWsReportsRoute,
-  WWsSettingsRoute: WWsSettingsRoute,
+  WWsSettingsRoute: WWsSettingsRouteWithChildren,
   WWsStatusRoute: WWsStatusRoute,
   WWsIndexRoute: WWsIndexRoute,
 }

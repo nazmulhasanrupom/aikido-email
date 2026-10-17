@@ -1,0 +1,34 @@
+# Dev services only. For a real server use docker-compose.yml (see README.md, Deploy).
+#   docker compose -f docker-compose.dev.yml up -d
+#   DATABASE_URL=postgres://aikido:aikido@127.0.0.1:55432/aikido cargo test
+# Mailpit catches the emails: SMTP on 1025, web page on http://127.0.0.1:8025
+# GreenMail is a mail server with SMTP (3025) and IMAP (3143) for the reply check tests.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: aikido
+      POSTGRES_PASSWORD: aikido
+      POSTGRES_DB: aikido
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+  mailpit:
+    image: axllent/mailpit
+    ports:
+      - "127.0.0.1:1025:1025"
+      - "127.0.0.1:8025:8025"
+  # A local mail server with SMTP and IMAP, for the reply check tests (no password check:
+  # any login works, and a mailbox is made when the first email arrives).
+  # SMTP 3025, IMAP 3143, web API http://127.0.0.1:8085
+  greenmail:
+    image: greenmail/standalone:2.1.3
+    environment:
+      GREENMAIL_OPTS: "-Dgreenmail.setup.test.smtp -Dgreenmail.setup.test.imap -Dgreenmail.hostname=0.0.0.0 -Dgreenmail.auth.disabled"
+    ports:
+      - "127.0.0.1:3025:3025"
+      - "127.0.0.1:3143:3143"
+      - "127.0.0.1:8085:8080"
+volumes:
+  pgdata:
