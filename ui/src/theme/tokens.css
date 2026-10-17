@@ -1,0 +1,43 @@
+/*
+ * Theme tokens. Light is a warm cream, dark is a warm charcoal (not black).
+ * The values follow the UI build map section 6, with these changes so every text color
+ * reaches WCAG AA (4.5:1) on --bg, --surface and --surface-2 (src/theme/contrast.test.ts checks it):
+ *   light:  --text-muted, --accent, --success, --warning, --ai
+ *   dark:   --text-muted, --accent, --danger, --ai
+ * Same hue, a little darker (light) or lighter (dark).
+ */
+:root {
+  color-scheme: light;
+  --bg: #f6f1e9;
+  --surface: #fbf8f3;
+  --surface-2: #f0e9de;
+  --border: #e3d9ca;
+  --text: #2b2621;
+  --text-muted: #6b6257;
+  --accent: #98502d;
+  --accent-fg: #ffffff;
+  --accent-soft: #f3dfd2;
+  --success: #3b744b;
+  --warning: #905c0f;
+  --danger: #b3433a;
+  --info: #3b6a8e;
+  --ai: #7454be;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #262624;
+  --surface: #2e2e2b;
+  --surface-2: #363632;
+  --border: #45443f;
+  --text: #ece8df;
+  --text-muted: #aba499;
+  --accent: #de946d;
+  --accent-fg: #1f1e1c;
+  --accent-soft: #4a3528;
+  --success: #74b183;
+  --warning: #dda94a;
+  --danger: #e68574;
+  --info: #7fa9cc;
+  --ai: #ab92e7;
+}

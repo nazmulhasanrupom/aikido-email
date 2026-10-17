@@ -4,3 +4,5 @@ token.json
 /data
 /ui/dist
 /ui/node_modules
+/ui/test-results
+/ui/playwright-report

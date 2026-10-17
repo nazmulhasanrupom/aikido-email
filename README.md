@@ -19,7 +19,7 @@ DATABASE_URL=postgres://aikido:aikido@127.0.0.1:55432/aikido cargo run -- serve
 ```
 
 The first boot also prints a one-time **setup code**. Open `http://localhost:8080`, type the code, and make the owner account (the web app).
-In development run `pnpm dev` in `ui/` and open `http://localhost:5173` (set `AIKIDO_PUBLIC_URL=http://localhost:5173` so the login check passes).
+In development run `pnpm dev` in `ui/` and open `http://localhost:5173` (start the server with `AIKIDO_PUBLIC_URL=http://localhost:5173` so the login check passes; the port must stay 5173).
 Lost the owner password? `cargo run -- reset-password <email>` prints a one-time link.
 The web app is built into the binary from `ui/dist` (`pnpm build` in `ui/`). `cargo build --no-default-features` makes an API-only server.
 Behind a reverse proxy set `AIKIDO_PUBLIC_URL` (the browser address) and `AIKIDO_TRUST_PROXY=true`. Without HTTPS the web login does not work (except on localhost).
@@ -151,3 +151,21 @@ DATABASE_URL=postgres://aikido:aikido@127.0.0.1:55432/aikido cargo test
 ```
 
 GreenMail tests (`tests/replies_imap.rs`) skip themselves if GreenMail is not running.
+
+## Web app (`ui/`)
+
+React + TypeScript + Vite + Tailwind, built to static files and embedded in the server binary.
+Needs Node 22 and pnpm 10 (`npm i -g pnpm@10`).
+
+```bash
+cd ui
+pnpm install
+pnpm dev            # http://localhost:5173, proxies /v1 to the server on 127.0.0.1:8080
+pnpm build          # writes ui/dist. Then `cargo build` embeds it. Serve at http://localhost:8080
+pnpm gen:api        # regenerate src/api/schema.d.ts from a running server (do this after every backend change)
+pnpm test           # unit tests (vitest)
+pnpm lint && pnpm typecheck
+e2e/run.sh          # browser tests (Playwright, Chrome) against a fresh server and database; needs `docker compose up -d`, `cargo build` and `pnpm build`
+```
+
+Without a built `ui/dist`, `cargo build` embeds a small placeholder page.

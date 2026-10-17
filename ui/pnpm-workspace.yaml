@@ -1,0 +1,2 @@
+# Only install package versions that are at least 2 weeks old (20160 minutes).
+minimumReleaseAge: 20160

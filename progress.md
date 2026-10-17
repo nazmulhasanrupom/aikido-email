@@ -8,7 +8,7 @@ The sending engine (9 phases), the Reply Check (8 phases) and the Follow-up auto
 Lead Management (leads, lists, tags, CSV import and export, email check, campaigns with a daily-limit feeder) is built, 9 phases.
 The Email Generator (an AI writes the `{{ai:slot}}` parts of a step per lead, with a worker, guard, review mode, budgets, two LLM kinds, a sequence writer and a preview) is built, 8 phases.
 Auto Database part 1 (AI column mapping for CSV import: rules, then an AI on the rest, a proposal, a confirm step, saved mappings) is built, 6 phases.
-The web app backend (UI build map phase 1: users, sessions, login, CSRF, UI serving, config, onboarding, alerts, reports) is built. The web app itself (`ui/`) is not started. 663 tests pass.
+The web app backend (UI build map phase 1: users, sessions, login, CSRF, UI serving, config, onboarding, alerts, reports) is built. The web app (`ui/`): phase 2 of 8 is built (shell, theme, login, setup); the other pages are empty. 663 Rust tests, 55 UI unit tests and 15 browser tests pass.
 **Not yet tested:** a real Gmail or Outlook send, a real Gmail or Outlook inbox read, and Outlook thread headers on a real mailbox (no live accounts yet). Only mock servers, Mailpit and GreenMail (IMAP) were used.
 **Not yet tested (Email Generator):** a real call to Anthropic, OpenAI or Ollama. Only a mock HTTP server and `FakeLlm` were used. See "Not done, or not verified (Email Generator)".
 
@@ -628,6 +628,53 @@ They cover: same time for a wrong password and an unknown email; the wait after 
 - **Email sending of invites and resets:** not in v1, as the map says. The admin copies the link.
 - `ui/dist` is git-ignored. `build.rs` makes a placeholder page so `cargo build` works before the app exists.
 
+## Web app: UI build map, phase 2 (built 2026-10-17)
+
+`ui/` is a React 19 + TypeScript (strict) + Vite + Tailwind v4 app. Phase 2 of the map: shell, theme, router, API client, setup, login, logout, serving from the Rust binary. The pages behind the menu are empty "built in a later phase" pages.
+
+### What works (checked in Chrome, by 15 Playwright tests against the real server)
+
+- Fresh database: `/` goes to `/setup`. A wrong setup code is refused on its field. The form is checked in the browser first (zod). A weak password is refused by the server and shown on the password field. The strength meter and the show/hide button work.
+- Setup code, owner, logged in, app shell. A reload keeps the session. `/setup` is closed after that.
+- Login and logout. A wrong password shows the one error text. A protected page sends you to `/login?next=...` and back after login. `next` only accepts a path of the app (`//evil` and `https://...` are dropped).
+- When the session ends during work, the next API call (`401`) clears the cache and goes to the login with `next`.
+- Shell: workspace menu (name, logo if set, "New workspace" disabled with "Later"), six menu items with the current one marked, "Soon" tag on Aikido AI, user menu (Settings, Theme Light/Dark/System, Status, Log out), top bar with the search box and the bell as disabled placeholders. The menu is 232 px, collapses to 56 px (remembered), and is a slide-in drawer under 768 px. No sideways scroll on a 600 px screen.
+- Theme: Light, Dark, System (default). Saved in `users.preferences.theme` and copied to `localStorage` `aikido.theme`. `public/theme-init.js` sets `data-theme` before the first paint. The server's CSP forbids inline scripts, so it is a file, not inline code. A test holds back the app script and checks the page is already dark. A system change is followed while the choice is System.
+- The pages for `/invite/:token` and `/reset/:token` (the backend needed the second one).
+- `cargo build` embeds `ui/dist` and serves it on the server port. `e2e/run.sh` builds nothing: run `pnpm build` and `cargo build` first.
+
+### Parts
+
+| Where | What |
+| --- | --- |
+| `ui/src/api/` | `schema.d.ts` generated from `/openapi.json` (`pnpm gen:api`). `client.ts`: `openapi-fetch`, same origin, the CSRF token kept in memory and sent on every change, one retry after `403 csrf_failed`, `401` handler. `errors.ts`: error codes in plain words. `auth.ts`: state, login, setup, logout, invite, reset. |
+| `ui/src/theme/` | `tokens.css` (the colors), `theme.ts` (the choice and the store), `contrast.test.ts` (55 unit tests: every text color reaches 4.5:1 on all three backgrounds, in both themes). |
+| `ui/src/components/` | `Button`, `Field`, `PasswordField`, `StrengthMeter` (the checker loads only when a password is typed), `Card`, `Logo`, `AuthLayout`, `ComingSoon`, `shell/` (Sidebar, TopBar, Shell, Radix dropdown menus). |
+| `ui/src/routes/` | File-based routes (TanStack Router). `w.$ws.tsx` is the guard and the shell for everything in the app. |
+| `ui/e2e/` | Playwright tests and `run.sh` (fresh database, fresh server, then the tests). `screenshots.spec.ts` saves pictures when `SCREENSHOTS_DIR` is set. |
+
+### Decisions and differences from the map (the code wins)
+
+| Map said | Code does | Why |
+| --- | --- | --- |
+| Theme tokens in section 6 | These changed so every text color reaches AA on `--bg`, `--surface` and `--surface-2`: light `--text-muted` `#6b6257`, `--accent` `#98502d`, `--success` `#3b744b`, `--warning` `#905c0f`, `--ai` `#7454be`; dark `--text-muted` `#aba499`, `--accent` `#de946d`, `--danger` `#e68574`, `--ai` `#ab92e7`. | The map's own values fail its own AA rule (for example the light accent is 3.5:1; white on it is 3.9:1). The unit test checks the file. The light accent is a deeper brown-orange as a result. |
+| "latest stable" versions | TypeScript is pinned to 5.9.3. | `openapi-typescript` 7 needs the TypeScript compiler API, which TypeScript 7 does not have. |
+| pnpm | pnpm 10.34 (not 12). `pnpm-workspace.yaml` sets `minimumReleaseAge` to 2 weeks, so only versions at least 2 weeks old are installed. | Matches the map's "at least 2 weeks old" rule. |
+| Inline theme script | `public/theme-init.js` | The CSP has no `unsafe-inline` for scripts. |
+| Welcome after setup goes to onboarding | `/onboarding/:step` is a placeholder with a "Go to the app" link. | The wizard is phase 3. |
+| Search, bell, banners, Inbox badge, "Workspace settings" in the workspace menu | Not yet. The search box and the bell are disabled. | Phases 7 and 8. |
+| Dev server | `strictPort` on 5173. | The server checks `Origin` against `AIKIDO_PUBLIC_URL`; a silent hop to another port would break the login. (On this machine another program held 5173 once.) |
+| Route guards read the cache | After a login or setup the app loads the state again (`refreshAuthState`). | Marking it old is not enough: `ensureQueryData` still gives the old answer, and the guard sent a new owner back to `/setup`. The browser test found it. |
+
+### Not done, or not verified (web app, phase 2)
+
+- Only Chrome was tried. Firefox and Safari are not tested. Safari may refuse the `__Host-` cookie on `http://localhost`.
+- No accessibility scan yet (phase 8). Done by hand: labels on every input, `aria-label` on icon buttons, a skip link, focus ring, keyboard login, menus are Radix (keyboard and screen reader tested by the library).
+- `pnpm gen:api` is a manual step. The "CI fails if `schema.d.ts` is out of date" check needs a CI, which does not exist yet.
+- The built app has one chunk of 1.2 MB (the password checker's word lists). It loads only on pages that ask for a new password.
+- `ui/dist` is git-ignored. `cargo build` before `pnpm build` embeds the placeholder page.
+- Biome 2.5.15 crashes ("terminated abnormally") when `check` gets one particular set of 48 files. `pnpm lint` and `pnpm format` run it in two parts to avoid that. Its `vcs` setting must stay off.
+
 ## Not done, or not verified (follow-ups)
 
 - **Outlook thread headers on a real mailbox:** not tested (see above).
@@ -664,7 +711,7 @@ They cover: same time for a wrong password and an unknown email; the wait after 
 7. Build the later steps that plug into the hooks: Auto Database part 2, the real database connector (it reuses `SampleSet`, the rule mapper, the AI mapper and the templates, then calls `leads::upsert::upsert_batch`), AI agent and chatbot (reads `GET /v1/leads/{id}/context`, sets `interest`). The Email Generator is built.
 7a. Try the import mapping for real: upload a CSV with `POST /v1/leads/imports?auto_map=true`, read the proposal, then confirm.
 7b. Try the Email Generator for real: add one provider, run `POST /v1/generator/providers/{id}/test`, preview one lead, then run the first campaign in review mode and read 20 outputs.
-8. Build the web app (`ui/`): UI build map phases 2 to 8. Also add pages the backend now needs: `/reset/:token`. Then try the login in a real browser (Chrome, Firefox, Safari).
+8. Build the rest of the web app (`ui/`): UI build map phases 3 to 8. Try the login in Firefox and Safari.
 9. Commit the work.
 
 ## Handy facts
