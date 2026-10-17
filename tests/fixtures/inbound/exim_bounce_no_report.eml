@@ -1,0 +1,25 @@
+Delivered-To: sender@acme-outreach.example
+From: Mail Delivery System <Mailer-Daemon@mx2.prospect.example>
+To: sender@acme-outreach.example
+Subject: Mail delivery failed: returning message to sender
+Message-ID: <exim-bounce-1@mx2.prospect.example>
+Date: Mon, 19 Oct 2026 10:01:00 +0000
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+
+This message was created automatically by mail delivery software.
+
+A message that you sent could not be delivered to one or more of its
+recipients. This is a permanent error. The following address(es) failed:
+
+  jane@prospect.example
+    host mx2.prospect.example [198.51.100.20]
+    SMTP error from remote mail server after RCPT TO:<jane@prospect.example>:
+    550 5.1.1 Unknown user
+
+------ This is a copy of the message's headers. ------
+
+Message-ID: <sent-0001@acme-outreach.example>
+From: Sam Sender <sender@acme-outreach.example>
+To: jane@prospect.example
+Subject: Quick question about your onboarding

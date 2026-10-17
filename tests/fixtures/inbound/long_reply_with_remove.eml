@@ -1,0 +1,16 @@
+Delivered-To: sender@acme-outreach.example
+From: Jane Prospect <jane@prospect.example>
+To: Sam Sender <sender@acme-outreach.example>
+Subject: Re: Quick question about your onboarding
+Message-ID: <long_reply_with_remove@prospect.example>
+Date: Mon, 19 Oct 2026 14:12:00 +0000
+MIME-Version: 1.0
+In-Reply-To: <sent-0001@acme-outreach.example>
+References: <sent-0001@acme-outreach.example>
+Content-Type: text/plain; charset="UTF-8"
+
+Hi Sam,
+
+Thanks for the note. We are looking at several vendors right now and I would like to understand how your product fits with what we already run. One thing that matters a lot to us is that we can remove the old integration without downtime, and that the migration of our historic data is handled by your team rather than ours. Could you send a short plan, the pricing tiers, and two customer references in a similar industry? We can then schedule a call with our operations lead and our finance team next week to go through the details.
+
+Jane

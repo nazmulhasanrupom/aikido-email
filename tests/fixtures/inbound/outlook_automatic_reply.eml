@@ -1,0 +1,12 @@
+Delivered-To: sender@acme-outreach.example
+From: Jane Prospect <jane@prospect.example>
+To: Sam Sender <sender@acme-outreach.example>
+Subject: Automatic reply: Quick question about your onboarding
+Message-ID: <outlook_automatic_reply@prospect.example>
+Date: Mon, 19 Oct 2026 14:12:00 +0000
+MIME-Version: 1.0
+In-Reply-To: <sent-0001@acme-outreach.example>
+References: <sent-0001@acme-outreach.example>
+Content-Type: text/plain; charset="UTF-8"
+
+I am out of the office and will respond when I return.

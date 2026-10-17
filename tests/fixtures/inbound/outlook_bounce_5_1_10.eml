@@ -1,0 +1,42 @@
+Delivered-To: sender@acme-outreach.example
+From: Microsoft Outlook <postmaster@prospect-corp.onmicrosoft.example>
+To: sender@acme-outreach.example
+Subject: Undeliverable: Quick question about your onboarding
+Message-ID: <outlook_bounce_5_1_10@bounce.example>
+Date: Mon, 19 Oct 2026 10:00:30 +0000
+MIME-Version: 1.0
+Auto-Submitted: auto-replied
+Content-Type: multipart/report; report-type=delivery-status; boundary="----=_DSN_BOUNDARY_1"
+
+------=_DSN_BOUNDARY_1
+Content-Type: text/plain; charset=UTF-8
+
+Delivery has failed to these recipients or groups:
+
+nobody@prospect-corp.example
+The email address you entered couldn't be found.
+
+------=_DSN_BOUNDARY_1
+Content-Type: message/delivery-status
+
+Reporting-MTA: dns; AM0PR01MB1234.eurprd01.prod.exchangelabs.example
+Arrival-Date: Mon, 19 Oct 2026 10:00:05 +0000
+
+Final-Recipient: rfc822; nobody@prospect-corp.example
+Action: failed
+Status: 5.1.10
+Diagnostic-Code: smtp; 550 5.1.10 RESOLVER.ADR.RecipientNotFound; Recipient not found by SMTP address lookup
+
+------=_DSN_BOUNDARY_1
+Content-Type: message/rfc822
+
+Received: from mail.acme-outreach.example by mx.example; Mon, 19 Oct 2026 10:00:00 +0000
+From: Sam Sender <sender@acme-outreach.example>
+To: nobody@prospect.example
+Subject: Quick question about your onboarding
+Message-ID: <sent-0001@acme-outreach.example>
+Date: Mon, 19 Oct 2026 10:00:00 +0000
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+
+------=_DSN_BOUNDARY_1--

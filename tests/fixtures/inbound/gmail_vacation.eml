@@ -1,0 +1,15 @@
+Delivered-To: sender@acme-outreach.example
+From: Jane Prospect <jane@prospect.example>
+To: Sam Sender <sender@acme-outreach.example>
+Subject: Out of office: back Monday
+Message-ID: <gmail_vacation@prospect.example>
+Date: Mon, 19 Oct 2026 14:12:00 +0000
+MIME-Version: 1.0
+In-Reply-To: <sent-0001@acme-outreach.example>
+References: <sent-0001@acme-outreach.example>
+Auto-Submitted: auto-replied
+X-Autoreply: yes
+Precedence: bulk
+Content-Type: text/plain; charset="UTF-8"
+
+Hi, I am on vacation until Monday 26 October with limited access to email. For urgent matters contact tom@prospect.example.

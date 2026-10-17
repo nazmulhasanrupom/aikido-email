@@ -1,0 +1,37 @@
+Delivered-To: sender@acme-outreach.example
+From: complaints@fbl.mailprovider.example
+To: sender@acme-outreach.example
+Subject: FW: Quick question about your onboarding
+Message-ID: <fbl-0001@fbl.mailprovider.example>
+Date: Mon, 19 Oct 2026 15:00:00 +0000
+MIME-Version: 1.0
+Content-Type: multipart/report; report-type=feedback-report; boundary="FBL_BOUNDARY_1"
+
+--FBL_BOUNDARY_1
+Content-Type: text/plain; charset=UTF-8
+
+This is an email abuse report for an email message received from IP 203.0.113.7 on Mon, 19 Oct 2026 10:00:00 +0000.
+
+--FBL_BOUNDARY_1
+Content-Type: message/feedback-report
+
+Feedback-Type: abuse
+User-Agent: ExampleFBL/1.0
+Version: 1
+Original-Mail-From: <sender@acme-outreach.example>
+Original-Rcpt-To: <jane@prospect.example>
+Arrival-Date: Mon, 19 Oct 2026 10:00:00 +0000
+
+--FBL_BOUNDARY_1
+Content-Type: message/rfc822
+
+Received: from mail.acme-outreach.example by mx.example; Mon, 19 Oct 2026 10:00:00 +0000
+From: Sam Sender <sender@acme-outreach.example>
+To: jane@prospect.example
+Subject: Quick question about your onboarding
+Message-ID: <sent-0001@acme-outreach.example>
+Date: Mon, 19 Oct 2026 10:00:00 +0000
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+
+--FBL_BOUNDARY_1--
