@@ -604,6 +604,17 @@ pub struct CampaignLeadRow {
     pub enrollment_status: Option<crate::followups::model::EnrollmentStatus>,
     pub added_at: DateTime<Utc>,
     pub enrolled_at: Option<DateTime<Utc>>,
+    pub interest: Option<crate::leads::model::Interest>,
+    pub contact_state: crate::leads::model::ContactState,
+    /// The step the enrollment is on: the one that is queued, or goes next (1-based). Empty if the lead is not enrolled.
+    pub current_step: Option<i32>,
+    /// How many steps the sequence has.
+    pub steps_total: i64,
+    /// When the next step is due.
+    pub next_due_at: Option<DateTime<Utc>>,
+    /// Why the lead is not moving, in a code. `waiting_delay`, `queued`, `waiting_ai_review`, `paused`,
+    /// `finished`, or the stop reason (`reply`, `bounce_hard`, `unsubscribe`, `manual`, ...). Empty when the next step is due now.
+    pub wait_reason: Option<String>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -634,8 +645,23 @@ async fn list_campaign_leads(State(st): State<AppState>, ApiPath(id): ApiPath<Uu
     };
     let mut leads: Vec<CampaignLeadRow> = sqlx::query_as(
         "SELECT cl.lead_id, l.email, l.first_name, l.last_name, l.company_name, cl.state, cl.skip_reason, cl.enrollment_id,
-                e.status AS enrollment_status, cl.added_at, cl.enrolled_at
+                e.status AS enrollment_status, cl.added_at, cl.enrolled_at, l.interest, l.contact_state,
+                CASE WHEN e.id IS NULL THEN NULL ELSE LEAST(e.next_step, GREATEST(steps.n, 1)::int) END AS current_step,
+                steps.n AS steps_total,
+                e.next_due_at,
+                CASE
+                  WHEN e.id IS NULL THEN NULL
+                  WHEN e.status IN ('stopped', 'failed') THEN COALESCE(e.stop_reason, 'stopped')
+                  WHEN e.status = 'finished' THEN 'finished'
+                  WHEN e.status = 'paused' THEN 'paused'
+                  WHEN EXISTS (SELECT 1 FROM generations g WHERE g.enrollment_id = e.id AND g.step_number = e.next_step AND g.status = 'pending_review')
+                    THEN 'waiting_ai_review'
+                  WHEN e.status = 'waiting_send' THEN 'queued'
+                  WHEN e.next_due_at > now() THEN 'waiting_delay'
+                  ELSE NULL
+                END AS wait_reason
            FROM campaign_leads cl JOIN leads l ON l.id = cl.lead_id LEFT JOIN enrollments e ON e.id = cl.enrollment_id
+           CROSS JOIN (SELECT count(*)::bigint AS n FROM sequence_steps WHERE sequence_id = (SELECT sequence_id FROM campaigns WHERE id = $1)) steps
           WHERE cl.campaign_id = $1 AND ($2::campaign_lead_state IS NULL OR cl.state = $2) AND ($3::campaign_skip_reason IS NULL OR cl.skip_reason = $3)
             AND ($4::timestamptz IS NULL OR (cl.added_at, cl.lead_id) > ($4, $5))
           ORDER BY cl.added_at, cl.lead_id LIMIT $6",

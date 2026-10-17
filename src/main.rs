@@ -18,7 +18,10 @@ const USAGE: &str = "usage: aikido_email serve
        aikido_email <gmail|outlook> add | list | token <email> | remove <email>
        aikido_email imap add | list | test <email> | remove <email>
        aikido_email backfill-leads
+       aikido_email reset-password <email>
 
+reset-password <email>
+             print a one-time link (valid 1 hour) to set a new password for a web user. For a lost owner password.
 serve        start the sending engine, the reply check and the follow-ups (HTTP API + schedulers + inbox poller). Needs DATABASE_URL.
 backfill-leads
              give every old enrollment a lead (found by address, or made). Safe to run twice. Also runs when `serve` starts.
@@ -35,6 +38,18 @@ async fn main() -> Res<()> {
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
     match args.as_slice() {
         ["serve"] => serve().await.map_err(|e| format!("{e:#}"))?,
+        ["reset-password", email] => {
+            let cfg = Config::from_env().map_err(|e| format!("{e:#}"))?;
+            let pool = db::connect(&cfg.database_url).await.map_err(|e| format!("{e:#}"))?;
+            db::migrate(&pool).await.map_err(|e| format!("{e:#}"))?;
+            let Some(user) = aikido_email::users::repo::find_by_email(&pool, email).await.map_err(|e| format!("{e:#}"))? else {
+                return Err(format!("no user with the email {email}").into());
+            };
+            let link = aikido_email::users::routes::new_reset_link(&pool, cfg.public_url.as_deref(), user.id, chrono::Utc::now())
+                .await
+                .map_err(|e| format!("{e:#}"))?;
+            println!("One-time link for {} (valid 1 hour, works one time):\n{link}", user.email);
+        }
         ["backfill-leads"] => {
             let cfg = Config::from_env().map_err(|e| format!("{e:#}"))?;
             let pool = db::connect(&cfg.database_url).await.map_err(|e| format!("{e:#}"))?;
@@ -131,7 +146,29 @@ async fn serve() -> anyhow::Result<()> {
     let new_keys = api_keys::bootstrap(&pool, &cfg).await?;
     api_keys::announce_new_keys(&cfg, &new_keys)?;
 
+    // No user yet: print the one-time setup code for the web app.
+    if let Some(code) = aikido_email::users::setup::ensure_setup_code(&pool, &cfg).await? {
+        aikido_email::users::setup::announce(&cfg, &code);
+    }
+    if cfg.insecure_cookies {
+        tracing::warn!("AIKIDO_INSECURE_COOKIES is on: the login cookie is not marked Secure. Use this only on a trusted network.");
+    }
+    if cfg.public_url.is_none() {
+        tracing::warn!("AIKIDO_PUBLIC_URL is not set: the web login checks the Origin against the Host header, and invite links have no host");
+    } else if cfg.plain_http_remote() {
+        tracing::warn!("AIKIDO_PUBLIC_URL is plain HTTP on another host: web logins are refused. Use HTTPS.");
+    }
+
     let state = AppState::new(pool, crypto, cfg.clone());
+    let cleanup_pool = state.pool.clone();
+    tokio::spawn(async move {
+        loop {
+            if let Err(e) = aikido_email::users::repo::cleanup(&cleanup_pool, chrono::Utc::now()).await {
+                tracing::warn!(error = %e, "could not clean old sessions");
+            }
+            tokio::time::sleep(Duration::from_secs(3600)).await;
+        }
+    });
     let factory = Arc::new(worker::RealSenders { dry_run: cfg.dry_run });
     let engine = Arc::new(worker::Engine::new(state.clone(), factory));
     if cfg.dry_run {
@@ -188,7 +225,7 @@ async fn serve() -> anyhow::Result<()> {
     let followup_cancel = followup_engine.cancel.clone();
     let import_cancel_on_stop = import_cancel.clone();
     let generator_cancel = generator_engine.cancel.clone();
-    axum::serve(listener, docs::app(state))
+    axum::serve(listener, docs::app(state).into_make_service_with_connect_info::<std::net::SocketAddr>())
         .with_graceful_shutdown(async move {
             shutdown_signal().await;
             tracing::info!("shutdown signal: no new jobs will be claimed");

@@ -3,7 +3,7 @@
 use crate::state::AppState;
 use axum::{Json, Router, extract::State, routing::get};
 use serde::Serialize;
-use utoipa::openapi::security::{Http, HttpAuthScheme, SecurityScheme};
+use utoipa::openapi::security::{ApiKey, ApiKeyValue, Http, HttpAuthScheme, SecurityScheme};
 use utoipa::{Modify, OpenApi, ToSchema};
 use utoipa_axum::{router::OpenApiRouter, routes};
 use utoipa_scalar::{Scalar, Servable};
@@ -20,6 +20,13 @@ impl Modify for SecurityAddon {
                 .into(),
         );
         components.add_security_scheme("api_key", SecurityScheme::Http(scheme));
+        components.add_security_scheme(
+            "session",
+            SecurityScheme::ApiKey(ApiKey::Cookie(ApiKeyValue::with_description(
+                "__Host-aikido_session",
+                "The web login cookie. Calls that change data also need the `X-CSRF-Token` header and an `Origin` that is this app.",
+            ))),
+        );
     }
 }
 
@@ -40,6 +47,10 @@ impl Modify for SecurityAddon {
         (name = "campaigns", description = "Campaigns: a sequence, sender accounts and leads. Scope: campaigns"),
         (name = "generator", description = "Email Generator: AI text for the slots of a step, providers, review, usage. Scope: generator"),
         (name = "admin", description = "API keys. Scope: admin"),
+        (name = "auth", description = "Web login, first-boot setup, invites. No key needed"),
+        (name = "users", description = "Web users, sessions, team. Needs a web session"),
+        (name = "ui", description = "Helpers for the web app: config, onboarding, alerts. A key or a session"),
+        (name = "reports", description = "Daily numbers for charts. Scope: campaigns"),
         (name = "system", description = "No key needed"),
     )
 )]
@@ -74,7 +85,11 @@ pub fn api_router(state: AppState) -> (axum::Router<AppState>, utoipa::openapi::
         .merge(crate::leads::routes::router(state.clone()))
         .merge(crate::campaigns::routes::router(state.clone()))
         .merge(crate::generator::routes::router(state.clone()))
-        .merge(crate::admin::routes::router(state))
+        .merge(crate::reports::routes::router(state.clone()))
+        .merge(crate::admin::routes::router(state.clone()))
+        .merge(crate::users::routes::public_router())
+        .merge(crate::users::routes::router(state.clone()))
+        .merge(crate::ui_api::routes::router(state))
         .split_for_parts();
     (router, api)
 }
@@ -86,6 +101,7 @@ pub fn app(state: AppState) -> Router {
     router
         .route("/openapi.json", get(move || async move { Json(spec) }))
         .merge(Scalar::with_url("/docs", api))
+        .fallback(crate::web::fallback)
         .layer(axum::extract::DefaultBodyLimit::max(25 * 1024 * 1024))
         .layer(tower_http::cors::CorsLayer::permissive())
         .layer(tower_http::timeout::TimeoutLayer::with_status_code(

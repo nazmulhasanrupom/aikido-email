@@ -197,6 +197,26 @@ async fn oauth_start_and_callback(pool: PgPool) {
     assert_eq!(r.body["error"]["code"], "oauth_bad_state");
 }
 
+#[sqlx::test]
+async fn the_callback_shows_a_page_to_browsers_and_json_to_others(pool: PgPool) {
+    let state = app_state(pool);
+    let uri = "/v1/accounts/oauth/gmail/callback?code=abc&state=forged";
+    let (status, headers, body) = call_raw(&state, uri, None).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(headers["content-type"].to_str().unwrap().starts_with("application/json"));
+    assert!(String::from_utf8_lossy(&body).contains("oauth_bad_state"));
+
+    let r = call_with(&state, "GET", uri, &[("accept", "text/html,application/xhtml+xml")], None).await;
+    assert_eq!(r.status, StatusCode::BAD_REQUEST);
+    assert!(r.headers["content-type"].to_str().unwrap().starts_with("text/html"));
+    // call_with reads JSON only, so read the page as text
+    let app = aikido_email::docs::app(state.clone());
+    let req = axum::http::Request::builder().uri(uri).header("accept", "text/html").body(axum::body::Body::empty()).unwrap();
+    let resp = tower::ServiceExt::oneshot(app, req).await.unwrap();
+    let page = String::from_utf8(axum::body::to_bytes(resp.into_body(), 1 << 20).await.unwrap().to_vec()).unwrap();
+    assert!(page.contains("aikido:oauth") && page.contains("\"ok\":false") && page.contains("oauth_bad_state"), "{page}");
+}
+
 fn oauth2_url(url: &str) -> Vec<(String, String)> {
     oauth2::url::Url::parse(url).unwrap().query_pairs().map(|(k, v)| (k.into_owned(), v.into_owned())).collect()
 }

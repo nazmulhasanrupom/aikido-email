@@ -36,6 +36,8 @@ pub struct Sealed {
 
 pub struct Crypto {
     cipher: Aes256Gcm,
+    /// Kept only to derive sub-keys (password pepper, CSRF key) with HKDF.
+    master: Zeroizing<[u8; 32]>,
 }
 
 impl Crypto {
@@ -43,7 +45,18 @@ impl Crypto {
         if key.len() != 32 {
             return Err(CryptoError::BadKeyLength);
         }
-        Ok(Self { cipher: Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(key)) })
+        let mut master = Zeroizing::new([0u8; 32]);
+        master.copy_from_slice(key);
+        Ok(Self { cipher: Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(key)), master })
+    }
+
+    /// A 32-byte sub-key for one purpose (HKDF-SHA256 over the master key, `info` names the purpose).
+    /// Different `info` values give unrelated keys, so a leak of one does not give the master key.
+    pub fn derive_key(&self, info: &str) -> Zeroizing<[u8; 32]> {
+        let hk = hkdf::Hkdf::<sha2::Sha256>::new(None, &*self.master);
+        let mut out = Zeroizing::new([0u8; 32]);
+        hk.expand(info.as_bytes(), &mut *out).expect("32 bytes is a valid HKDF length");
+        out
     }
 
     fn from_base64(text: &str) -> Result<Self, CryptoError> {
@@ -122,6 +135,14 @@ mod tests {
         assert_ne!(sealed.ciphertext, b"secret");
         let plain = c.decrypt(&sealed.ciphertext, &sealed.nonce, sealed.key_version, b"account-1").unwrap();
         assert_eq!(&*plain, b"secret");
+    }
+
+    #[test]
+    fn derived_keys_differ_by_purpose_and_by_master_key() {
+        let a = crypto().derive_key("one");
+        assert_eq!(*a, *crypto().derive_key("one"));
+        assert_ne!(*a, *crypto().derive_key("two"));
+        assert_ne!(*a, *Crypto::from_key_bytes(&[8u8; 32]).unwrap().derive_key("one"));
     }
 
     #[test]

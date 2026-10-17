@@ -11,7 +11,7 @@ use crate::sending::tokens;
 use crate::state::AppState;
 use axum::extract::State;
 use axum::http::StatusCode;
-use axum::response::Html;
+use axum::response::{Html, IntoResponse, Response};
 use chrono::Utc;
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
@@ -88,18 +88,51 @@ fn escape_html(s: &str) -> String {
     s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
 }
 
+/// The data for the page script, safe inside `<script>`: no `<`, `>` or `&` in it.
+fn script_json(value: &serde_json::Value) -> String {
+    value.to_string().replace('<', "\\u003c").replace('>', "\\u003e").replace('&', "\\u0026")
+}
+
+/// The page the OAuth popup shows. When a web app opened it, the script sends the result
+/// to that window (same origin only) and closes the popup. In a plain tab it stays as text.
+fn popup_page(ok: bool, email: Option<&str>, code: Option<&str>, text: &str) -> String {
+    let message = serde_json::json!({ "type": "aikido:oauth", "ok": ok, "email": email, "code": code });
+    format!(
+        "<!doctype html><meta charset=utf-8><title>{}</title><p>{}</p>\
+         <script>(function(){{var m={};try{{if(window.opener){{window.opener.postMessage(m,location.origin);window.close();}}}}catch(e){{}}}})();</script>",
+        if ok { "Connected" } else { "Not connected" },
+        escape_html(text),
+        script_json(&message)
+    )
+}
+
+fn wants_html(headers: &axum::http::HeaderMap) -> bool {
+    headers.get(axum::http::header::ACCEPT).and_then(|v| v.to_str().ok()).is_some_and(|a| a.contains("text/html"))
+}
+
 /// Where the provider sends the user back. No key: the signed `state` value protects it.
 #[utoipa::path(get, path = "/v1/accounts/oauth/{provider}/callback", tag = "accounts",
     params(("provider" = String, Path, description = "gmail or microsoft"), CallbackQuery),
-    responses((status = 200, description = "A small page that says the account is connected", content_type = "text/html")),
-    description = "No key needed. Protected by the signed `state` value.")]
-#[axum::debug_handler(state = AppState)]
+    responses((status = 200, description = "A small page that says the account is connected. It tells the window that opened it (`postMessage` `{ type: \"aikido:oauth\", ok, email, code }`) and closes itself.", content_type = "text/html")),
+    description = "No key needed. Protected by the signed `state` value. A browser (it asks for HTML) gets an HTML page for errors too, with the same status code. Other callers get the JSON error.")]
 async fn oauth_callback(
     State(st): State<AppState>,
+    headers: axum::http::HeaderMap,
     ApiPath(provider): ApiPath<String>,
     ApiQuery(q): ApiQuery<CallbackQuery>,
-) -> ApiResult<Html<String>> {
-    let provider = parse_provider(&provider)?;
+) -> Response {
+    match finish_oauth(&st, &provider, q).await {
+        Ok(email) => {
+            tracing::info!(%email, "account connected");
+            Html(popup_page(true, Some(&email), None, &format!("Connected: {email}. You can close this tab."))).into_response()
+        }
+        Err(e) if wants_html(&headers) => (e.status, Html(popup_page(false, None, Some(&e.code), &e.message))).into_response(),
+        Err(e) => e.into_response(),
+    }
+}
+
+async fn finish_oauth(st: &AppState, provider: &str, q: CallbackQuery) -> ApiResult<String> {
+    let provider = parse_provider(provider)?;
     if let Some(err) = q.error {
         let desc = q.error_description.unwrap_or_default();
         return Err(ApiError::bad_request("oauth_denied", format!("The login failed: {err} {desc}")));
@@ -107,9 +140,8 @@ async fn oauth_callback(
     let (Some(code), Some(state_value)) = (q.code, q.state) else {
         return Err(ApiError::bad_request("oauth_bad_callback", "The callback needs 'code' and 'state'."));
     };
-    let payload = oauth::open(&st.crypto, &state_value, provider)
-        .map_err(|m| ApiError::bad_request("oauth_bad_state", m))?;
-    let redirect = redirect_url(&st, provider)?;
+    let payload = oauth::open(&st.crypto, &state_value, provider).map_err(|m| ApiError::bad_request("oauth_bad_state", m))?;
+    let redirect = redirect_url(st, provider)?;
     let connected = match provider {
         Provider::Gmail => gmail::web_finish(&redirect, code, payload.verifier).await,
         _ => microsoft::web_finish(&redirect, code, payload.verifier).await,
@@ -118,11 +150,8 @@ async fn oauth_callback(
 
     let email = connected.email.clone();
     let account = repo::save_oauth_login(&st.pool, &st.crypto, provider, connected).await?;
-    tracing::info!(account_id = %account.id, %email, "account connected");
-    Ok(Html(format!(
-        "<!doctype html><meta charset=utf-8><title>Connected</title><p>Connected: {}. You can close this tab.</p>",
-        escape_html(&email)
-    )))
+    tracing::info!(account_id = %account.id, "account saved from the web login");
+    Ok(email)
 }
 
 // ---------- SMTP / IMAP ----------
@@ -444,5 +473,23 @@ async fn delete_account(State(st): State<AppState>, ApiPath(id): ApiPath<Uuid>) 
     match repo::soft_delete(&st.pool, id).await? {
         Some(n) => Ok(ApiJson(DeleteReply { deleted: true, cancelled_jobs: n })),
         None => Err(ApiError::not_found("account_not_found", "No account with this id.")),
+    }
+}
+
+#[cfg(test)]
+mod popup_tests {
+    use super::*;
+
+    #[test]
+    fn the_popup_page_reports_to_its_opener_and_cannot_break_out_of_the_script() {
+        let page = popup_page(true, Some("</script><b>x@example.com"), None, "Connected: </script><b>x@example.com");
+        assert!(page.contains("window.opener.postMessage(m,location.origin)"));
+        assert!(page.contains("window.close()"));
+        assert!(page.contains("\"type\":\"aikido:oauth\"") && page.contains("\"ok\":true"));
+        // the only `</script>` is the real end tag
+        assert_eq!(page.matches("</script>").count(), 1, "{page}");
+        assert!(!page.contains("<b>"));
+        let failed = popup_page(false, None, Some("oauth_denied"), "The login failed");
+        assert!(failed.contains("\"ok\":false") && failed.contains("\"code\":\"oauth_denied\""));
     }
 }

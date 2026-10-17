@@ -3,6 +3,11 @@ name = "aikido_email"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+# `ui` embeds the web app from ui/dist into the binary. `--no-default-features` builds an API-only server.
+default = ["ui"]
+ui = ["dep:rust-embed"]
+
 [dependencies]
 tokio = { version = "1.53.2", features = ["full"] }
 oauth2 = { version = "5.0.0", default-features = false, features = ["reqwest", "rustls-tls"] }
@@ -45,6 +50,20 @@ html2text = "0.17.3"
 regex = "1.13.1"
 csv = "1.4.0"
 hickory-resolver = "0.26.3"
+argon2 = "0.5.3"
+hkdf = "0.13.0"
+hmac = "0.13.0"
+zxcvbn = "3.1.1"
+unicode-normalization = "0.1.26"
+rust-embed = { version = "8.13.0", features = ["mime-guess", "debug-embed"], optional = true }
 
 [dev-dependencies]
 tower = { version = "0.5.3", features = ["util"] }
+
+# Password hashing and the like are slow in an unoptimized build. Keep them fast in tests.
+[profile.dev.package.argon2]
+opt-level = 3
+[profile.dev.package.blake2]
+opt-level = 3
+[profile.dev.package.zxcvbn]
+opt-level = 3

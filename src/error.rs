@@ -10,13 +10,15 @@ pub struct ApiError {
     pub status: StatusCode,
     pub code: String,
     pub message: String,
+    /// Seconds to wait. Sent as the `Retry-After` header and as `error.retry_after_secs`.
+    pub retry_after: Option<i64>,
 }
 
 pub type ApiResult<T> = Result<T, ApiError>;
 
 impl ApiError {
     pub fn new(status: StatusCode, code: impl Into<String>, message: impl Into<String>) -> Self {
-        Self { status, code: code.into(), message: message.into() }
+        Self { status, code: code.into(), message: message.into(), retry_after: None }
     }
     pub fn bad_request(code: impl Into<String>, message: impl Into<String>) -> Self {
         Self::new(StatusCode::BAD_REQUEST, code, message)
@@ -36,6 +38,11 @@ impl ApiError {
     pub fn unprocessable(code: impl Into<String>, message: impl Into<String>) -> Self {
         Self::new(StatusCode::UNPROCESSABLE_ENTITY, code, message)
     }
+    pub fn too_many(code: impl Into<String>, message: impl Into<String>, retry_after: i64) -> Self {
+        let mut e = Self::new(StatusCode::TOO_MANY_REQUESTS, code, message);
+        e.retry_after = Some(retry_after);
+        e
+    }
     pub fn internal() -> Self {
         Self::new(StatusCode::INTERNAL_SERVER_ERROR, "internal_error", "Something went wrong on the server.")
     }
@@ -43,8 +50,17 @@ impl ApiError {
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
-        let body = json!({ "error": { "code": self.code, "message": self.message } });
-        (self.status, axum::Json(body)).into_response()
+        let mut error = json!({ "code": self.code, "message": self.message });
+        let response = match self.retry_after {
+            Some(secs) => {
+                error["retry_after_secs"] = json!(secs);
+                let mut r = (self.status, axum::Json(json!({ "error": error }))).into_response();
+                r.headers_mut().insert(axum::http::header::RETRY_AFTER, axum::http::HeaderValue::from(secs.max(1) as u64));
+                r
+            }
+            None => (self.status, axum::Json(json!({ "error": error }))).into_response(),
+        };
+        response
     }
 }
 

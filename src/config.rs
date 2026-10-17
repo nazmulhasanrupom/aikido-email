@@ -28,6 +28,11 @@ pub struct Config {
     pub leads_enabled: bool,
     /// `false` turns the AI generation worker off (this copy writes no AI text).
     pub generator_enabled: bool,
+    /// `AIKIDO_INSECURE_COOKIES=true`: the session cookie works over plain HTTP on any host.
+    /// Only for a trusted network. A warning is logged at every start.
+    pub insecure_cookies: bool,
+    /// `AIKIDO_TRUST_PROXY=true`: the client IP is the last `X-Forwarded-For` entry. Set it only behind your own proxy.
+    pub trust_proxy: bool,
     /// Keys set by the operator (`AIKIDO_<SCOPE>_API_KEY`).
     pub env_api_keys: HashMap<Scope, String>,
 }
@@ -85,7 +90,25 @@ impl Config {
             followups_enabled: parse_or("AIKIDO_FOLLOWUPS_ENABLED", true)?,
             leads_enabled: parse_or("AIKIDO_LEADS_ENABLED", true)?,
             generator_enabled: parse_or("AIKIDO_GENERATOR_ENABLED", true)?,
+            insecure_cookies: parse_or("AIKIDO_INSECURE_COOKIES", false)?,
+            trust_proxy: parse_or("AIKIDO_TRUST_PROXY", false)?,
             env_api_keys,
         })
+    }
+}
+
+impl Config {
+    /// The browser address of the app is plain HTTP on a host that is not this machine.
+    /// A `Secure` cookie is not stored there, so the login would not work.
+    pub fn plain_http_remote(&self) -> bool {
+        let Some(url) = &self.public_url else { return false };
+        let Some(rest) = url.strip_prefix("http://") else { return false };
+        let host = rest.split(['/', ':']).next().unwrap_or("");
+        let host = if rest.starts_with('[') { "[::1]" } else { host };
+        !self.insecure_cookies && !matches!(host, "localhost" | "127.0.0.1" | "[::1]")
+    }
+
+    pub fn https(&self) -> bool {
+        self.public_url.as_deref().is_some_and(|u| u.starts_with("https"))
     }
 }

@@ -18,6 +18,12 @@ cp .env.example .env                      # then fill in the provider keys you n
 DATABASE_URL=postgres://aikido:aikido@127.0.0.1:55432/aikido cargo run -- serve
 ```
 
+The first boot also prints a one-time **setup code**. Open `http://localhost:8080`, type the code, and make the owner account (the web app).
+In development run `pnpm dev` in `ui/` and open `http://localhost:5173` (set `AIKIDO_PUBLIC_URL=http://localhost:5173` so the login check passes).
+Lost the owner password? `cargo run -- reset-password <email>` prints a one-time link.
+The web app is built into the binary from `ui/dist` (`pnpm build` in `ui/`). `cargo build --no-default-features` makes an API-only server.
+Behind a reverse proxy set `AIKIDO_PUBLIC_URL` (the browser address) and `AIKIDO_TRUST_PROXY=true`. Without HTTPS the web login does not work (except on localhost).
+
 The first boot prints four API keys one time (`admin`, `accounts`, `sending`, `replies`) and saves them in
 `./data/initial_keys.txt`. An old database gets only the new `replies` key. Back up `./data/encryption.key`.
 

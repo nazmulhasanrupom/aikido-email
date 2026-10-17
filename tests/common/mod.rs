@@ -42,6 +42,8 @@ pub fn test_config(env_api_keys: HashMap<Scope, String>) -> Config {
         followups_enabled: false,
         leads_enabled: false,
         generator_enabled: false,
+        insecure_cookies: false,
+        trust_proxy: false,
         env_api_keys,
     }
 }
@@ -83,6 +85,86 @@ pub async fn call(state: &AppState, method: &str, uri: &str, key: Option<&str>, 
     let bytes = axum::body::to_bytes(resp.into_body(), 10 * 1024 * 1024).await.unwrap();
     let body = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
     Response { status, body }
+}
+
+pub struct Full {
+    pub status: StatusCode,
+    pub headers: axum::http::HeaderMap,
+    pub body: Value,
+}
+
+/// Like `call`, with any headers (cookies, CSRF token, Origin) and the response headers back.
+pub async fn call_with(state: &AppState, method: &str, uri: &str, headers: &[(&str, &str)], body: Option<Value>) -> Full {
+    let app = aikido_email::docs::app(state.clone());
+    let mut req = Request::builder().method(method).uri(uri);
+    for (k, v) in headers {
+        req = req.header(*k, *v);
+    }
+    let req = match body {
+        Some(b) => req.header("content-type", "application/json").body(Body::from(b.to_string())).unwrap(),
+        None => req.body(Body::empty()).unwrap(),
+    };
+    let resp = app.oneshot(req).await.unwrap();
+    let (parts, body) = resp.into_parts();
+    let bytes = axum::body::to_bytes(body, 10 * 1024 * 1024).await.unwrap();
+    let body = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
+    Full { status: parts.status, headers: parts.headers, body }
+}
+
+/// A logged-in web user in a test.
+#[derive(Clone)]
+pub struct Web {
+    pub cookie: String,
+    pub csrf: String,
+}
+
+pub const ORIGIN: &str = "http://localhost:8080";
+
+impl Web {
+    /// Call as this user: cookie, CSRF token and Origin, like the browser does.
+    pub async fn call(&self, state: &AppState, method: &str, uri: &str, body: Option<Value>) -> Full {
+        let headers = [("cookie", self.cookie.as_str()), ("x-csrf-token", self.csrf.as_str()), ("origin", ORIGIN)];
+        call_with(state, method, uri, &headers, body).await
+    }
+}
+
+/// Read the session cookie out of a login answer.
+pub fn web_from(resp: &Full) -> Web {
+    let set = resp.headers.get("set-cookie").expect("a Set-Cookie header").to_str().unwrap();
+    let cookie = set.split(';').next().unwrap().to_string();
+    Web { cookie, csrf: resp.body["csrf_token"].as_str().expect("a csrf_token").to_string() }
+}
+
+pub const STRONG: &str = "correct horse battery staple";
+
+/// A clock the test moves, shared by all copies of the server in the test.
+pub fn shared_clock(state: &mut AppState, start: DateTime<Utc>) -> Arc<Mutex<DateTime<Utc>>> {
+    let clock = Arc::new(Mutex::new(start));
+    let c = clock.clone();
+    state.clock = Arc::new(move || *c.lock().unwrap());
+    clock
+}
+
+/// First boot: make the setup code, set up the owner, return the owner's session.
+pub async fn setup_owner(state: &AppState) -> Web {
+    let code = aikido_email::users::setup::ensure_setup_code(&state.pool, &state.config).await.unwrap().expect("a code on a fresh database");
+    let body = serde_json::json!({
+        "setup_code": code, "name": "Olivia Owner", "email": "owner@example.com", "password": STRONG, "workspace_name": "Acme"
+    });
+    let resp = call_with(state, "POST", "/v1/auth/setup", &[("origin", ORIGIN)], Some(body)).await;
+    assert_eq!(resp.status, StatusCode::CREATED, "{:?}", resp.body);
+    web_from(&resp)
+}
+
+/// An invite for `email`, accepted. Returns the new user's session.
+pub async fn add_user(state: &AppState, owner: &Web, email: &str, role: &str) -> Web {
+    let r = owner.call(state, "POST", "/v1/users/invites", Some(serde_json::json!({ "email": email, "role": role }))).await;
+    assert_eq!(r.status, StatusCode::CREATED, "{:?}", r.body);
+    let token = r.body["link"].as_str().unwrap().rsplit('/').next().unwrap().to_string();
+    let body = serde_json::json!({ "name": "Some Person", "password": "purple monkey dishwasher lamp" });
+    let a = call_with(state, "POST", &format!("/v1/auth/invites/{token}/accept"), &[("origin", ORIGIN)], Some(body)).await;
+    assert_eq!(a.status, StatusCode::CREATED, "{:?}", a.body);
+    web_from(&a)
 }
 
 /// A multipart form. Each part: (name, file name, bytes).

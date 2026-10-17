@@ -1190,3 +1190,66 @@ async fn deleting_a_lead_takes_it_out_of_its_campaign(pool: PgPool) {
     // and the stopped enrollment does not stop the campaign from going on
     assert_eq!(d["counts"]["enrollments"], json!({}), "the enrollment row stays, but it is not linked to the campaign any more");
 }
+
+// ---------- UI build map B7: the Leads tab rows ----------
+
+#[sqlx::test]
+async fn campaign_lead_rows_carry_the_follow_up_status(pool: PgPool) {
+    let c = C::new(pool).await;
+    let a = c.account("a@x.test").await;
+    let camp = id(&c.campaign(&[a], json!({ "daily_new_leads": 5000 })).await);
+    let ids = c.many_leads(3, "acme.com").await;
+    c.add(&camp, &ids).await;
+
+    // not enrolled yet: the step fields are empty, the lead fields are there
+    let rows = c.ok("GET", &format!("/v1/campaigns/{camp}/leads"), None).await;
+    let first = &rows["leads"][0];
+    assert_eq!(first["steps_total"], 2);
+    assert!(first["current_step"].is_null() && first["next_due_at"].is_null() && first["wait_reason"].is_null());
+    assert_eq!(first["contact_state"], "new");
+    assert!(first["interest"].is_null());
+    assert_eq!(first["first_name"], "N0");
+
+    c.launch(&camp).await;
+    c.round(Duration::minutes(1)).await;
+    let rows = c.ok("GET", &format!("/v1/campaigns/{camp}/leads"), None).await;
+    let rows = rows["leads"].as_array().unwrap();
+    assert_eq!(rows.len(), 3);
+    for r in rows {
+        assert_eq!(r["state"], "enrolled");
+        assert_eq!(r["steps_total"], 2);
+        assert!(r["current_step"].as_i64().unwrap() >= 1);
+        assert_eq!(r["contact_state"].as_str().map(|s| s == "in_sequence" || s == "contacted"), Some(true), "{r}");
+    }
+    // one lead sent step 1: now waiting for the delay of step 2
+    let waiting = rows.iter().filter(|r| r["wait_reason"] == "waiting_delay").collect::<Vec<_>>();
+    assert!(!waiting.is_empty(), "{rows:?}");
+    assert_eq!(waiting[0]["current_step"], 2);
+    assert!(waiting[0]["next_due_at"].is_string());
+
+    // a stopped enrollment shows its stop reason
+    let enrollment = rows[0]["enrollment_id"].as_str().unwrap().to_string();
+    let stop = c.fapi("POST", &format!("/v1/followups/enrollments/{enrollment}/stop"), None).await;
+    assert!(stop.status.is_success(), "{}", stop.body);
+    let rows = c.ok("GET", &format!("/v1/campaigns/{camp}/leads"), None).await;
+    let stopped = rows["leads"].as_array().unwrap().iter().find(|r| r["enrollment_id"] == enrollment.as_str()).unwrap();
+    assert_eq!(stopped["wait_reason"], "manual");
+
+    // a text with AI parts waiting for review shows as such
+    sqlx::query("UPDATE enrollments SET status = 'active', stop_reason = NULL, next_due_at = now() - interval '1 minute' WHERE id = $1")
+        .bind(enrollment.parse::<Uuid>().unwrap())
+        .execute(&c.h.state.pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        "INSERT INTO generations (enrollment_id, lead_id, sequence_id, step_number, step_hash, status)
+         SELECT e.id, e.lead_id, e.sequence_id, e.next_step, 'h', 'pending_review' FROM enrollments e WHERE e.id = $1",
+    )
+    .bind(enrollment.parse::<Uuid>().unwrap())
+    .execute(&c.h.state.pool)
+    .await
+    .unwrap();
+    let rows = c.ok("GET", &format!("/v1/campaigns/{camp}/leads"), None).await;
+    let waiting = rows["leads"].as_array().unwrap().iter().find(|r| r["enrollment_id"] == enrollment.as_str()).unwrap();
+    assert_eq!(waiting["wait_reason"], "waiting_ai_review");
+}

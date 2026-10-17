@@ -215,3 +215,45 @@ async fn every_reply_route_needs_the_replies_scope(pool: PgPool) {
         assert_ne!(call(&h.state, m, &p, Some(&keys[&Scope::Admin]), None).await.status, StatusCode::FORBIDDEN, "admin passes {m} {p}");
     }
 }
+
+// ---------- UI build map B9: reply from the Inbox in the same thread ----------
+
+#[sqlx::test]
+async fn an_inbox_reply_can_be_sent_in_the_same_thread(pool: PgPool) {
+    let r = R::new(pool).await;
+    let (_, sending) = aikido_email::auth::api_keys::create(&r.h.state.pool, Scope::Sending, "test").await.unwrap();
+    let a = r.h.account(ME).await;
+    let lead = uuid::Uuid::now_v7();
+    let job = sent_job(&r.h.state, a, "jane@prospect.example", "<sent-0001@acme-outreach.example>", None, r.h.now() - Duration::days(1)).await;
+    sqlx::query("UPDATE send_jobs SET lead_id = $2, provider_thread_id = 'thread-9' WHERE id = $1").bind(job).bind(lead).execute(&r.h.state.pool).await.unwrap();
+    ingest_raw(&r.h.state, a, "p1", &fixture("human_plain.eml"), r.h.now()).await;
+
+    // The message gives everything a threaded answer needs.
+    let list = r.get("/v1/replies/messages?label=reply").await;
+    let m = &list.body["messages"][0];
+    let message_id = m["message_id_header"].as_str().expect("the Message-ID of the reply");
+    assert!(message_id.starts_with('<') && message_id.ends_with('>'), "{message_id}");
+    assert!(m["references_ids"].is_array());
+    assert!(m.get("provider_thread_id").is_some());
+    assert_eq!(m["lead_id"], lead.to_string());
+    assert_eq!(m["account_id"], a.to_string());
+
+    // The UI builds the reply from those fields and queues it as a manual job.
+    let mut refs: Vec<String> = m["references_ids"].as_array().unwrap().iter().map(|x| x.as_str().unwrap().to_string()).collect();
+    refs.push(message_id.to_string());
+    let body = json!({ "jobs": [{
+        "account_id": a, "to_email": "jane@prospect.example", "subject": "Re: Hello", "body_text": "Thanks, Friday works.",
+        "in_reply_to": message_id, "references": refs.join(" "), "provider_thread_id": "thread-9",
+        "priority": 100, "kind": "manual", "lead_id": lead
+    }]});
+    let queued = call(&r.h.state, "POST", "/v1/sending/jobs", Some(&sending), Some(body)).await;
+    assert_eq!(queued.status, StatusCode::OK, "{}", queued.body);
+    assert_eq!(queued.body["queued"], 1, "{}", queued.body);
+    let id = queued.body["items"][0]["job"]["id"].as_str().expect("a job id");
+    let stored = call(&r.h.state, "GET", &format!("/v1/sending/jobs/{id}"), Some(&sending), None).await.body["job"].clone();
+    assert_eq!(stored["kind"], "manual");
+    assert_eq!(stored["in_reply_to"], message_id);
+    assert_eq!(stored["provider_thread_id"], "thread-9");
+    assert_eq!(stored["lead_id"], lead.to_string());
+    assert_eq!(stored["priority"], 100);
+}

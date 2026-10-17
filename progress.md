@@ -1,13 +1,14 @@
 # AIKIDO EMAIL: Progress
 
-Last updated: 2026-10-17 (Auto Database part 1 complete)
+Last updated: 2026-10-17 (UI build map phase 1 complete)
 
 ## Status in one line
 
 The sending engine (9 phases), the Reply Check (8 phases) and the Follow-up automation (8 phases) are built and tested.
 Lead Management (leads, lists, tags, CSV import and export, email check, campaigns with a daily-limit feeder) is built, 9 phases.
 The Email Generator (an AI writes the `{{ai:slot}}` parts of a step per lead, with a worker, guard, review mode, budgets, two LLM kinds, a sequence writer and a preview) is built, 8 phases.
-Auto Database part 1 (AI column mapping for CSV import: rules, then an AI on the rest, a proposal, a confirm step, saved mappings) is built, 6 phases. 598 tests pass.
+Auto Database part 1 (AI column mapping for CSV import: rules, then an AI on the rest, a proposal, a confirm step, saved mappings) is built, 6 phases.
+The web app backend (UI build map phase 1: users, sessions, login, CSRF, UI serving, config, onboarding, alerts, reports) is built. The web app itself (`ui/`) is not started. 663 tests pass.
 **Not yet tested:** a real Gmail or Outlook send, a real Gmail or Outlook inbox read, and Outlook thread headers on a real mailbox (no live accounts yet). Only mock servers, Mailpit and GreenMail (IMAP) were used.
 **Not yet tested (Email Generator):** a real call to Anthropic, OpenAI or Ollama. Only a mock HTTP server and `FakeLlm` were used. See "Not done, or not verified (Email Generator)".
 
@@ -570,6 +571,63 @@ The test list was kept short on purpose; these cases from the map are covered:
 - No `warnings` or `problems` text for the popup beyond codes and short English sentences.
 - Not in this build, as the map says: the database connector (part 2), Excel, other transforms, the popup UI.
 
+## Web app backend: UI build map, phase 1 (built 2026-10-17)
+
+The map (`UI build map`, section 4, B1 to B11) asked for 11 backend additions before the web app. All are built. The web app itself (`ui/`, phases 2 to 8) is **not started**.
+The user approved the changes to old code on 2026-10-17. Decisions taken in the map and followed: D1 one workspace (routes will carry `/w/default/`), D2 no email variants, D3 send hours stay per account, D4 session cookie checked by the Rust server.
+
+### The parts
+
+| Part | Where | What |
+| --- | --- | --- |
+| B1 Users, passwords, sessions | `src/users/` (`password.rs`, `rate.rs`, `repo.rs`, `session.rs`, `setup.rs`, `routes.rs`), `migrations/0008_users.sql` | Argon2id with a pepper from HKDF over the master key. Sessions in the database (only the SHA-256 of the token). Rate limits in `login_attempts`. Setup code on first boot. Invites, reset links, team, transfer of ownership. `reset-password <email>` command. |
+| B2 One auth layer | `src/auth/middleware.rs` | `require_scope` takes a key or a session. `require_any` for the helpers. A key puts its scope in the request (`KeyScope`), a session puts `SessionCtx`. |
+| B3 Serve the UI | `src/web/`, `build.rs`, `Cargo.toml` feature `ui` | Embeds `ui/dist` with `rust-embed`. `build.rs` makes a placeholder `ui/dist/index.html` when the app is not built. Security headers. SPA fallback that never hides a `/v1` 404. |
+| B4 to B5, B10 | `src/ui_api/` | `/v1/ui/config`, `/v1/ui/onboarding`, `/v1/ui/workspace`, `/v1/ui/alerts`. |
+| B6 Reports | `src/reports/` | `/v1/reports/daily`, `/v1/reports/accounts`. |
+| B7 | `src/campaigns/routes.rs` | Campaign lead rows got `interest`, `contact_state`, `current_step`, `steps_total`, `next_due_at`, `wait_reason`. One query, no per-row calls. |
+| B8 | `src/accounts/routes.rs` | The OAuth callback page posts `aikido:oauth` to its opener and closes. |
+| B9 | (already there) | The inbound message already had what a threaded answer needs. A test proves the whole loop. |
+
+### Tests (B11)
+
+`tests/users.rs` (25), `tests/web.rs` (5), `tests/ui_api.rs` (8), `tests/reports.rs` (6), plus new cases in `tests/docs.rs` (every route in the spec; every non-public route refuses a call with no key and no session), `tests/campaigns.rs`, `tests/accounts.rs` and `tests/replies_routes.rs`. Unit tests in `password.rs`, `rate.rs`, `setup.rs`, `crypto.rs`.
+They cover: same time for a wrong password and an unknown email; the wait after the 5th failure; the lock after 10 across two server copies; the IP limit; no CSRF header or another `Origin` is `403`; a member gets `403` on `/v1/keys` and the engine switches; setup twice is `409`; a password change ends the other sessions; idle and absolute session timeouts; invites and resets work once; the SPA fallback; no `Access-Control-Allow-Credentials`.
+
+### Decisions and differences from the map (the code wins)
+
+| Map said | Code does | Why |
+| --- | --- | --- |
+| `csrf_token` is stored hashed and returned by `/v1/auth/state` | The token is `HMAC(csrf key from HKDF, cookie token)`. The database keeps its hash and compares it. `/v1/auth/state` derives it again. | A hash alone cannot be given back after a page reload. A new random token on each reload would break a second open tab. |
+| "growing delay (1 s, 2 s, 4 s ...)" for the 6th failure | The server answers `429 too_many_attempts` with `Retry-After` for a try during the wait. It does not hold the connection. The wait is 1 s after the 5th failure, 2 s after the 6th, up to 16 s, then the 15 minute lock at the 10th. | No open connections; a test can check it. |
+| Email counter window | 1 hour for an email, 15 minutes for an IP. | The map gave no window for the email. |
+| `users.failed_logins`, `locked_until` | They mirror the counter so the Team page can show a lock. The `login_attempts` rows decide. | Shared by all server copies. |
+| Member cannot use "Settings > Sending" | A member is refused on the engine pause and resume routes and on `PATCH` of `/v1/sending/defaults`, `/v1/replies/defaults`, `/v1/followups/settings`, plus `/v1/keys`, `/v1/ui/onboarding` and `/v1/ui/workspace`. **`PATCH /v1/leads/settings` stays open to members**, because the AI model page (open to members) sets `ai_mapping_provider_id` there. | One route serves two pages. |
+| Message fields | The inbound message has `references_ids` (not `references`). The job body field is `references`. | The code wins. The UI joins `references_ids` and the message id. |
+| `GET /v1/reports/daily` answer is "one row per day" | `{ from, to, tz, days: [...], totals }` | Room for totals and the zone. |
+| `GET /v1/reports/accounts?from&to` | Also takes `tz`, and gives `bounce_limit_pct` and `contacted`. Rates are people divided by people contacted (0 to 1). | The UI colors a rate near the pause limit. |
+| `GET /v1/ui/config` | Also gives `redirect_uris` (the addresses to enter in the Google or Microsoft console). | The "setup steps" box needs them. |
+| Reset links | New table `user_resets` and routes `GET/POST /v1/auth/reset/{token}`, `POST /v1/users/{id}/reset-link`. The web app needs a `/reset/:token` page. | The map names the CLI link but no page to open it. |
+| Email change | Needs `current_password`. | A stolen session should not be able to move the account. |
+| Plain HTTP refusal | Decided from `AIKIDO_PUBLIC_URL` (`http://` on a host other than localhost). Login, setup, accept and reset answer `400 insecure_connection`; the app page is a `503` page. | A server cannot see the browser scheme behind a proxy. |
+| Client IP | `ConnectInfo`; with `AIKIDO_TRUST_PROXY=true` the last `X-Forwarded-For` entry. | A forged header must not pick the rate-limit key. |
+| `last_seen_at` once a minute | Compared with the database value, not an in-memory timer. | Works across server copies and with the test clock. |
+| OAuth callback errors | A browser (asks for HTML) gets an HTML page with the same status code; other callers get the JSON error as before. | The popup must be able to tell the app what went wrong. |
+| Alerts | Computed from the current state on each call; nothing is stored. `account_error` also covers an account the engine paused. `generation_awaiting_review` is one alert per campaign. | Alerts clear by themselves. |
+| Stats with a date range | Not added. `GET /v1/campaigns/{id}/stats` is all-time. Ranges come from `/v1/reports/daily`. | Smaller change. |
+
+### New settings
+
+`AIKIDO_INSECURE_COOKIES`, `AIKIDO_TRUST_PROXY` (see `docs/API.md` section 15). The `Config` struct has two new fields, so tests that build it by hand need them.
+
+### Not done, or not verified (web app backend)
+
+- **No browser has used it yet.** Everything was tested with HTTP calls in tests and a `curl` smoke test of setup, the page headers and `reset-password`. The cookie behaviour on `http://localhost` (a `__Host-` cookie with `Secure`) depends on the browser: Chrome and Firefox accept it, Safari does not. Use `AIKIDO_INSECURE_COOKIES=true` there.
+- **The OAuth popup message** (`postMessage`) is tested as text only. Some provider pages set a `Cross-Origin-Opener-Policy` that cuts `window.opener`. The map's fallback (poll `GET /v1/accounts` every 2 s) covers it.
+- **Asset caching headers** (`/assets/*` immutable) are written but not tested, because `ui/dist` holds only the placeholder page until the app is built.
+- **Email sending of invites and resets:** not in v1, as the map says. The admin copies the link.
+- `ui/dist` is git-ignored. `build.rs` makes a placeholder page so `cargo build` works before the app exists.
+
 ## Not done, or not verified (follow-ups)
 
 - **Outlook thread headers on a real mailbox:** not tested (see above).
@@ -606,7 +664,8 @@ The test list was kept short on purpose; these cases from the map are covered:
 7. Build the later steps that plug into the hooks: Auto Database part 2, the real database connector (it reuses `SampleSet`, the rule mapper, the AI mapper and the templates, then calls `leads::upsert::upsert_batch`), AI agent and chatbot (reads `GET /v1/leads/{id}/context`, sets `interest`). The Email Generator is built.
 7a. Try the import mapping for real: upload a CSV with `POST /v1/leads/imports?auto_map=true`, read the proposal, then confirm.
 7b. Try the Email Generator for real: add one provider, run `POST /v1/generator/providers/{id}/test`, preview one lead, then run the first campaign in review mode and read 20 outputs.
-8. Commit the work.
+8. Build the web app (`ui/`): UI build map phases 2 to 8. Also add pages the backend now needs: `/reset/:token`. Then try the login in a real browser (Chrome, Firefox, Safari).
+9. Commit the work.
 
 ## Handy facts
 

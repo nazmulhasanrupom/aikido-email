@@ -139,7 +139,42 @@ const EXPECTED: &[(&str, &str, Option<&str>)] = &[
     ("post", "/v1/keys", Some("admin")),
     ("post", "/v1/keys/{id}/rotate", Some("admin")),
     ("delete", "/v1/keys/{id}", Some("admin")),
+    // the web app: login (no key), team (a session), helpers (a key or a session), numbers for charts
+    ("get", "/v1/auth/state", None),
+    ("post", "/v1/auth/setup", None),
+    ("post", "/v1/auth/login", None),
+    ("post", "/v1/auth/logout", None),
+    ("get", "/v1/auth/invites/{token}", None),
+    ("post", "/v1/auth/invites/{token}/accept", None),
+    ("get", "/v1/auth/reset/{token}", None),
+    ("post", "/v1/auth/reset/{token}", None),
+    ("get", "/v1/users/me", None),
+    ("patch", "/v1/users/me", None),
+    ("post", "/v1/users/me/password", None),
+    ("get", "/v1/users/me/sessions", None),
+    ("delete", "/v1/users/me/sessions/{id}", None),
+    ("get", "/v1/users", None),
+    ("patch", "/v1/users/{id}", None),
+    ("delete", "/v1/users/{id}", None),
+    ("post", "/v1/users/invites", None),
+    ("get", "/v1/users/invites", None),
+    ("delete", "/v1/users/invites/{id}", None),
+    ("post", "/v1/users/{id}/transfer-ownership", None),
+    ("post", "/v1/users/{id}/reset-link", None),
+    ("get", "/v1/ui/config", None),
+    ("get", "/v1/ui/onboarding", None),
+    ("patch", "/v1/ui/onboarding", Some("admin")),
+    ("get", "/v1/ui/alerts", None),
+    ("get", "/v1/ui/workspace", None),
+    ("patch", "/v1/ui/workspace", Some("admin")),
+    ("get", "/v1/reports/daily", Some("campaigns")),
+    ("get", "/v1/reports/accounts", Some("campaigns")),
 ];
+
+/// Routes that need no key and no session. Every other route must refuse a call with neither.
+fn is_public(path: &str) -> bool {
+    path == "/health" || path == "/v1/accounts/oauth/{provider}/callback" || path.starts_with("/v1/auth/")
+}
 
 #[sqlx::test]
 async fn every_route_is_in_the_spec_with_its_scope(pool: PgPool) {
@@ -163,4 +198,23 @@ async fn every_route_is_in_the_spec_with_its_scope(pool: PgPool) {
 
     // /docs and /openapi.json need no key.
     assert_eq!(call(&state, "GET", "/docs", None, None).await.status, axum::http::StatusCode::OK);
+}
+
+#[sqlx::test]
+async fn every_route_but_the_public_ones_refuses_a_call_with_no_key_and_no_session(pool: PgPool) {
+    let state = app_state(pool);
+    let spec = call(&state, "GET", "/openapi.json", None, None).await.body;
+    let mut checked = 0;
+    for (path, item) in spec["paths"].as_object().unwrap() {
+        if is_public(path) {
+            continue;
+        }
+        let uri = path.replace("{key}", "x").replace("{provider}", "gmail").replace("{token}", "x").replace("{id}", &uuid::Uuid::now_v7().to_string());
+        for method in item.as_object().unwrap().keys() {
+            let r = call(&state, &method.to_uppercase(), &uri, None, None).await;
+            assert_eq!(r.status, axum::http::StatusCode::UNAUTHORIZED, "{method} {path} answers without any login: {}", r.body);
+            checked += 1;
+        }
+    }
+    assert!(checked > 100, "only {checked} routes were checked");
 }

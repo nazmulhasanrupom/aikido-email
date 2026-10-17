@@ -27,6 +27,7 @@ The engine stores connected email accounts and sends queued emails one at a time
 18. [Leads (`leads`)](#18-leads-leads)
 19. [Campaigns (`campaigns`)](#19-campaigns-campaigns)
 20. [Email Generator (`generator`)](#20-email-generator-generator)
+21. [Web app: login, team, helpers, reports](#21-web-app-login-team-helpers-reports)
 
 ---
 
@@ -109,7 +110,9 @@ Each step has its own key. A key works only on routes of its own scope. A key wi
 | `campaigns` | `/v1/campaigns/*` | Yes |
 | `generator` | `/v1/generator/*` | Yes |
 
-**Routes that need no key:** `GET /health`, `GET /docs`, `GET /openapi.json`, and `GET /v1/accounts/oauth/{provider}/callback` (protected by a sealed `state` value).
+**Routes that need no key:** `GET /health`, `GET /docs`, `GET /openapi.json`, `GET /v1/accounts/oauth/{provider}/callback` (protected by a sealed `state` value), and `/v1/auth/*` (the web login, [section 21](#21-web-app-login-team-helpers-reports)).
+
+**Web sessions.** The web app does not hold API keys. A person logs in with email and password and gets a session cookie. On the routes above, a session works instead of a key: an `owner` or `admin` acts as the `admin` scope; a `member` acts as every scope except `admin`, and is also refused on the system switches (engine pause and resume, and `PATCH` of `/v1/sending/defaults`, `/v1/replies/defaults`, `/v1/followups/settings`). A call with a cookie that changes data needs the `X-CSRF-Token` header and an `Origin` that is this app. Details in [section 21](#21-web-app-login-team-helpers-reports).
 
 **Key format:** `aik_<scope>_<random>`, for example `aik_sending_7fK2...`. The scope in the text is only for humans. The server always checks the scope stored in the database.
 
@@ -122,6 +125,8 @@ Only the SHA-256 hash of a key is stored. `last_used_at` is updated at most once
 | No key sent | `401` | `missing_api_key` |
 | Unknown or revoked key | `401` | `invalid_api_key` |
 | Valid key, wrong scope | `403` | `wrong_scope` |
+| A member session on an admin-only route | `403` | `admin_only` |
+| A session call without a good CSRF token or `Origin` | `403` | `csrf_failed` |
 
 ---
 
@@ -311,7 +316,7 @@ Needed provider permissions: Gmail `gmail.send`; Microsoft `Mail.Send` (and `off
 
 ### `GET /v1/accounts/oauth/{provider}/callback`
 
-**No key.** The provider sends the user's browser here. The signed `state` value (sealed with the server's encryption key, valid 10 minutes) protects it. It returns a small HTML page: "Connected: <email>. You can close this tab."
+**No key.** The provider sends the user's browser here. The signed `state` value (sealed with the server's encryption key, valid 10 minutes) protects it. It returns a small HTML page: "Connected: <email>. You can close this tab." When the web app opened the page in a popup, a script sends `{ type: "aikido:oauth", ok, email, code }` to that window with `postMessage` (to this origin only) and closes the popup. `ok` is `false` and `code` is an error code (below) when the login failed. A browser (it asks for `text/html`) also gets an HTML page for errors, with the same status code; any other caller gets the JSON error.
 
 Connecting the same inbox twice updates the existing account. It does not make a duplicate. A reconnect also clears `disconnected` / `error` and un-pauses the account.
 
@@ -946,7 +951,9 @@ The terminal `add` commands also save the account in the encrypted store when `D
 | `DATABASE_URL` | Yes | none | Postgres 16+ connection. The server refuses to start without it. |
 | `AIKIDO_ENCRYPTION_KEY` | No | auto-made in `<AIKIDO_DATA_DIR>/encryption.key` | 32-byte key, base64 (`openssl rand -base64 32`). **Back it up.** If it is lost, every account must be connected again. |
 | `AIKIDO_BIND_ADDR` | No | `0.0.0.0:8080` | Server address. |
-| `AIKIDO_PUBLIC_URL` | For OAuth web login | none | Base URL for the OAuth redirect links. |
+| `AIKIDO_PUBLIC_URL` | For OAuth web login and the web app | none | The address people use in the browser, for example `https://mail.example.com`. Used for the OAuth redirect links, invite links, and the `Origin` check of the web login. If it is `http://` on another host than localhost, the web login is refused. |
+| `AIKIDO_INSECURE_COOKIES` | No | `false` | `true` lets the web login work over plain HTTP on any host (no `Secure` cookie). Only for a trusted network. |
+| `AIKIDO_TRUST_PROXY` | No | `false` | `true`: the client IP (for login rate limits) is the last `X-Forwarded-For` entry. Set it only behind your own reverse proxy. |
 | `AIKIDO_DATA_DIR` | No | `./data` | Where the auto-made key and first API keys are written (mode `600`). |
 | `AIKIDO_ADMIN_API_KEY`, `AIKIDO_ACCOUNTS_API_KEY`, `AIKIDO_SENDING_API_KEY` | No | auto-made | Set your own keys for a deploy. |
 | `AIKIDO_SCHEDULER_TICK_SECS` | No | `15` | Loop speed. |
@@ -1667,3 +1674,64 @@ The answer is the import plus `warnings`: `samples_do_not_fit:<i>` (a number, da
 | `mapping_templates_enabled` | `true` | Reuse and save mappings. |
 
 The old import also accepts the target `full_name` in `mapping` (same split as `split_full_name`).
+
+
+---
+
+## 21. Web app: login, team, helpers, reports
+
+The web app (`ui/`, served at `/` by this server) uses these routes. They are in `/docs` like all others.
+
+### Login and sessions
+
+- Passwords: 12 to 128 characters, NFKC-normalized, no "needs a symbol" rules. Refused: weak ones (zxcvbn score under 3) and ones that hold the email or name. Hashed with Argon2id (64 MiB, 3 passes, a random salt, and a secret "pepper" derived from the master encryption key, so a stolen database alone cannot be cracked). Codes: `password_too_short`, `password_too_long`, `password_too_weak`, `password_has_personal_info` (all `422`).
+- Cookie `__Host-aikido_session`: `HttpOnly; Secure; SameSite=Strict; Path=/`, no `Domain`. Only the SHA-256 of the token is stored. Idle timeout 3 days, absolute timeout 30 days. A new token at every login. A password change or reset ends the other sessions. Plain HTTP works on `localhost`. On another host the login is refused (`400 insecure_connection`) unless `AIKIDO_INSECURE_COOKIES=true` (then the cookie is `aikido_session`, without `Secure`; a warning is logged at every start).
+- **CSRF.** The login (and setup, accept and reset) answer holds `csrf_token`. Send it in `X-CSRF-Token` on every call that is not a `GET`. The request must also have an `Origin` (or `Referer`) equal to `AIKIDO_PUBLIC_URL` (without it: the `Host` header). Otherwise `403 csrf_failed`. `GET /v1/auth/state` gives the same token again after a page reload. API keys do not use cookies, and the server never sends `Access-Control-Allow-Credentials`, so a page on another site can not use the cookie.
+- **Rate limits** (stored in the database, shared by all server copies; a refusal is `429 too_many_attempts` with `Retry-After`): 20 failed logins per IP in 15 minutes, then the IP waits 15 minutes. Per email: from the 5th failure a wait of 1 s, 2 s, 4 s ... (a try during the wait is refused without checking the password); from the 10th failure the email is locked 15 minutes. A good login clears the email counter. An owner or admin can unlock in Team. Behind your own proxy set `AIKIDO_TRUST_PROXY=true` so the IP comes from `X-Forwarded-For`; otherwise every user looks like the proxy.
+- Every failed login gives the same answer (`401 invalid_credentials`, "Email or password is wrong."), and an unknown email costs the same time as a wrong password.
+
+| Route | Auth | What it does |
+| --- | --- | --- |
+| `GET /v1/auth/state` | none | `{ setup_needed, logged_in, user, csrf_token, workspace_name, workspace_logo, insecure_connection }`. The app calls it first. |
+| `POST /v1/auth/setup` | none | `{ setup_code, name, email, password, workspace_name }`. Makes the owner and logs in (`201`). `409 setup_done` after the first time, `403 setup_code_wrong`. |
+| `POST /v1/auth/login` | none | `{ email, password }` gives `{ user, csrf_token }` and sets the cookie. |
+| `POST /v1/auth/logout` | session | Deletes the session (`204`). |
+| `GET /v1/auth/invites/{token}`, `POST /v1/auth/invites/{token}/accept` | none | The invite page: shows the email and role, then `{ name, password }` makes the user and logs in. `404 invite_invalid` when used or expired. |
+| `GET /v1/auth/reset/{token}`, `POST /v1/auth/reset/{token}` | none | Set a new password with a one-time link (`{ new_password }`). Ends all sessions of the user, clears the lock, logs in. `404 reset_invalid`. |
+| `GET /v1/users/me`, `PATCH /v1/users/me` | session | Name, email, `preferences`. Changing the email needs `current_password`. `preferences` are merged key by key (`null` removes a key), up to 16 KB. |
+| `POST /v1/users/me/password` | session | `{ current_password, new_password }` (`204`). `403 wrong_password`. |
+| `GET /v1/users/me/sessions`, `DELETE /v1/users/me/sessions/{id}` | session | Your sessions (`current` marks this one). |
+| `GET /v1/users`, `PATCH /v1/users/{id}`, `DELETE /v1/users/{id}` | owner, admin | The team. `PATCH` takes `role` (`admin` or `member`), `status` (`active` or `disabled`; disabling ends the sessions) and `unlock`. `403 owner_protected` for any change to the owner, `403 cannot_change_self`. |
+| `POST /v1/users/invites`, `GET /v1/users/invites`, `DELETE /v1/users/invites/{id}` | owner, admin | `{ email, role }` gives `{ invite, link }`. The link is valid 7 days and is shown once. The server sends no email: copy the link. |
+| `POST /v1/users/{id}/transfer-ownership` | owner | `{ password }`. The target must be an active admin. You become an admin. |
+| `POST /v1/users/{id}/reset-link` | owner, admin | A one-time reset link (valid 1 hour, shown once). Only the owner can make one for the owner. |
+
+**Roles.** `owner` (exactly one) and `admin` can do everything. `member`: campaigns, leads, inbox, accounts, reports; not API keys, the team, the system defaults or the engine switches.
+
+**First boot.** While no user exists the server prints a one-time **setup code** (12 characters) next to the API keys and saves it to `<AIKIDO_DATA_DIR>/setup_code.txt` (mode `600`). The setup page asks for it. It dies when the owner is made.
+
+**Lost owner password.** On the server: `aikido_email reset-password <email>` prints a one-time link (valid 1 hour). Open it in the browser.
+
+### Helpers for the web app (`/v1/ui/*`)
+
+A key of any scope, or a session, can read. `PATCH` needs an owner, an admin, or an `admin` key.
+
+| Route | What it does |
+| --- | --- |
+| `GET /v1/ui/config` | No secrets: `{ version, public_url_set, oauth: { gmail, microsoft }, redirect_uris, dry_run, features: { replies, followups, leads, generator } }`. `oauth.*` is true when the client id and secret are set. `redirect_uris` are the addresses to enter in the Google or Microsoft console. |
+| `GET /v1/ui/onboarding`, `PATCH /v1/ui/onboarding` | `{ state: { step, done, skipped }, facts: { accounts, readable_accounts, providers, leads, sending_defaults_changed } }`. Steps: `connect-email`, `sending-basics`, `ai`, `import`, `done`. `PATCH` takes `step`, `done`, `skipped`. |
+| `GET /v1/ui/workspace`, `PATCH /v1/ui/workspace` | `{ name, logo }`. The logo is a PNG, JPEG, WebP, GIF or SVG data URL up to 200 KB; `"logo": null` removes it. |
+| `GET /v1/ui/alerts` | The alerts for the bell, newest problems from the current state (nothing is stored): `{ id, kind, severity, title, detail, link, since }`, most serious first. Kinds: `account_disconnected`, `account_error`, `account_reconnect_needed`, `campaign_warning`, `campaign_no_healthy_account`, `generation_awaiting_review`, `provider_auth_failed`, `ai_budget_reached`, `import_failed`, `jobs_stuck`, `engine_paused`. With a session, kinds the user turned off (`preferences.notifications.<kind> = false`) are left out. |
+
+### Reports (`campaigns`)
+
+`GET /v1/reports/daily?from=2026-10-01&to=2026-10-31&tz=Europe/Berlin&campaign_id=&account_id=` gives `{ from, to, tz, days: [...], totals }`. One row for every day, also the empty ones: `{ date, sent, replied, auto_replied, bounced, unsubscribed, complained, new_leads_enrolled }`. Days are cut in `tz` (default: the time zone of the sending defaults). At most 366 days (`422 range_too_long`; `invalid_range`, `invalid_timezone`). `sent` counts `send_jobs` that went out. The inbound counts are people (one person counts once a day and label); `bounced` is hard bounces.
+
+`GET /v1/reports/accounts?from=&to=&tz=` gives `{ from, to, tz, bounce_limit_pct, accounts: [{ account_id, email, status, sent, contacted, reply_rate, bounce_rate }] }`. The rates are people divided by `contacted` (0 to 1). An account is paused when its recent bounce rate passes `bounce_limit_pct`.
+
+### Other changes for the web app
+
+- `GET /v1/campaigns/{id}/leads` rows now also have `interest`, `contact_state`, `current_step`, `steps_total`, `next_due_at` and `wait_reason` (`waiting_delay`, `queued`, `waiting_ai_review`, `paused`, `finished`, or the stop reason such as `reply`, `bounce_hard`, `unsubscribe`, `manual`).
+- Inbound messages (`GET /v1/replies/messages`) already carry what a threaded answer needs: `message_id_header`, `references_ids`, `provider_thread_id`, `account_id`, `lead_id`. Send the answer with `POST /v1/sending/jobs` (`kind: "manual"`, `in_reply_to` = the `message_id_header`, `references` = the `references_ids` plus that id, joined by spaces, `provider_thread_id`, `priority: 100`, `lead_id`).
+- `429` answers have `Retry-After` and `error.retry_after_secs`.
+- The web app is served at `/` (embedded from `ui/dist`; `cargo build --no-default-features` makes an API-only server). Any path that is not `/v1/*`, `/docs`, `/openapi.json` or `/health` and is not a file returns `index.html`. An unknown `/v1/...` path is always a JSON `404 not_found`. App pages carry `Content-Security-Policy`, `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy`, and `Strict-Transport-Security` when `AIKIDO_PUBLIC_URL` is `https`.
