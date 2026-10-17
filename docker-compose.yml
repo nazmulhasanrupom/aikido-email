@@ -8,7 +8,6 @@
 # Needed:   POSTGRES_PASSWORD, AIKIDO_PUBLIC_URL, AIKIDO_ENCRYPTION_KEY   (see .env.production.example)
 # Health:   GET /health on the app answers {"status":"ok"} when the database works.
 # Back up:  the "aikido_data" volume (it holds the encryption key) and the "pgdata" volume.
-name: aikido-email
 
 services:
   app:
@@ -35,32 +34,32 @@ services:
       - AIKIDO_TRUST_PROXY=${AIKIDO_TRUST_PROXY:-true}
       - AIKIDO_DRY_RUN=${AIKIDO_DRY_RUN:-false}
       - RUST_LOG=${RUST_LOG:-info}
-      # ---- optional: set them in the environment to use them; left out when not set ----
+      # ---- optional: they show in the Coolify Environment tab; empty means not used ----
       # Google and Microsoft login for connecting inboxes (see README.md)
-      - GOOGLE_CLIENT_ID
-      - GOOGLE_CLIENT_SECRET
-      - MS_CLIENT_ID
-      - MS_CLIENT_SECRET
-      - MS_TENANT
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
+      - MS_CLIENT_ID=${MS_CLIENT_ID:-}
+      - MS_CLIENT_SECRET=${MS_CLIENT_SECRET:-}
+      - MS_TENANT=${MS_TENANT:-common}
       # Your own API keys (else they are made on first boot and saved in /data/initial_keys.txt)
-      - AIKIDO_ADMIN_API_KEY
-      - AIKIDO_ACCOUNTS_API_KEY
-      - AIKIDO_SENDING_API_KEY
-      - AIKIDO_REPLIES_API_KEY
-      - AIKIDO_FOLLOWUPS_API_KEY
-      - AIKIDO_LEADS_API_KEY
-      - AIKIDO_CAMPAIGNS_API_KEY
-      - AIKIDO_GENERATOR_API_KEY
-      # Engine speed and switches
-      - AIKIDO_SCHEDULER_TICK_SECS
-      - AIKIDO_MAX_PARALLEL_ACCOUNTS
-      - AIKIDO_REPLY_TICK_SECS
-      - AIKIDO_MAX_PARALLEL_SYNCS
-      - AIKIDO_MAX_MESSAGE_BYTES
-      - AIKIDO_REPLY_CHECK_ENABLED
-      - AIKIDO_FOLLOWUPS_ENABLED
-      - AIKIDO_LEADS_ENABLED
-      - AIKIDO_GENERATOR_ENABLED
+      - AIKIDO_ADMIN_API_KEY=${AIKIDO_ADMIN_API_KEY:-}
+      - AIKIDO_ACCOUNTS_API_KEY=${AIKIDO_ACCOUNTS_API_KEY:-}
+      - AIKIDO_SENDING_API_KEY=${AIKIDO_SENDING_API_KEY:-}
+      - AIKIDO_REPLIES_API_KEY=${AIKIDO_REPLIES_API_KEY:-}
+      - AIKIDO_FOLLOWUPS_API_KEY=${AIKIDO_FOLLOWUPS_API_KEY:-}
+      - AIKIDO_LEADS_API_KEY=${AIKIDO_LEADS_API_KEY:-}
+      - AIKIDO_CAMPAIGNS_API_KEY=${AIKIDO_CAMPAIGNS_API_KEY:-}
+      - AIKIDO_GENERATOR_API_KEY=${AIKIDO_GENERATOR_API_KEY:-}
+      # Engine speed and switches (empty means the default)
+      - AIKIDO_SCHEDULER_TICK_SECS=${AIKIDO_SCHEDULER_TICK_SECS:-}
+      - AIKIDO_MAX_PARALLEL_ACCOUNTS=${AIKIDO_MAX_PARALLEL_ACCOUNTS:-}
+      - AIKIDO_REPLY_TICK_SECS=${AIKIDO_REPLY_TICK_SECS:-}
+      - AIKIDO_MAX_PARALLEL_SYNCS=${AIKIDO_MAX_PARALLEL_SYNCS:-}
+      - AIKIDO_MAX_MESSAGE_BYTES=${AIKIDO_MAX_MESSAGE_BYTES:-}
+      - AIKIDO_REPLY_CHECK_ENABLED=${AIKIDO_REPLY_CHECK_ENABLED:-}
+      - AIKIDO_FOLLOWUPS_ENABLED=${AIKIDO_FOLLOWUPS_ENABLED:-}
+      - AIKIDO_LEADS_ENABLED=${AIKIDO_LEADS_ENABLED:-}
+      - AIKIDO_GENERATOR_ENABLED=${AIKIDO_GENERATOR_ENABLED:-}
     volumes:
       - aikido_data:/data
     healthcheck:

@@ -10,11 +10,18 @@ use tokio::net::TcpListener;
 pub type Res<T> = Result<T, Box<dyn Error + Send + Sync>>;
 
 pub fn var(name: &str) -> Res<String> {
-    std::env::var(name).map_err(|_| format!("set {name} in .env").into())
+    // An empty value counts as not set (a deploy tool may pass an empty variable).
+    match std::env::var(name) {
+        Ok(v) if !v.trim().is_empty() => Ok(v),
+        _ => Err(format!("set {name} in .env").into()),
+    }
 }
 
 pub fn var_or(name: &str, default: &str) -> String {
-    std::env::var(name).unwrap_or_else(|_| default.to_string())
+    match std::env::var(name) {
+        Ok(v) if !v.trim().is_empty() => v,
+        _ => default.to_string(),
+    }
 }
 
 /// `~/.config/aikido_email/<file_name>`, unless `env_name` is set.
