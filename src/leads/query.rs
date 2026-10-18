@@ -25,6 +25,8 @@ pub struct LeadFilter {
     pub created_from: Option<DateTime<Utc>>,
     /// Created before this time.
     pub created_to: Option<DateTime<Utc>>,
+    /// Latest Reoon status, a comma list like `safe,catch_all`. `none` means not verified yet.
+    pub verification_status: Option<String>,
 }
 
 #[derive(Deserialize, IntoParams, Default, Clone, Debug)]
@@ -48,6 +50,7 @@ impl LeadFilter {
             && self.suppressed.is_none()
             && self.created_from.is_none()
             && self.created_to.is_none()
+            && self.verification_status.as_deref().is_none_or(|s| s.trim().is_empty())
     }
 }
 
@@ -105,6 +108,19 @@ pub fn push_where<'a>(qb: &mut QueryBuilder<'a, Postgres>, f: &'a LeadFilter) {
     }
     if let Some(t) = f.created_to {
         qb.push(" AND created_at < ").push_bind(t);
+    }
+    if let Some(list) = crate::verify_reoon::auto::parse_statuses(f.verification_status.as_deref()) {
+        let latest = "SELECT 1 FROM email_verifications v WHERE v.lead_id = leads.id AND v.provider = 'reoon' AND v.email = leads.email::text";
+        let none = list.iter().any(|s| s == "none");
+        let statuses: Vec<String> = list.into_iter().filter(|s| s != "none").collect();
+        qb.push(" AND (FALSE");
+        if !statuses.is_empty() {
+            qb.push(format!(" OR EXISTS ({latest} AND v.status = ANY(")).push_bind(statuses).push("))");
+        }
+        if none {
+            qb.push(format!(" OR NOT EXISTS ({latest})"));
+        }
+        qb.push(")");
     }
 }
 

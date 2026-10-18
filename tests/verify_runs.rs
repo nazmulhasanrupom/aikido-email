@@ -176,3 +176,35 @@ async fn the_send_rule_refuses_locked_statuses_and_a_member_can_start_a_run(pool
     assert_eq!(key.body["run"]["id"], again.body["run"]["id"]);
     assert_eq!(key.body["estimated_credits"], 1);
 }
+
+#[sqlx::test]
+async fn auto_verify_checks_new_leads_from_the_api_and_bulk_only_when_on(pool: PgPool) {
+    let v = V::new(pool).await;
+    let items = |pool: &PgPool| {
+        let pool = pool.clone();
+        async move { sqlx::query_as::<_, (i64,)>("SELECT count(*) FROM verification_items").fetch_one(&pool).await.unwrap().0 }
+    };
+    v.leads(1).await;
+    assert_eq!(items(&v.state.pool).await, 0, "off by default");
+
+    let on = v.api("PATCH", "/v1/verify/reoon/settings", Some(json!({ "auto_verify": true }))).await;
+    assert_eq!(on.body["settings"]["auto_verify"], true);
+    v.leads(1).await;
+    let bulk = v.call(Scope::Leads, "POST", "/v1/leads/bulk", Some(json!({ "leads": [{ "email": "b1@acme.example" }, { "email": "b2@acme.example" }] }))).await;
+    assert!(bulk.status.is_success(), "{}", bulk.body);
+    assert_eq!(items(&v.state.pool).await, 3);
+    // the same address again is not new
+    v.call(Scope::Leads, "POST", "/v1/leads/bulk", Some(json!({ "leads": [{ "email": "b1@acme.example" }] }))).await;
+    assert_eq!(items(&v.state.pool).await, 3);
+    let (runs, auto): (i64, bool) = sqlx::query_as("SELECT count(*), bool_and(auto) FROM verification_runs").fetch_one(&v.state.pool).await.unwrap();
+    assert_eq!((runs, auto), (1, true), "new leads join one open auto run");
+
+    v.tick_until_quiet().await;
+    assert_eq!(v.fake.calls(), 3);
+    // the lead tables show the result, and the filter works
+    let rows = v.call(Scope::Leads, "GET", "/v1/leads?verification_status=safe", None).await.body;
+    assert_eq!(rows["leads"].as_array().unwrap().len(), 3);
+    assert_eq!(rows["leads"][0]["verification_status"], "safe");
+    let none = v.call(Scope::Leads, "GET", "/v1/leads?verification_status=none", None).await.body;
+    assert_eq!(none["leads"].as_array().unwrap().len(), 1);
+}

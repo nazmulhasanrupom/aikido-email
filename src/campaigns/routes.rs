@@ -628,6 +628,8 @@ pub struct CampaignLeadsQuery {
     limit: Option<i64>,
     /// `true`: only leads that lack a value one of the emails needs (a variable with no fallback).
     missing: Option<bool>,
+    /// Latest Reoon status, a comma list like `safe,catch_all`. `none` means not verified yet.
+    verification_status: Option<String>,
 }
 
 #[derive(Serialize, ToSchema, sqlx::FromRow)]
@@ -663,6 +665,13 @@ pub struct CampaignLeadRow {
     /// The values this lead lacks for the emails of the campaign (names). Empty when it has them all.
     #[sqlx(skip)]
     pub missing: Vec<String>,
+    /// The latest Reoon status of this address. Null: not verified, or Reoon is not installed.
+    #[sqlx(skip)]
+    pub verification_status: Option<String>,
+    #[sqlx(skip)]
+    pub verification_score: Option<i32>,
+    #[sqlx(skip)]
+    pub verification_checked_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Serialize, ToSchema, sqlx::FromRow)]
@@ -709,6 +718,8 @@ async fn list_campaign_leads(State(st): State<AppState>, ApiPath(id): ApiPath<Uu
     let prompts = if ctx.campaign.content_mode == "ai" { Some(super::email_ai::load_prompts(&mut conn, &ctx).await?) } else { None };
     let needs = super::emails::required_names(&ctx, prompts.as_ref());
     let missing_cond = if q.missing == Some(true) { super::emails::missing_sql(&needs, &ctx.defs) } else { "true".to_string() };
+    let statuses = crate::verify_reoon::auto::parse_statuses(q.verification_status.as_deref());
+    let status_cond = crate::verify_reoon::auto::status_cond(7);
     let mut leads: Vec<CampaignLeadRow> = sqlx::query_as(&format!(
         "SELECT cl.lead_id, l.email, l.first_name, l.last_name, l.company_name, l.custom_fields, cl.state, cl.skip_reason, cl.enrollment_id,
                 e.status AS enrollment_status, cl.added_at, cl.enrolled_at, l.interest, l.contact_state,
@@ -730,7 +741,7 @@ async fn list_campaign_leads(State(st): State<AppState>, ApiPath(id): ApiPath<Uu
            CROSS JOIN (SELECT count(*)::bigint AS n FROM sequence_steps WHERE sequence_id = (SELECT sequence_id FROM campaigns WHERE id = $1)) steps
           WHERE cl.campaign_id = $1 AND ($2::campaign_lead_state IS NULL OR cl.state = $2) AND ($3::campaign_skip_reason IS NULL OR cl.skip_reason = $3)
             AND ($4::timestamptz IS NULL OR (cl.added_at, cl.lead_id) > ($4, $5))
-            AND ({missing_cond})
+            AND ({missing_cond}) AND {status_cond}
           ORDER BY cl.added_at, cl.lead_id LIMIT $6",
     ))
     .bind(id)
@@ -739,6 +750,7 @@ async fn list_campaign_leads(State(st): State<AppState>, ApiPath(id): ApiPath<Uu
     .bind(after.map(|a| a.0))
     .bind(after.map(|a| a.1))
     .bind(limit + 1)
+    .bind(&statuses)
     .fetch_all(&mut *conn)
     .await?;
     let next_cursor = if leads.len() as i64 > limit {
@@ -761,7 +773,11 @@ async fn list_campaign_leads(State(st): State<AppState>, ApiPath(id): ApiPath<Uu
         by_lead.entry(c.lead_id).or_default().push(c);
     }
     let lead_rows = if needs.is_empty() { Default::default() } else { super::emails::load_leads(&mut conn, &ids).await? };
+    let briefs = crate::verify_reoon::auto::briefs(&mut conn, &ids).await?;
     for l in &mut leads {
+        if let Some(b) = briefs.get(&l.lead_id) {
+            (l.verification_status, l.verification_score, l.verification_checked_at) = (Some(b.status.clone()), b.score, Some(b.checked_at));
+        }
         l.emails = by_lead.remove(&l.lead_id).unwrap_or_default();
         if let Some(lead) = lead_rows.get(&l.lead_id) {
             l.missing = super::emails::missing_for(lead, &needs, &ctx.defs);

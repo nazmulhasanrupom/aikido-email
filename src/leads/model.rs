@@ -108,6 +108,14 @@ pub struct Lead {
     pub last_replied_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    /// The latest Reoon status of this address (`safe`, `catch_all`, ...). Null: not verified, or Reoon is not installed. Filled by the list and detail routes.
+    #[sqlx(skip)]
+    pub verification_status: Option<String>,
+    /// Reoon score 0 to 100 (power mode only).
+    #[sqlx(skip)]
+    pub verification_score: Option<i32>,
+    #[sqlx(skip)]
+    pub verification_checked_at: Option<DateTime<Utc>>,
 }
 
 #[derive(FromRow, Serialize, Clone, Debug, ToSchema)]

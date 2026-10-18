@@ -447,6 +447,13 @@ async fn list_leads(State(st): State<AppState>, ApiQuery(filter): ApiQuery<LeadF
     } else {
         None
     };
+    let ids: Vec<Uuid> = leads.iter().map(|l| l.id).collect();
+    let briefs = crate::verify_reoon::auto::briefs(&mut conn, &ids).await?;
+    for l in &mut leads {
+        if let Some(b) = briefs.get(&l.id) {
+            (l.verification_status, l.verification_score, l.verification_checked_at) = (Some(b.status.clone()), b.score, Some(b.checked_at));
+        }
+    }
     Ok(ApiJson(ListLeadsReply { leads, next_cursor }))
 }
 

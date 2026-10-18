@@ -1,10 +1,10 @@
 import type { LucideIcon } from "lucide-react";
-import { Database, Sparkles, Users, Webhook } from "lucide-react";
+import { Database, ShieldCheck, Sparkles, Users, Webhook } from "lucide-react";
 
 /** One entry per integration. A new one is an entry here and a page in `routes/`. */
 export interface Integration {
   id: string;
-  category: "AI models" | "Databases" | "CRM" | "Webhooks";
+  category: "Applications" | "AI models" | "Databases" | "CRM" | "Webhooks";
   name: string;
   description: string;
   icon: LucideIcon;
@@ -12,9 +12,16 @@ export interface Integration {
   soon?: boolean;
 }
 
-export const CATEGORIES: Integration["category"][] = ["AI models", "Databases", "CRM", "Webhooks"];
+export const CATEGORIES: Integration["category"][] = ["Applications", "AI models", "Databases", "CRM", "Webhooks"];
 
 export const INTEGRATIONS: Integration[] = [
+  {
+    id: "reoon",
+    category: "Applications",
+    name: "Reoon Email Verifier",
+    description: "Check if lead emails exist before you send.",
+    icon: ShieldCheck,
+  },
   {
     id: "ai",
     category: "AI models",

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { saveThemePreference } from "@/api/auth";
 import { http, type S } from "@/api/http";
 import { q } from "@/api/queries";
+import { useReoon } from "@/features/reoon/api";
 import { cn } from "@/lib/cn";
 import { fullName } from "@/lib/format";
 import { applyChoice, readChoice, resolve } from "@/theme/theme";
@@ -25,6 +26,7 @@ export function Palette({ open, onClose, ws }: { open: boolean; onClose: () => v
   const dq = useDebounced(text.trim(), 200);
   const inputRef = useRef<HTMLInputElement>(null);
   const campaigns = useQuery({ ...q.campaigns, enabled: open, staleTime: 60_000 });
+  const reoon = useReoon();
   const accounts = useQuery({ ...q.accounts, enabled: open, staleTime: 60_000 });
   const lists = useQuery({ ...q.lists, enabled: open, staleTime: 60_000 });
   const leads = useQuery({
@@ -60,6 +62,7 @@ export function Palette({ open, onClose, ws }: { open: boolean; onClose: () => v
     const first = accounts.data?.[0]?.id;
     const pages: Item[] = [
       p("p-ai", "Pages and settings", "Aikido AI", "/w/$ws/ai"),
+      ...(reoon.installed ? [p("p-reoon", "Pages and settings", "Reoon", "/w/$ws/apps/reoon")] : []),
       p("p-camp", "Pages and settings", "Campaigns", "/w/$ws/campaigns"),
       p("p-leads", "Pages and settings", "Leads", "/w/$ws/leads"),
       p("p-lists", "Pages and settings", "Leads: Lists", "/w/$ws/leads", {}, undefined, {
@@ -157,7 +160,7 @@ export function Palette({ open, onClose, ws }: { open: boolean; onClose: () => v
       ),
     ];
     return [...actions, ...pages, ...data];
-  }, [ws, campaigns.data, accounts.data, lists.data, leads.data]);
+  }, [ws, campaigns.data, accounts.data, lists.data, leads.data, reoon.installed]);
 
   const shown = useMemo(() => {
     const t = text.trim().toLowerCase();

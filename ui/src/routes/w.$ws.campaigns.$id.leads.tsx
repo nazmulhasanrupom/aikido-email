@@ -24,6 +24,8 @@ import { GenerateDialog, RunProgress } from "@/features/campaigns/AiTools";
 import { EmailDrawer, StatusChip, stepName } from "@/features/campaigns/EmailDrawer";
 import { ImportModal } from "@/features/leads/ImportModal";
 import { AddColumn, ColumnHeader, ColumnsMenu, EditableCell, type GridCol, useColumns } from "@/features/leads/grid";
+import { STATUSES, useReoon } from "@/features/reoon/api";
+import { VerifyPill } from "@/features/reoon/parts";
 import { fmtDateTime } from "@/lib/format";
 import { say } from "@/lib/words";
 
@@ -66,21 +68,23 @@ function CampaignLeads() {
     id: `email:${st.step_number}`,
     label: stepName(st.step_number),
   }));
-  const cols = useColumns("campaign_leads", [...BASE_COLS, ...stepCols]);
+  const reoon = useReoon();
+  const cols = useColumns("campaign_leads", [...BASE_COLS, ...(reoon.installed ? [{ id: "reoon", label: "Verification" }] : []), ...stepCols]);
   const [genOpen, setGenOpen] = useState(false);
   const [openEmail, setOpenEmail] = useState<null | { lead: string; email: string; step: number }>(null);
   const [state, setState] = useState<string>("");
   const [onlyMissing, setOnlyMissing] = useState(false);
+  const [vstatus, setVstatus] = useState("");
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [menu, setMenu] = useState<null | "list" | "import">(null);
   const [listId, setListId] = useState("");
   const leads = useInfiniteQuery({
-    queryKey: ["campaigns", id, "leads", state, onlyMissing],
+    queryKey: ["campaigns", id, "leads", state, onlyMissing, vstatus],
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam }) =>
       http.get<S["CampaignLeadsReply"]>("/v1/campaigns/{id}/leads", {
         path: { id },
-        query: { state, limit: 50, cursor: pageParam, ...(onlyMissing ? { missing: true } : {}) },
+        query: { state, limit: 50, cursor: pageParam, verification_status: vstatus, ...(onlyMissing ? { missing: true } : {}) },
       }),
     getNextPageParam: (l) => l.next_cursor ?? undefined,
     refetchInterval: 15_000,
@@ -168,6 +172,20 @@ function CampaignLeads() {
         >
           Missing a value used in your emails
         </button>
+        {reoon.installed && (
+          <div className="w-44">
+            <Select
+              label="Verification"
+              value={vstatus}
+              onChange={setVstatus}
+              options={[
+                { value: "", label: "Any" },
+                { value: "none", label: say("reoon", "none") },
+                ...STATUSES.map((s) => ({ value: s.code, label: say("reoon", s.code) })),
+              ]}
+            />
+          </div>
+        )}
         <div className="ml-auto flex gap-2">
           {pendingPicked.length > 0 && (
             <Button variant="secondary" busy={remove.isPending} onClick={() => remove.mutate()}>
@@ -240,6 +258,8 @@ function CampaignLeads() {
                           setOpenEmail({ lead: r.lead_id, email: r.email, step: Number(c.id.slice(6)) })
                         }
                       />
+                    ) : c.id === "reoon" ? (
+                      <VerifyPill status={r.verification_status} score={r.verification_score} checkedAt={r.verification_checked_at} />
                     ) : c.id === "state" ? (
                       <Pill>{say("campaignLead", r.state)}</Pill>
                     ) : c.id === "follow" ? (

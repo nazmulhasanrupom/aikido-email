@@ -25,6 +25,7 @@ export const Route = createFileRoute("/w/$ws/leads")({
           "interest",
           "verification",
           "suppressed",
+          "verification_status",
           "lead",
         ]
           .map((k) => [k, str(s[k])])

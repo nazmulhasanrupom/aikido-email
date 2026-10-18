@@ -27,6 +27,7 @@ import { Route as WWsSettingsRouteImport } from './routes/w.$ws.settings'
 import { Route as WWsStatusRouteImport } from './routes/w.$ws.status'
 import { Route as WWsAccountsIndexRouteImport } from './routes/w.$ws.accounts.index'
 import { Route as WWsAccountsIdRouteImport } from './routes/w.$ws.accounts.$id'
+import { Route as WWsAppsReoonRouteImport } from './routes/w.$ws.apps.reoon'
 import { Route as WWsCampaignsIndexRouteImport } from './routes/w.$ws.campaigns.index'
 import { Route as WWsCampaignsIdRouteImport } from './routes/w.$ws.campaigns.$id'
 import { Route as WWsSettingsIndexRouteImport } from './routes/w.$ws.settings.index'
@@ -138,6 +139,11 @@ const WWsAccountsIdRoute = WWsAccountsIdRouteImport.update({
   id: '/$id',
   path: '/$id',
   getParentRoute: () => WWsAccountsRoute,
+} as any)
+const WWsAppsReoonRoute = WWsAppsReoonRouteImport.update({
+  id: '/apps/reoon',
+  path: '/apps/reoon',
+  getParentRoute: () => WWsRoute,
 } as any)
 const WWsCampaignsIndexRoute = WWsCampaignsIndexRouteImport.update({
   id: '/',
@@ -266,6 +272,7 @@ export interface FileRoutesByFullPath {
   '/w/$ws/status': typeof WWsStatusRoute
   '/w/$ws/': typeof WWsIndexRoute
   '/w/$ws/accounts/$id': typeof WWsAccountsIdRouteWithChildren
+  '/w/$ws/apps/reoon': typeof WWsAppsReoonRoute
   '/w/$ws/campaigns/$id': typeof WWsCampaignsIdRouteWithChildren
   '/w/$ws/settings/account': typeof WWsSettingsAccountRoute
   '/w/$ws/settings/api': typeof WWsSettingsApiRoute
@@ -302,6 +309,7 @@ export interface FileRoutesByTo {
   '/w/$ws/reports': typeof WWsReportsRoute
   '/w/$ws/status': typeof WWsStatusRoute
   '/w/$ws': typeof WWsIndexRoute
+  '/w/$ws/apps/reoon': typeof WWsAppsReoonRoute
   '/w/$ws/settings/account': typeof WWsSettingsAccountRoute
   '/w/$ws/settings/api': typeof WWsSettingsApiRoute
   '/w/$ws/settings/notifications': typeof WWsSettingsNotificationsRoute
@@ -342,6 +350,7 @@ export interface FileRoutesById {
   '/w/$ws/status': typeof WWsStatusRoute
   '/w/$ws/': typeof WWsIndexRoute
   '/w/$ws/accounts/$id': typeof WWsAccountsIdRouteWithChildren
+  '/w/$ws/apps/reoon': typeof WWsAppsReoonRoute
   '/w/$ws/campaigns/$id': typeof WWsCampaignsIdRouteWithChildren
   '/w/$ws/settings/account': typeof WWsSettingsAccountRoute
   '/w/$ws/settings/api': typeof WWsSettingsApiRoute
@@ -385,6 +394,7 @@ export interface FileRouteTypes {
     | '/w/$ws/status'
     | '/w/$ws/'
     | '/w/$ws/accounts/$id'
+    | '/w/$ws/apps/reoon'
     | '/w/$ws/campaigns/$id'
     | '/w/$ws/settings/account'
     | '/w/$ws/settings/api'
@@ -421,6 +431,7 @@ export interface FileRouteTypes {
     | '/w/$ws/reports'
     | '/w/$ws/status'
     | '/w/$ws'
+    | '/w/$ws/apps/reoon'
     | '/w/$ws/settings/account'
     | '/w/$ws/settings/api'
     | '/w/$ws/settings/notifications'
@@ -460,6 +471,7 @@ export interface FileRouteTypes {
     | '/w/$ws/status'
     | '/w/$ws/'
     | '/w/$ws/accounts/$id'
+    | '/w/$ws/apps/reoon'
     | '/w/$ws/campaigns/$id'
     | '/w/$ws/settings/account'
     | '/w/$ws/settings/api'
@@ -621,6 +633,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/w/$ws/accounts/$id'
       preLoaderRoute: typeof WWsAccountsIdRouteImport
       parentRoute: typeof WWsAccountsRoute
+    }
+    '/w/$ws/apps/reoon': {
+      id: '/w/$ws/apps/reoon'
+      path: '/apps/reoon'
+      fullPath: '/w/$ws/apps/reoon'
+      preLoaderRoute: typeof WWsAppsReoonRouteImport
+      parentRoute: typeof WWsRoute
     }
     '/w/$ws/campaigns/': {
       id: '/w/$ws/campaigns/'
@@ -890,6 +909,7 @@ interface WWsRouteChildren {
   WWsSettingsRoute: typeof WWsSettingsRouteWithChildren
   WWsStatusRoute: typeof WWsStatusRoute
   WWsIndexRoute: typeof WWsIndexRoute
+  WWsAppsReoonRoute: typeof WWsAppsReoonRoute
 }
 
 const WWsRouteChildren: WWsRouteChildren = {
@@ -902,6 +922,7 @@ const WWsRouteChildren: WWsRouteChildren = {
   WWsSettingsRoute: WWsSettingsRouteWithChildren,
   WWsStatusRoute: WWsStatusRoute,
   WWsIndexRoute: WWsIndexRoute,
+  WWsAppsReoonRoute: WWsAppsReoonRoute,
 }
 
 const WWsRouteWithChildren = WWsRoute._addFileChildren(WWsRouteChildren)

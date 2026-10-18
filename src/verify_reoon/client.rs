@@ -106,7 +106,9 @@ pub struct RealVerifierFactory {
 
 impl Default for RealVerifierFactory {
     fn default() -> Self {
-        Self { base_url: DEFAULT_BASE_URL.into(), retry_delay: Duration::from_secs(2) }
+        // AIKIDO_REOON_BASE_URL points the server at a mock Reoon (the browser tests use it)
+        let base_url = std::env::var("AIKIDO_REOON_BASE_URL").ok().filter(|v| !v.trim().is_empty()).unwrap_or_else(|| DEFAULT_BASE_URL.into());
+        Self { base_url, retry_delay: Duration::from_secs(2) }
     }
 }
 

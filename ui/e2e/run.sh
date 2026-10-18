@@ -10,12 +10,19 @@ PG="${E2E_PG_CONTAINER:-aikido_email-postgres-1}"
 
 docker exec "$PG" psql -U aikido -d postgres -q -c "DROP DATABASE IF EXISTS $DB" -c "CREATE DATABASE $DB"
 cleanup() {
+  [ -n "${E2E_KEEP_LOG:-}" ] && cp "$DATA/server.log" "$E2E_KEEP_LOG" || true
   [ -n "${SERVER_PID:-}" ] && kill "$SERVER_PID" 2>/dev/null || true
   docker exec "$PG" psql -U aikido -d postgres -q -c "DROP DATABASE IF EXISTS $DB" || true
   rm -rf "$DATA"
 }
 trap cleanup EXIT
 
+MOCK_PORT="${E2E_REOON_PORT:-18091}"
+node ui/e2e/mock-reoon.mjs "$MOCK_PORT" &
+MOCK_PID=$!
+trap '[ -n "${MOCK_PID:-}" ] && kill "$MOCK_PID" 2>/dev/null || true; cleanup' EXIT
+
+AIKIDO_REOON_BASE_URL="http://127.0.0.1:$MOCK_PORT" \
 DATABASE_URL="postgres://aikido:aikido@127.0.0.1:55432/$DB" \
 AIKIDO_DATA_DIR="$DATA" \
 AIKIDO_BIND_ADDR="127.0.0.1:$PORT" \

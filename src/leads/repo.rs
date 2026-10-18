@@ -85,7 +85,10 @@ pub async fn open_enrollment(conn: &mut PgConnection, email: &str) -> Result<Opt
     Ok(row.map(|r| r.0))
 }
 
-pub async fn detail(conn: &mut PgConnection, lead: Lead) -> Result<LeadDetail, sqlx::Error> {
+pub async fn detail(conn: &mut PgConnection, mut lead: Lead) -> Result<LeadDetail, sqlx::Error> {
+    if let Some(b) = crate::verify_reoon::auto::briefs(&mut *conn, &[lead.id]).await?.remove(&lead.id) {
+        (lead.verification_status, lead.verification_score, lead.verification_checked_at) = (Some(b.status), b.score, Some(b.checked_at));
+    }
     let lists: Vec<ListRef> = sqlx::query_as(
         "SELECT l.id, l.name FROM lead_lists l JOIN lead_list_members m ON m.list_id = l.id WHERE m.lead_id = $1 ORDER BY l.name",
     )

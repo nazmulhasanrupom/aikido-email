@@ -1428,6 +1428,70 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/integrations/apps": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The app catalog, with the state of each app.
+         * @description Scope: `integrations`. The web app builds the sidebar from this list: one item for each installed app with `sidebar: true`.
+         */
+        get: operations["list_apps"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/integrations/apps/{app}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Uninstall. Open runs are cancelled and the key is deleted. The results stay.
+         * @description Scope: `integrations`. Owner and admin sessions only. Cancels open verification runs and deletes the key. The rows of `email_verifications` stay, so a reinstall shows them again. The send rule stops working while the app is uninstalled.
+         */
+        delete: operations["uninstall_app"];
+        options?: never;
+        head?: never;
+        /**
+         * Replace the key and/or change the app settings.
+         * @description Scope: `integrations`. Owner and admin sessions only.
+         */
+        patch: operations["update_app"];
+        trace?: never;
+    };
+    "/v1/integrations/apps/{app}/install": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Install an app. The key is tested first; a bad key saves nothing.
+         * @description Scope: `integrations`. Owner and admin sessions only. Calls the balance route of Reoon first, then saves the key encrypted (AES-256-GCM).
+         */
+        post: operations["install_app"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/keys": {
         parameters: {
             query?: never;
@@ -2904,6 +2968,214 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/verify/reoon/balance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The live Reoon credit balance.
+         * @description Scope: `integrations`. Calls Reoon now.
+         */
+        get: operations["get_balance"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/verify/reoon/leads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The leads for the Reoon page, newest first, with the latest result of each.
+         * @description Scope: `integrations`. The same filter as `GET /v1/leads`, plus `verification_status` and `checked_before`. `cursor` is the id of the last lead of the previous page.
+         */
+        get: operations["list_leads"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/verify/reoon/leads/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The latest Reoon result of one lead, with the flags. Null when there is none.
+         * @description Scope: `integrations`. For the lead drawer.
+         */
+        get: operations["get_lead_result"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/verify/reoon/pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pause the verifier worker. Runs wait.
+         * @description Scope: `integrations`. Owner and admin sessions only.
+         */
+        post: operations["pause_engine"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/verify/reoon/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resume the verifier worker.
+         * @description Scope: `integrations`. Owner and admin sessions only.
+         */
+        post: operations["resume_engine"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/verify/reoon/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The last 50 runs, newest first.
+         * @description Scope: `integrations`.
+         */
+        get: operations["list_runs"];
+        put?: never;
+        /**
+         * Make a run: one item for each lead. The worker calls Reoon one email at a time.
+         * @description Scope: `integrations`. Results newer than `reuse_days` are skipped at no cost unless `force` is true.
+         */
+        post: operations["create_run"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/verify/reoon/runs/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One run, with live counters.
+         * @description Scope: `integrations`.
+         */
+        get: operations["get_run"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/verify/reoon/runs/{id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel a run. Items not yet checked are skipped. Results already saved stay.
+         * @description Scope: `integrations`.
+         */
+        post: operations["cancel_run"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/verify/reoon/runs/{id}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resume a run that stopped with `out_of_credits` or `auth_failed`.
+         * @description Scope: `integrations`. Items that were not checked are still `pending`, so the run goes on where it stopped. Update the key first after `auth_failed`.
+         */
+        post: operations["resume_run"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/verify/reoon/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the verifier settings and the send rule.
+         * @description Scope: `integrations`.
+         */
+        get: operations["get_settings"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Change the settings. Send only the fields to change. `send_rule` is replaced as a whole.
+         * @description Scope: `integrations`. The rule applies to leads that start a campaign after the change. Leads already in a sequence keep going.
+         */
+        patch: operations["patch_settings"];
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -3085,7 +3357,7 @@ export interface components {
             /**
              * @description `account_disconnected`, `account_error`, `account_reconnect_needed`, `campaign_warning`,
              *     `campaign_no_healthy_account`, `generation_awaiting_review`, `provider_auth_failed`, `ai_budget_reached`,
-             *     `import_failed`, `jobs_stuck`, `engine_paused`.
+             *     `import_failed`, `emails_not_ready`, `jobs_stuck`, `engine_paused`.
              */
             kind: string;
             /** @description A path in the web app. */
@@ -3094,6 +3366,22 @@ export interface components {
             /** Format: date-time */
             since: string;
             title: string;
+        };
+        AppInfo: {
+            /** @description `reoon` */
+            app: string;
+            description: string;
+            installed: boolean;
+            /** Format: date-time */
+            installed_at?: string | null;
+            name: string;
+            /** @description The web app shows a menu item for this app when it is installed. */
+            sidebar: boolean;
+            /** @description `installed`, `auth_failed` or `disabled`. Null when not installed. */
+            status?: string | null;
+        };
+        AppsReply: {
+            apps: components["schemas"]["AppInfo"][];
         };
         AuthStateReply: {
             /** @description Send this in `X-CSRF-Token` on every call that is not a GET. */
@@ -3106,6 +3394,12 @@ export interface components {
             user?: components["schemas"]["UserOut"] | null;
             workspace_logo?: string | null;
             workspace_name: string;
+        };
+        Balance: {
+            /** Format: int64 */
+            daily_credits?: number | null;
+            /** Format: int64 */
+            instant_credits?: number | null;
         };
         /** @description What a bounce report says. */
         BounceInfo: {
@@ -3307,6 +3601,12 @@ export interface components {
              * @description How many steps the sequence has.
              */
             steps_total: number;
+            /** Format: date-time */
+            verification_checked_at?: string | null;
+            /** Format: int32 */
+            verification_score?: number | null;
+            /** @description The latest Reoon status of this address. Null: not verified, or Reoon is not installed. */
+            verification_status?: string | null;
             /**
              * @description Why the lead is not moving, in a code. `waiting_delay`, `queued`, `waiting_ai_review`, `paused`,
              *     `finished`, or the stop reason (`reply`, `bounce_hard`, `unsubscribe`, `manual`, ...). Empty when the next step is due now.
@@ -4310,6 +4610,14 @@ export interface components {
             /** Format: date-time */
             updated_at: string;
         };
+        InstallBody: {
+            /** @description Write only. The Reoon API key. */
+            api_key: string;
+        };
+        InstallReply: {
+            app: components["schemas"]["AppInfo"];
+            balance: components["schemas"]["Balance"];
+        };
         /**
          * @description What a person (or the AI agent later) decides. The system never sets it.
          * @enum {string}
@@ -4426,6 +4734,16 @@ export interface components {
         Label: "reply" | "auto_reply" | "unsubscribe" | "bounce_hard" | "bounce_soft" | "bounce_block" | "complaint" | "delayed" | "unknown";
         /** @enum {string} */
         LabelSource: "auto" | "manual";
+        LatestResult: {
+            /** Format: date-time */
+            checked_at: string;
+            flags: Record<string, never>;
+            mode: string;
+            safe_to_send?: boolean | null;
+            /** Format: int32 */
+            score?: number | null;
+            status: string;
+        };
         Lead: {
             company_name?: string | null;
             contact_state: components["schemas"]["ContactState"];
@@ -4457,6 +4775,15 @@ export interface components {
             /** Format: date-time */
             updated_at: string;
             verification: components["schemas"]["Verification"];
+            /** Format: date-time */
+            verification_checked_at?: string | null;
+            /**
+             * Format: int32
+             * @description Reoon score 0 to 100 (power mode only).
+             */
+            verification_score?: number | null;
+            /** @description The latest Reoon status of this address (`safe`, `catch_all`, ...). Null: not verified, or Reoon is not installed. Filled by the list and detail routes. */
+            verification_status?: string | null;
             website?: string | null;
         };
         /** @enum {string} */
@@ -4570,6 +4897,8 @@ export interface components {
             /** @description Only leads with this tag. */
             tag?: string | null;
             verification?: components["schemas"]["Verification"] | null;
+            /** @description Latest Reoon status, a comma list like `safe,catch_all`. `none` means not verified yet. */
+            verification_status?: string | null;
         };
         LeadList: {
             /** Format: date-time */
@@ -4792,6 +5121,8 @@ export interface components {
         };
         /** @enum {string} */
         MatchMethod: "dsn_original" | "in_reply_to" | "references" | "thread" | "bounce_recipient" | "sender_address" | "none";
+        /** @enum {string} */
+        Mode: "quick" | "power";
         NewEnrollment: {
             /**
              * Format: uuid
@@ -4888,6 +5219,24 @@ export interface components {
              * @description 5 to 600. Default 60.
              */
             timeout_secs?: number | null;
+        };
+        NewRun: components["schemas"]["ResultFilter"] & {
+            filter?: components["schemas"]["LeadFilter"] | null;
+            /** @description `true`: check again even when a recent result exists. */
+            force?: boolean;
+            /** @description A second call with the same key returns the first run. */
+            idempotency_key?: string | null;
+            /** @description Up to 10000 lead ids. Send this or `filter`. */
+            lead_ids?: string[] | null;
+            mode?: components["schemas"]["Mode"] | null;
+        };
+        NewRunReply: {
+            /**
+             * Format: int64
+             * @description Emails that will cost a credit: the run total minus the results that are new enough to reuse (none when `force`).
+             */
+            estimated_credits: number;
+            run: components["schemas"]["Run"];
         };
         OAuthStartReply: {
             /** @description Send the user to this URL to sign in. */
@@ -5321,6 +5670,14 @@ export interface components {
             /** @description Shown this one time only. Valid 1 hour. */
             link: string;
         };
+        /** @description Extra filter on the latest Reoon result. The status filter is `verification_status` of the lead filter. */
+        ResultFilter: {
+            /**
+             * Format: date-time
+             * @description Leads whose last check is older than this time, or that were never checked.
+             */
+            checked_before?: string | null;
+        };
         RevokedReply: {
             revoked: boolean;
         };
@@ -5345,16 +5702,54 @@ export interface components {
             /** @description The plain key. Shown this one time only. It is not stored. */
             plain_key: string;
         };
+        Run: {
+            /** @description Made by the server for new leads (verify on import), not by a person. */
+            auto: boolean;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: int32 */
+            credits_used: number;
+            /** Format: int32 */
+            done_count: number;
+            /** @description `out_of_credits` or `auth_failed` when the run stopped. Use resume after you fix it. */
+            error?: string | null;
+            /** Format: int32 */
+            failed_count: number;
+            /** Format: date-time */
+            finished_at?: string | null;
+            force: boolean;
+            /** Format: uuid */
+            id: string;
+            mode: string;
+            provider: string;
+            /** Format: int32 */
+            skipped_count: number;
+            /** @description `queued`, `running`, `done`, `cancelled`, `failed` */
+            status: string;
+            /** Format: int32 */
+            total: number;
+            /** @description For example a low balance at the start. */
+            warning?: string | null;
+        };
+        RunsReply: {
+            runs: components["schemas"]["Run"][];
+        };
         /**
          * @description One scope per step. Add a variant here (and to `ALL`) for a later step.
          *     The bootstrap makes one key for every scope in `ALL` that has no active key.
          * @enum {string}
          */
-        Scope: "admin" | "accounts" | "sending" | "replies" | "followups" | "leads" | "campaigns" | "generator";
+        Scope: "admin" | "accounts" | "sending" | "replies" | "followups" | "leads" | "campaigns" | "generator" | "integrations";
         ScopeFilter: {
             status?: string | null;
             /** Format: int32 */
             step?: number | null;
+        };
+        SendRule: {
+            /** @description Leads with no result yet. */
+            allow_not_verified: boolean;
+            /** @description Reoon statuses (lower case) that may start a campaign. */
+            allowed: string[];
         };
         SendTestBody: {
             /**
@@ -5818,6 +6213,12 @@ export interface components {
             redirect_uris: components["schemas"]["RedirectUris"];
             version: string;
         };
+        UpdateBody: {
+            /** @description Write only. A new key is tested first. It clears `auth_failed`. */
+            api_key?: string | null;
+            /** @description Merged into the app settings. */
+            settings?: unknown;
+        };
         UsageReply: {
             by_campaign: components["schemas"]["UsageRow"][];
             by_day: components["schemas"]["UsageRow"][];
@@ -5896,6 +6297,20 @@ export interface components {
         };
         /** @enum {string} */
         Verification: "unknown" | "syntax_ok" | "mx_ok" | "no_mx" | "invalid";
+        VerifyLeadRow: {
+            company_name?: string | null;
+            email: string;
+            first_name?: string | null;
+            /** Format: uuid */
+            id: string;
+            last_name?: string | null;
+            result?: components["schemas"]["LatestResult"] | null;
+        };
+        VerifyLeadsReply: {
+            leads: components["schemas"]["VerifyLeadRow"][];
+            /** Format: uuid */
+            next_cursor?: string | null;
+        };
         VerifyReport: {
             /**
              * Format: int64
@@ -5917,6 +6332,46 @@ export interface components {
              * @description Domains that could not be checked (timeout, DNS error, or out of time). Their leads keep their status.
              */
             unchecked: number;
+        };
+        VerifySettings: {
+            /**
+             * @description Verify new leads at once, when they come from a CSV import, the API or a manual add. Off by default.
+             * @default false
+             */
+            auto_verify: boolean;
+            /**
+             * Format: int32
+             * @description Parallel Reoon calls. 1 to 20.
+             * @default 5
+             */
+            concurrency: number;
+            /**
+             * @description `power` (checks the inbox, slow) or `quick`.
+             * @default power
+             */
+            mode: components["schemas"]["Mode"];
+            /**
+             * Format: int32
+             * @description A result newer than this many days is reused. 0 to 365.
+             * @default 30
+             */
+            reuse_days: number;
+            /**
+             * @default {
+             *       "allow_not_verified": true,
+             *       "allowed": [
+             *         "safe",
+             *         "valid"
+             *       ]
+             *     }
+             */
+            send_rule: components["schemas"]["SendRule"];
+            /**
+             * Format: int32
+             * @description Seconds between worker ticks. 1 to 300.
+             * @default 5
+             */
+            tick_secs: number;
         };
         WaitInfo: {
             reason: components["schemas"]["WaitReason"];
@@ -7095,6 +7550,8 @@ export interface operations {
                 limit: number | null;
                 /** @description `true`: only leads that lack a value one of the emails needs (a variable with no fallback). */
                 missing: boolean | null;
+                /** @description Latest Reoon status, a comma list like `safe,catch_all`. `none` means not verified yet. */
+                verification_status: string | null;
             };
             cookie?: never;
         };
@@ -8561,6 +9018,140 @@ export interface operations {
             };
         };
     };
+    list_apps: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppsReply"];
+                };
+            };
+        };
+    };
+    uninstall_app: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description `reoon` */
+                app: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Uninstalled */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description `not_installed` */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    update_app: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description `reoon` */
+                app: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateBody"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppInfo"];
+                };
+            };
+            /** @description `not_installed` */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description `integration_key_invalid` */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    install_app: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description `reoon` */
+                app: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InstallBody"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InstallReply"];
+                };
+            };
+            /** @description `already_installed` */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description `integration_key_invalid`: Reoon refused the key */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description `integration_unreachable` */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     list_keys: {
         parameters: {
             query?: never;
@@ -8679,6 +9270,8 @@ export interface operations {
                 created_from: string | null;
                 /** @description Created before this time. */
                 created_to: string | null;
+                /** @description Latest Reoon status, a comma list like `safe,catch_all`. `none` means not verified yet. */
+                verification_status: string | null;
                 /** @description The `next_cursor` of the last page. It is the id of the last lead. */
                 cursor: string | null;
                 /** @description 1 to 500. Default 50. */
@@ -8845,6 +9438,8 @@ export interface operations {
                 created_from: string | null;
                 /** @description Created before this time. */
                 created_to: string | null;
+                /** @description Latest Reoon status, a comma list like `safe,catch_all`. `none` means not verified yet. */
+                verification_status: string | null;
             };
             cookie?: never;
         };
@@ -10022,6 +10617,8 @@ export interface operations {
                 cursor: string | null;
                 /** @description 1 to 500. Default 50. */
                 limit: number | null;
+                /** @description `false`: only emails whose lead has no interest set yet ("not handled"). `true`: only those that have one. */
+                handled: boolean | null;
             };
             cookie?: never;
         };
@@ -11119,6 +11716,375 @@ export interface operations {
                 content?: never;
             };
             /** @description target_not_admin */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_balance: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Balance"];
+                };
+            };
+            /** @description `not_installed` */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description `integration_auth_failed`: Reoon refused the key */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description `integration_unreachable` */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_leads: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Text search in email, first name, last name and company name (part of a word is fine). */
+                q: string | null;
+                /** @description Only leads in this list. */
+                list_id: string | null;
+                /** @description Only leads in this campaign (any state). */
+                campaign_id: string | null;
+                /** @description Only leads with this tag. */
+                tag: string | null;
+                contact_state: components["schemas"]["ContactState"] | null;
+                interest: components["schemas"]["Interest"] | null;
+                verification: components["schemas"]["Verification"] | null;
+                /** @description `true`: only suppressed addresses (the address or its domain is blocked). `false`: only the others. */
+                suppressed: boolean | null;
+                /** @description Created at or after this time. */
+                created_from: string | null;
+                /** @description Created before this time. */
+                created_to: string | null;
+                /** @description Latest Reoon status, a comma list like `safe,catch_all`. `none` means not verified yet. */
+                verification_status: string | null;
+                /** @description Leads whose last check is older than this time, or that were never checked. */
+                checked_before: string | null;
+                /** @description The `next_cursor` of the last page. It is the id of the last lead. */
+                cursor: string | null;
+                /** @description 1 to 500. Default 50. */
+                limit: number | null;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VerifyLeadsReply"];
+                };
+            };
+            /** @description `invalid_cursor` */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_lead_result: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LatestResult"] | null;
+                };
+            };
+        };
+    };
+    pause_engine: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnginePauseReply"];
+                };
+            };
+        };
+    };
+    resume_engine: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnginePauseReply"];
+                };
+            };
+        };
+    };
+    list_runs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunsReply"];
+                };
+            };
+        };
+    };
+    create_run: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NewRun"];
+            };
+        };
+        responses: {
+            /** @description The `idempotency_key` was used before: the first run */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NewRunReply"];
+                };
+            };
+            /** @description `not_installed` */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description `integration_auth_failed` */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description `too_many_leads` (over 10000), `no_leads`, or `invalid_run` */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_run: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Run"];
+                };
+            };
+            /** @description `run_not_found` */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    cancel_run: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Run"];
+                };
+            };
+            /** @description `run_not_found` */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description `run_finished` */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    resume_run: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Run"];
+                };
+            };
+            /** @description `run_not_found` */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description `run_not_stopped` or `integration_auth_failed` */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_settings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsReply"];
+                };
+            };
+        };
+    };
+    patch_settings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description `mode`, `concurrency`, `reuse_days`, `tick_secs`, `send_rule: { allowed: [status], allow_not_verified }` */
+        requestBody: {
+            content: {
+                "application/json": unknown;
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsReply"];
+                };
+            };
+            /** @description `invalid_settings`, or `status_not_allowed`: a locked status (invalid, disabled, disposable, spamtrap) is in the rule */
             422: {
                 headers: {
                     [name: string]: unknown;

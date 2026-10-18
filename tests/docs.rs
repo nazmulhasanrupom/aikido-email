@@ -156,6 +156,7 @@ const EXPECTED: &[(&str, &str, Option<&str>)] = &[
     ("delete", "/v1/integrations/apps/{app}", Some("integrations")),
     ("get", "/v1/verify/reoon/balance", Some("integrations")),
     ("get", "/v1/verify/reoon/leads", Some("integrations")),
+    ("get", "/v1/verify/reoon/leads/{id}", Some("integrations")),
     ("post", "/v1/verify/reoon/runs", Some("integrations")),
     ("get", "/v1/verify/reoon/runs", Some("integrations")),
     ("get", "/v1/verify/reoon/runs/{id}", Some("integrations")),

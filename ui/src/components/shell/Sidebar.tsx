@@ -12,6 +12,7 @@ import {
   PanelLeftOpen,
   Send,
   Settings,
+  ShieldCheck,
   Sparkles,
   Sun,
   Users,
@@ -21,6 +22,7 @@ import { toast } from "sonner";
 import { type AuthState, authStateKey, type User } from "@/api/auth";
 import { messageOf } from "@/api/errors";
 import { http, type S } from "@/api/http";
+import { useReoon } from "@/features/reoon/api";
 import { useUser } from "@/features/settings/useUser";
 import { cn } from "@/lib/cn";
 import { type ThemeChoice, useThemeChoice } from "@/theme/theme";
@@ -94,6 +96,7 @@ export function Sidebar(p: Props) {
     refetchInterval: 60_000,
   });
   const inboxCount = unread.data?.messages.length ?? 0;
+  const reoon = useReoon();
   return (
     <>
       {p.drawerOpen && (
@@ -154,6 +157,25 @@ export function Sidebar(p: Props) {
               ) : null}
             </Link>
           ))}
+          {reoon.installed && (
+            <>
+              <div className={cn("mt-3 px-2.5 text-xs font-medium text-muted", slim && "md:hidden")}>Apps</div>
+              <Link
+                to="/w/$ws/apps/reoon"
+                params={{ ws: p.ws }}
+                onClick={p.onCloseDrawer}
+                title={slim ? "Reoon" : undefined}
+                className={cn(
+                  "flex h-9 items-center gap-3 rounded-(--radius-control) px-2.5 text-sm hover:bg-surface-2",
+                  slim && "md:justify-center md:px-0",
+                )}
+                activeProps={{ className: "bg-accent-soft font-medium hover:bg-accent-soft" }}
+              >
+                <ShieldCheck size={18} aria-hidden="true" className="shrink-0" />
+                <span className={cn("flex-1 truncate", slim && "md:hidden")}>Reoon</span>
+              </Link>
+            </>
+          )}
         </nav>
 
         <div className="border-t border-border p-2">

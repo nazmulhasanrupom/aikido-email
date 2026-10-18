@@ -1807,4 +1807,8 @@ Scope `integrations` (key `AIKIDO_INTEGRATIONS_API_KEY`). Install, update and un
 | `GET`, `PATCH /v1/verify/reoon/settings` | `mode` (`power` default, `quick`), `concurrency` (1-20, default 5), `reuse_days` (default 30), `tick_secs`, `send_rule { allowed: [status], allow_not_verified }`. `422 status_not_allowed` for `invalid`, `disabled`, `disposable`, `spamtrap`. |
 | `POST /v1/verify/reoon/pause`, `.../resume` | Stop or start the worker (owner or admin sessions). |
 
+`settings.auto_verify` (default off): new leads from the CSV import, `POST /v1/leads`, `POST /v1/leads/bulk` and the other lead writes (not enrollments) are checked at once. They join one open run with `auto: true`. A lead with a recent result is skipped for free.
+
+`GET /v1/leads` and `GET /v1/campaigns/{id}/leads` take `verification_status` (comma list, `none` = not verified). Their rows have `verification_status`, `verification_score` and `verification_checked_at`. `GET /v1/verify/reoon/leads/{id}` gives the full result of one lead.
+
 The lead timeline gets the event `email_verified` (`status`, `mode`, `score`). The send rule is not used by the campaign feeder yet (phase 3).

@@ -21,6 +21,8 @@ import {
   TD,
   useDebounced,
 } from "@/components/ui";
+import { STATUSES, useReoon } from "@/features/reoon/api";
+import { VerifyPill } from "@/features/reoon/parts";
 import { fmtDate } from "@/lib/format";
 import { CONTACT_STATES, INTERESTS, say } from "@/lib/words";
 import { ImportModal } from "./ImportModal";
@@ -40,6 +42,7 @@ const BASE_COLS: GridCol[] = [
 ];
 /** Columns that are not edited in the cell. */
 const STATIC: Record<string, (r: S["Lead"]) => React.ReactNode> = {
+  reoon: (r) => <VerifyPill status={r.verification_status} score={r.verification_score} checkedAt={r.verification_checked_at} />,
   contact_state: (r) => say("contact", r.contact_state),
   interest: (r) => (r.interest ? <Pill tone="accent">{say("interest", r.interest)}</Pill> : ""),
   verification: (r) => say("verification", r.verification),
@@ -56,6 +59,7 @@ export type LeadSearch = {
   interest?: string;
   verification?: string;
   suppressed?: string;
+  verification_status?: string;
 };
 const FILTERS = [
   "q",
@@ -66,6 +70,7 @@ const FILTERS = [
   "interest",
   "verification",
   "suppressed",
+  "verification_status",
 ] as const;
 
 function toQuery(s: LeadSearch): Record<string, unknown> {
@@ -77,7 +82,8 @@ function toQuery(s: LeadSearch): Record<string, unknown> {
 export function AllLeads({ search, ws }: { search: LeadSearch; ws: string }) {
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const cols = useColumns("leads", BASE_COLS);
+  const reoon = useReoon();
+  const cols = useColumns("leads", reoon.installed ? [...BASE_COLS, { id: "reoon", label: "Verification" }] : BASE_COLS);
   const lists = useQuery(q.lists);
   const campaigns = useQuery(q.campaigns);
   const [text, setText] = useState(search.q ?? "");
@@ -202,6 +208,20 @@ export function AllLeads({ search, ws }: { search: LeadSearch; ws: string }) {
             ]}
           />
         </div>
+        {reoon.installed && (
+          <div className="w-44">
+            <Select
+              label="Verification"
+              value={search.verification_status ?? ""}
+              onChange={(v) => setFilter("verification_status", v)}
+              options={[
+                { value: "", label: "Any" },
+                { value: "none", label: say("reoon", "none") },
+                ...STATUSES.map((s) => ({ value: s.code, label: say("reoon", s.code) })),
+              ]}
+            />
+          </div>
+        )}
         <div className="w-36">
           <Select
             label="Blocked"

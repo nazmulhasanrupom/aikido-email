@@ -38,6 +38,7 @@ impl SendRule {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(default)]
 pub struct VerifySettings {
     /// `power` (checks the inbox, slow) or `quick`.
     pub mode: Mode,
@@ -48,11 +49,13 @@ pub struct VerifySettings {
     /// Seconds between worker ticks. 1 to 300.
     pub tick_secs: i32,
     pub send_rule: SendRule,
+    /// Verify new leads at once, when they come from a CSV import, the API or a manual add. Off by default.
+    pub auto_verify: bool,
 }
 
 impl Default for VerifySettings {
     fn default() -> Self {
-        Self { mode: Mode::Power, concurrency: 5, reuse_days: 30, tick_secs: 5, send_rule: SendRule::default() }
+        Self { mode: Mode::Power, concurrency: 5, reuse_days: 30, tick_secs: 5, send_rule: SendRule::default(), auto_verify: false }
     }
 }
 

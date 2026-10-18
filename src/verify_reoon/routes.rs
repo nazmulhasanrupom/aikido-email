@@ -23,6 +23,7 @@ pub fn router(state: AppState) -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
         .routes(routes!(get_balance))
         .routes(routes!(list_leads))
+        .routes(routes!(get_lead_result))
         .routes(routes!(create_run, list_runs))
         .routes(routes!(get_run))
         .routes(routes!(cancel_run))
@@ -118,11 +119,9 @@ async fn resume_engine(State(st): State<AppState>) -> ApiResult<ApiJson<EnginePa
 
 // ---------- the table of leads with their latest result ----------
 
-/// Filters on the latest Reoon result, next to the lead filter.
+/// Extra filter on the latest Reoon result. The status filter is `verification_status` of the lead filter.
 #[derive(Deserialize, ToSchema, IntoParams, Default, Clone, Debug)]
 pub struct ResultFilter {
-    /// Comma list of statuses, for example `safe,catch_all`. `none` means "not verified yet".
-    pub verification_status: Option<String>,
     /// Leads whose last check is older than this time, or that were never checked.
     pub checked_before: Option<DateTime<Utc>>,
 }
@@ -131,19 +130,6 @@ pub struct ResultFilter {
 const LATEST: &str = "SELECT 1 FROM email_verifications v WHERE v.lead_id = leads.id AND v.provider = 'reoon' AND v.email = leads.email::text";
 
 fn push_result_filter<'a>(qb: &mut QueryBuilder<'a, Postgres>, f: &'a ResultFilter) {
-    if let Some(list) = f.verification_status.as_deref() {
-        let mut statuses: Vec<String> = list.split(',').map(|s| s.trim().to_ascii_lowercase()).filter(|s| !s.is_empty()).collect();
-        let none = statuses.iter().any(|s| s == "none");
-        statuses.retain(|s| s != "none");
-        qb.push(" AND (FALSE");
-        if !statuses.is_empty() {
-            qb.push(format!(" OR EXISTS ({LATEST} AND v.status = ANY(")).push_bind(statuses).push("))");
-        }
-        if none {
-            qb.push(format!(" OR NOT EXISTS ({LATEST})"));
-        }
-        qb.push(")");
-    }
     if let Some(t) = f.checked_before {
         qb.push(format!(" AND (NOT EXISTS ({LATEST}) OR EXISTS ({LATEST} AND v.checked_at < ")).push_bind(t).push("))");
     }
@@ -264,6 +250,8 @@ pub struct Run {
     /// `queued`, `running`, `done`, `cancelled`, `failed`
     pub status: String,
     pub force: bool,
+    /// Made by the server for new leads (verify on import), not by a person.
+    pub auto: bool,
     pub total: i32,
     pub done_count: i32,
     pub failed_count: i32,
@@ -277,7 +265,7 @@ pub struct Run {
     pub finished_at: Option<DateTime<Utc>>,
 }
 
-const RUN_COLS: &str = "id, provider, mode, status, force, total, done_count, failed_count, skipped_count, credits_used, warning, error, created_at, finished_at";
+const RUN_COLS: &str = "id, provider, mode, status, force, auto, total, done_count, failed_count, skipped_count, credits_used, warning, error, created_at, finished_at";
 
 #[derive(Deserialize, ToSchema)]
 pub struct NewRun {
@@ -445,4 +433,19 @@ async fn resume_run(State(st): State<AppState>, ApiPath(id): ApiPath<Uuid>) -> A
     active_or_error(&st).await?;
     sqlx::query("UPDATE verification_runs SET status = 'running', error = NULL, finished_at = NULL WHERE id = $1").bind(id).execute(&st.pool).await?;
     Ok(ApiJson(load_run(&st, id).await?))
+}
+
+/// The latest Reoon result of one lead, with the flags. Null when there is none.
+#[utoipa::path(get, path = "/v1/verify/reoon/leads/{id}", tag = "integrations",
+    params(("id" = Uuid, Path)), responses((status = 200, body = Option<LatestResult>)),
+    security(("api_key" = ["integrations"]), ("session" = [])), description = "Scope: `integrations`. For the lead drawer.")]
+async fn get_lead_result(State(st): State<AppState>, ApiPath(id): ApiPath<Uuid>) -> ApiResult<ApiJson<Option<LatestResult>>> {
+    let row: Option<ResultRow> = sqlx::query_as(
+        "SELECT v.lead_id, v.email, v.status, v.mode, v.score, v.safe_to_send, v.flags, v.checked_at FROM email_verifications v JOIN leads l ON l.id = v.lead_id
+          WHERE v.lead_id = $1 AND v.provider = 'reoon' AND v.email = l.email::text",
+    )
+    .bind(id)
+    .fetch_optional(&st.pool)
+    .await?;
+    Ok(ApiJson(row.map(|r| LatestResult { status: r.status, mode: r.mode, score: r.score, safe_to_send: r.safe_to_send, flags: r.flags, checked_at: r.checked_at })))
 }

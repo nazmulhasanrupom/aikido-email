@@ -16,6 +16,7 @@ import {
   TextArea,
 } from "@/components/ui";
 import { fmtAgo, fmtDateTime, fullName } from "@/lib/format";
+import { VerifyBlock } from "@/features/reoon/parts";
 import { INTERESTS, say } from "@/lib/words";
 
 type Tab = "details" | "timeline" | "emails" | "notes";
@@ -47,6 +48,7 @@ export function eventText(e: S["LeadEvent"]): string {
     stopped: `Sequence stopped${why}`,
     completed: "Sequence finished",
     note: `Note: ${String(d.text ?? "")}`,
+    email_verified: `Verified by Reoon: ${say("reoon", String(d.status ?? ""))}${d.score != null ? ` (${String(d.score)})` : ""}`,
     interest_changed: `Interest set: ${say("interest", String(d.interest ?? d.to ?? ""))}`,
   };
   return names[e.kind] ?? e.kind.replaceAll("_", " ");
@@ -214,6 +216,7 @@ function Details({ lead, fields }: { lead: S["LeadDetail"]; fields: S["ContextFi
   });
   return (
     <div className="grid gap-3 sm:grid-cols-2">
+      <VerifyBlock leadId={lead.id} />
       <Field
         label="Email"
         value={lead.email}
