@@ -28,6 +28,7 @@ pub fn router(state: AppState) -> OpenApiRouter<AppState> {
         .routes(routes!(get_account, patch_account, delete_account))
         .routes(routes!(test_account))
         .routes(routes!(dns_check))
+        .routes(routes!(health))
         .route_layer(axum::middleware::from_fn_with_state((state, Scope::Accounts), require_scope))
 }
 
@@ -475,6 +476,19 @@ async fn delete_account(State(st): State<AppState>, ApiPath(id): ApiPath<Uuid>) 
         Some(n) => Ok(ApiJson(DeleteReply { deleted: true, cancelled_jobs: n })),
         None => Err(ApiError::not_found("account_not_found", "No account with this id.")),
     }
+}
+
+/// The health of an account: DNS records, sending power and blacklists, as one score from 0 to 100.
+#[utoipa::path(get, path = "/v1/accounts/{id}/health", tag = "accounts",
+    params(("id" = Uuid, Path), DnsQuery),
+    responses((status = 200, body = super::health::HealthReport), (status = 404, description = "No such account")),
+    security(("api_key" = ["accounts"])),
+    description = "Scope: `accounts`. DNS health (MX 40, SPF 20, DKIM 20, DMARC 10, A 10; a warning gives half), \
+        sending power (send success and bounces of the last 30 days, from 10 sent emails) and DNS blacklists. \
+        The score is the mean of DNS health and sending power, minus 20 per listing. DNS and blacklist answers are kept for one hour.")]
+async fn health(State(st): State<AppState>, ApiPath(id): ApiPath<Uuid>, ApiQuery(q): ApiQuery<DnsQuery>) -> ApiResult<ApiJson<super::health::HealthReport>> {
+    let a = find(&st, id).await?;
+    Ok(ApiJson(super::health::report(&st, &a, q.selector.as_deref()).await?))
 }
 
 #[cfg(test)]

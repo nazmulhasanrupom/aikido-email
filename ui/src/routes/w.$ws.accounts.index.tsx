@@ -20,7 +20,7 @@ import {
   TD,
 } from "@/components/ui";
 import { AddAccount } from "@/features/accounts/AddAccount";
-import { DomainChip } from "@/features/accounts/DomainCheck";
+import { HealthChip } from "@/features/accounts/Health";
 import { AccountStatusPill, ReadingCell } from "@/features/accounts/parts";
 import { fmtDateTime } from "@/lib/format";
 import { say } from "@/lib/words";
@@ -50,7 +50,17 @@ function Accounts() {
       {accounts.data && accounts.data.length > 0 && (
         <Table>
           <Head
-            cols={["Email", "Provider", "Status", "Replies", "Domain", "Today", "Warm-up", "Next send", ""]}
+            cols={[
+              "Email",
+              "Provider",
+              "Status",
+              "Replies",
+              "Health",
+              "Today",
+              "Warm-up",
+              "Next send",
+              "",
+            ]}
           />
           <tbody>
             {accounts.data.map((a) => (
@@ -111,7 +121,7 @@ function Row({ ws, account: a }: { ws: string; account: import("@/api/http").S["
         <ReadingCell account={a} />
       </td>
       <td className={TD}>
-        <DomainChip accountId={a.id} />
+        <HealthChip accountId={a.id} />
       </td>
       <td className={TD}>{s ? `${s.sent_today} / ${s.today_limit}` : ""}</td>
       <td className={TD}>{s && s.warmup_day > 0 ? `Day ${s.warmup_day}` : "Off"}</td>

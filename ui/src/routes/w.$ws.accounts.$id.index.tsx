@@ -6,9 +6,9 @@ import { messageOf } from "@/api/errors";
 import { http, type S } from "@/api/http";
 import { q } from "@/api/queries";
 import { Button, Card, Notice, Skeleton } from "@/components/ui";
+import { HealthCard } from "@/features/accounts/Health";
 import { fmtDateTime } from "@/lib/format";
 import { say } from "@/lib/words";
-import { DomainCheck } from "@/features/accounts/DomainCheck";
 import { DeleteAccount } from "./w.$ws.accounts.index";
 
 export const Route = createFileRoute("/w/$ws/accounts/$id/")({ component: Overview });
@@ -101,7 +101,7 @@ function Overview() {
         ))}
       </Card>
       <Card className="lg:col-span-2">
-        <DomainCheck accountId={id} />
+        <HealthCard accountId={id} />
       </Card>
       <Card className="lg:col-span-2">
         <h2 className="mb-2 font-semibold">

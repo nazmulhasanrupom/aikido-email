@@ -16,8 +16,8 @@ pub const EMAILS: usize = 4;
 const MAX_VALUE_CHARS: usize = 1000;
 
 /// The names the prompts can use, for the Variable menu.
-pub const SENDER_VARS: [&str; 9] = [
-    "sender_first_name", "ideal_customer", "not_a_fit", "problem_solved", "offer", "outcome", "proof_or_none", "low_friction_offer", "allow_low_personalization",
+pub const SENDER_VARS: [&str; 10] = [
+    "my_business", "sender_first_name", "ideal_customer", "not_a_fit", "problem_solved", "offer", "outcome", "proof_or_none", "low_friction_offer", "allow_low_personalization",
 ];
 pub const LEAD_VARS: [&str; 12] = [
     "first_name", "last_name", "company_name", "job_title", "industry", "website", "personalization_note", "trigger_event", "trigger_verified", "location", "linkedin_url", "timezone",
@@ -65,6 +65,7 @@ pub fn vars(lead: &Lead, profile: Option<&SenderProfile>, fallback_name: &str) -
         put(k, &val);
     }
     put("trigger_verified", if lead.trigger_verified { "yes" } else { "no" });
+    v.insert("my_business".into(), profile.map(|p| p.my_business.trim().chars().take(super::sender::MAX_BUSINESS_CHARS).collect()).unwrap_or_default());
     // short names
     for (alias, of) in [("company", "company_name"), ("title", "job_title"), ("trigger", "trigger_event")] {
         let val = v.get(of).cloned().unwrap_or_default();

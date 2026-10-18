@@ -15,11 +15,11 @@ import { say } from "@/lib/words";
 export const Route = createFileRoute("/w/$ws/campaigns/$id")({ component: CampaignLayout });
 
 const TABS = [
+  ["/w/$ws/campaigns/$id/reports", "Reports"],
   ["/w/$ws/campaigns/$id/editor", "Editor"],
   ["/w/$ws/campaigns/$id/leads", "Leads"],
   ["/w/$ws/campaigns/$id/followups", "Follow-ups"],
   ["/w/$ws/campaigns/$id/settings", "Settings"],
-  ["/w/$ws/campaigns/$id/reports", "Reports"],
 ] as const;
 
 function CampaignLayout() {

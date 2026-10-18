@@ -68,11 +68,17 @@ pub const TEXT_KEYS: [&str; 8] = ["sender_first_name", "ideal_customer", "not_a_
 
 /// The user prompt. Empty sources are left out; `<` and `>` in source text are escaped.
 pub fn user_prompt(chunks: &[Chunk]) -> String {
+    user_prompt_with(chunks, "Build the sender profile.")
+}
+
+/// The sources block and then `ask`.
+pub fn user_prompt_with(chunks: &[Chunk], ask: &str) -> String {
     let mut s = String::from("<sources>\n");
     for c in chunks.iter().filter(|c| !c.text.trim().is_empty()) {
         s.push_str(&format!("<source tag=\"{}\">{}</source>\n", escape_source(&c.tag).replace('"', "&quot;"), escape_source(&c.text)));
     }
-    s.push_str("</sources>\n\nBuild the sender profile.");
+    s.push_str("</sources>\n\n");
+    s.push_str(ask);
     s
 }
 
@@ -125,6 +131,7 @@ pub fn parse_draft(text: &str, valid_tags: &HashSet<String>) -> Result<Draft, St
         proof_or_none: get("proof_or_none")?,
         low_friction_offer: get("low_friction_offer")?,
         allow_low_personalization: false,
+        my_business: String::new(),
     };
     if f.proof_or_none.is_empty() {
         f.proof_or_none = "none".into();

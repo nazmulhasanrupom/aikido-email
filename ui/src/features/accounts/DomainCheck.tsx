@@ -50,7 +50,7 @@ function Row({ name, c }: { name: string; c: Check }) {
   );
 }
 
-/** SPF, DKIM, DMARC and MX of the sending domain, in green, orange and red, with the record to add. */
+/** SPF, DKIM, DMARC, MX and A of the sending domain, in green, orange and red, with the record to add. */
 export function DomainCheck({ accountId, compact }: { accountId: string; compact?: boolean }) {
   const [typed, setTyped] = useState("");
   const [selector, setSelector] = useState("");
@@ -60,7 +60,12 @@ export function DomainCheck({ accountId, compact }: { accountId: string; compact
       {!compact && (
         <div className="flex items-center justify-between gap-2">
           <h2 className="font-semibold">Domain check{r.data ? `: ${r.data.domain}` : ""}</h2>
-          <Button variant="secondary" className="h-8" onClick={() => void r.refetch()} busy={r.isFetching}>
+          <Button
+            variant="secondary"
+            className="h-8"
+            onClick={() => void r.refetch()}
+            busy={r.isFetching}
+          >
             Check again
           </Button>
         </div>
@@ -73,6 +78,7 @@ export function DomainCheck({ accountId, compact }: { accountId: string; compact
           <Row name="DKIM" c={r.data.dkim} />
           <Row name="DMARC" c={r.data.dmarc} />
           <Row name="Mail server (MX)" c={r.data.mx} />
+          <Row name="Website (A)" c={r.data.a} />
         </ul>
       )}
       {!compact && (

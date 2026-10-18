@@ -1,4 +1,6 @@
 About me
+My business:
+{{my_business}}
 Name: {{sender_first_name}}
 I help: {{ideal_customer}}
 I do not help: {{not_a_fit}}

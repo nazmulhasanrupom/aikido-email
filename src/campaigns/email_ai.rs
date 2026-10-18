@@ -61,6 +61,8 @@ pub struct Prompts {
     pub thread: bool,
     pub sender_name: String,
     pub sender_email: String,
+    /// The saved business points (`{{my_business}}`). Empty when none are saved.
+    pub my_business: String,
     /// `Some` in the Optimised mode. Then `system` and `users` are not used.
     pub optimized: Option<super::email_opt::Optimized>,
 }
@@ -75,8 +77,9 @@ pub async fn load_prompts(conn: &mut PgConnection, ctx: &Ctx) -> Result<Prompts,
             sender_email = email;
         }
     }
+    let profile = crate::prompting::sender::current(conn).await?;
+    let my_business = profile.as_ref().map(|p| p.my_business.clone()).unwrap_or_default();
     let optimized = if ctx.campaign.content_mode == "optimized" {
-        let profile = crate::prompting::sender::current(conn).await?;
         let own = seq.as_ref().and_then(|s| s.opt_system_prompt.clone()).filter(|p| !p.trim().is_empty());
         let user = seq.as_ref().and_then(|s| s.opt_user_prompt.clone()).filter(|p| !p.trim().is_empty());
         Some(super::email_opt::Optimized { system: own, user, profile, fallback_name: sender_name.clone() })
@@ -85,6 +88,7 @@ pub async fn load_prompts(conn: &mut PgConnection, ctx: &Ctx) -> Result<Prompts,
     };
     Ok(Prompts {
         optimized,
+        my_business,
         system: seq.as_ref().and_then(|s| s.ai_system_prompt.clone()).filter(|p| !p.trim().is_empty()),
         users: ctx.steps.iter().filter_map(|s| s.ai_user_prompt.clone().filter(|p| !p.trim().is_empty()).map(|p| (s.step_number, p))).collect(),
         brief: seq.as_ref().and_then(|s| s.brief.clone()),
@@ -106,6 +110,7 @@ fn vars_for(ctx: &Ctx, p: &Prompts, lead: &Lead, extra: &Extra) -> Result<Vars, 
     v.insert("sender_name".into(), p.sender_name.clone());
     v.insert("sender_email".into(), p.sender_email.clone());
     v.insert("brief".into(), p.brief.clone().unwrap_or_default());
+    v.insert("my_business".into(), p.my_business.clone());
     v.insert("previous_emails".into(), if extra.previous_emails.trim().is_empty() { "(none: this is the first email)".into() } else { extra.previous_emails.clone() });
     v.insert("lead_notes".into(), if extra.lead_notes.trim().is_empty() { "(no notes)".into() } else { extra.lead_notes.clone() });
     Ok(v)

@@ -8,9 +8,11 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 pub const MAX_FIELD_CHARS: usize = 1000;
+/// The business points are a list, so they get more room than one field.
+pub const MAX_BUSINESS_CHARS: usize = 4000;
 
 pub const PROFILE_COLS: &str = "id, version, sender_first_name, ideal_customer, not_a_fit, problem_solved, offer, outcome, proof_or_none, low_friction_offer, \
-    allow_low_personalization, other_offers, sources_used, created_at";
+    allow_low_personalization, my_business, other_offers, sources_used, created_at";
 
 #[derive(FromRow, Serialize, Clone, Debug, ToSchema)]
 pub struct SenderProfile {
@@ -26,6 +28,8 @@ pub struct SenderProfile {
     pub proof_or_none: String,
     pub low_friction_offer: String,
     pub allow_low_personalization: bool,
+    /// Short points about the business, one per line. Prompts use them as `{{my_business}}`.
+    pub my_business: String,
     #[schema(value_type = Vec<String>)]
     pub other_offers: Value,
     /// Field key to the source tags that support it.
@@ -55,6 +59,9 @@ pub struct SenderFields {
     pub low_friction_offer: String,
     #[serde(default)]
     pub allow_low_personalization: bool,
+    /// Short points about the business, one per line. Up to 4000 characters.
+    #[serde(default)]
+    pub my_business: String,
 }
 
 fn none_text() -> String {
@@ -82,6 +89,10 @@ impl SenderFields {
         if self.proof_or_none.is_empty() {
             self.proof_or_none = "none".into();
         }
+        self.my_business = self.my_business.trim().to_string();
+        if self.my_business.chars().count() > MAX_BUSINESS_CHARS {
+            return Err(format!("my_business is longer than {MAX_BUSINESS_CHARS} characters"));
+        }
         Ok(self)
     }
 }
@@ -98,6 +109,7 @@ impl SenderProfile {
             proof_or_none: self.proof_or_none.clone(),
             low_friction_offer: self.low_friction_offer.clone(),
             allow_low_personalization: self.allow_low_personalization,
+            my_business: self.my_business.clone(),
         }
     }
 }
@@ -120,8 +132,8 @@ pub async fn save(conn: &mut PgConnection, f: &SenderFields, other_offers: &Valu
     sqlx::query("LOCK TABLE sender_profiles IN SHARE ROW EXCLUSIVE MODE").execute(&mut *conn).await?;
     sqlx::query_as(&format!(
         "INSERT INTO sender_profiles (id, is_default, version, sender_first_name, ideal_customer, not_a_fit, problem_solved, offer, outcome, proof_or_none,
-                low_friction_offer, allow_low_personalization, other_offers, sources_used, created_at)
-         SELECT $1, true, COALESCE(max(version), 0) + 1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13 FROM sender_profiles WHERE is_default
+                low_friction_offer, allow_low_personalization, my_business, other_offers, sources_used, created_at)
+         SELECT $1, true, COALESCE(max(version), 0) + 1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14 FROM sender_profiles WHERE is_default
          RETURNING {PROFILE_COLS}"
     ))
     .bind(Uuid::now_v7())
@@ -134,6 +146,7 @@ pub async fn save(conn: &mut PgConnection, f: &SenderFields, other_offers: &Valu
     .bind(&f.proof_or_none)
     .bind(&f.low_friction_offer)
     .bind(f.allow_low_personalization)
+    .bind(&f.my_business)
     .bind(other_offers)
     .bind(sources_used)
     .bind(now)
@@ -167,6 +180,7 @@ pub fn test_profile(version: i32) -> SenderProfile {
         proof_or_none: "none".into(),
         low_friction_offer: "A free audit".into(),
         allow_low_personalization: false,
+        my_business: String::new(),
         other_offers: serde_json::json!([]),
         sources_used: serde_json::json!({}),
         created_at: chrono::Utc::now(),

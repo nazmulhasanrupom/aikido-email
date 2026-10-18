@@ -351,3 +351,28 @@ async fn the_personalization_scope_is_separate(pool: PgPool) {
     assert_eq!(r.status, StatusCode::FORBIDDEN);
     assert_eq!(g.api(Scope::Admin, "GET", "/v1/personalization/sources", None).await.status, StatusCode::OK);
 }
+
+#[sqlx::test]
+async fn the_ai_writes_business_points_and_they_save_as_my_business(pool: PgPool) {
+    let g = G::new(pool).await;
+    let ok = |m: &'static str, u: &'static str, b: Option<Value>| g.ok(Scope::Personalization, m, u, b);
+    let r = g.api(Scope::Personalization, "POST", "/v1/personalization/business/generate", None).await;
+    assert_eq!(r.body["error"]["code"].as_str(), Some("no_sources"), "{}", r.body);
+    ok("POST", "/v1/personalization/sources", Some(json!({ "kind": "text", "text": "Smile Ads runs paid search for dental groups." }))).await;
+    let d = ok("POST", "/v1/personalization/business/generate", None).await;
+    assert_eq!(d["my_business"], "- Fake point one.\n- Fake point two.");
+    // a draft: nothing is saved
+    assert!(ok("GET", "/v1/personalization/profile", None).await["profile"].is_null());
+    let saved = ok("PUT", "/v1/personalization/business", Some(json!({ "my_business": d["my_business"] }))).await;
+    assert_eq!((saved["version"].as_i64(), saved["my_business"].as_str()), (Some(1), d["my_business"].as_str()));
+    // the full profile save keeps the points when it sends none
+    let s = ok("PUT", "/v1/personalization/profile", Some(json!({ "fields": { "offer": "Paid search" } }))).await;
+    assert_eq!((s["offer"].as_str(), s["my_business"].as_str()), (Some("Paid search"), d["my_business"].as_str()));
+    // and the business save keeps the other fields
+    let s = ok("PUT", "/v1/personalization/business", Some(json!({ "my_business": "- New" }))).await;
+    assert_eq!((s["offer"].as_str(), s["my_business"].as_str()), (Some("Paid search"), Some("- New")));
+    let long = g.api(Scope::Personalization, "PUT", "/v1/personalization/business", Some(json!({ "my_business": "x".repeat(4001) }))).await;
+    assert_eq!(long.status, StatusCode::UNPROCESSABLE_ENTITY);
+    let vars = g.ok(Scope::Campaigns, "GET", "/v1/prompts/defaults", None).await;
+    assert!(vars["variables"].as_array().unwrap().contains(&json!("my_business")));
+}

@@ -25,9 +25,20 @@ pub enum TxtAnswer {
     Unknown,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub enum IpAnswer {
+    Ips(Vec<std::net::Ipv4Addr>),
+    /// The name has no A record (or does not exist).
+    None,
+    /// Timeout or DNS error: we do not know.
+    Unknown,
+}
+
 #[async_trait]
 pub trait TxtResolver: Send + Sync {
     async fn txt(&self, name: &str) -> TxtAnswer;
+    /// The A records (IPv4) of a name. The health check uses it for the website and the blacklists.
+    async fn ipv4(&self, name: &str) -> IpAnswer;
 }
 
 /// The real resolver: the system DNS settings. Made on first use.
@@ -36,11 +47,36 @@ pub struct SystemTxt {
     inner: tokio::sync::OnceCell<Option<hickory_resolver::TokioResolver>>,
 }
 
+impl SystemTxt {
+    async fn resolver(&self) -> Option<&hickory_resolver::TokioResolver> {
+        self.inner.get_or_init(|| async { hickory_resolver::Resolver::builder_tokio().and_then(|b| b.build()).ok() }).await.as_ref()
+    }
+}
+
 #[async_trait]
 impl TxtResolver for SystemTxt {
+    async fn ipv4(&self, name: &str) -> IpAnswer {
+        let Some(resolver) = self.resolver().await else { return IpAnswer::Unknown };
+        let fqdn = format!("{name}.");
+        match tokio::time::timeout(LOOKUP_TIMEOUT, resolver.ipv4_lookup(fqdn.as_str())).await {
+            Ok(Ok(found)) => {
+                let ips: Vec<std::net::Ipv4Addr> = found
+                    .answers()
+                    .iter()
+                    .filter_map(|r| match &r.data {
+                        hickory_resolver::proto::rr::RData::A(a) => Some(a.0),
+                        _ => None,
+                    })
+                    .collect();
+                if ips.is_empty() { IpAnswer::None } else { IpAnswer::Ips(ips) }
+            }
+            Ok(Err(e)) if e.is_nx_domain() || e.is_no_records_found() => IpAnswer::None,
+            _ => IpAnswer::Unknown,
+        }
+    }
+
     async fn txt(&self, name: &str) -> TxtAnswer {
-        let resolver = self.inner.get_or_init(|| async { hickory_resolver::Resolver::builder_tokio().and_then(|b| b.build()).ok() }).await;
-        let Some(resolver) = resolver else { return TxtAnswer::Unknown };
+        let Some(resolver) = self.resolver().await else { return TxtAnswer::Unknown };
         let fqdn = format!("{name}.");
         match tokio::time::timeout(LOOKUP_TIMEOUT, resolver.txt_lookup(fqdn.as_str())).await {
             Ok(Ok(found)) => {
@@ -67,6 +103,7 @@ pub mod fake {
     #[derive(Default)]
     pub struct FakeTxt {
         table: Mutex<HashMap<String, Vec<String>>>,
+        ips: Mutex<HashMap<String, Vec<std::net::Ipv4Addr>>>,
     }
 
     impl FakeTxt {
@@ -76,6 +113,10 @@ pub mod fake {
         pub fn set(&self, name: &str, records: &[&str]) {
             self.table.lock().unwrap().insert(name.to_string(), records.iter().map(|s| s.to_string()).collect());
         }
+        /// The A records of a name. A name not set has none.
+        pub fn set_ip(&self, name: &str, ips: &[&str]) {
+            self.ips.lock().unwrap().insert(name.to_string(), ips.iter().map(|s| s.parse().unwrap()).collect());
+        }
     }
 
     #[async_trait]
@@ -84,6 +125,12 @@ pub mod fake {
             match self.table.lock().unwrap().get(name) {
                 Some(r) => TxtAnswer::Records(r.clone()),
                 None => TxtAnswer::None,
+            }
+        }
+        async fn ipv4(&self, name: &str) -> IpAnswer {
+            match self.ips.lock().unwrap().get(name) {
+                Some(r) => IpAnswer::Ips(r.clone()),
+                None => IpAnswer::None,
             }
         }
     }
@@ -110,18 +157,25 @@ pub struct DnsReport {
     pub dkim: Check,
     pub dmarc: Check,
     pub mx: Check,
-    /// The worst of the four: `ok`, `warn`, `fail` or `unknown`.
+    /// The A record: the domain points at a real website. Not needed to send, so it is not in `overall`.
+    pub a: Check,
+    /// The worst of SPF, DKIM, DMARC and MX: `ok`, `warn`, `fail` or `unknown`.
     pub overall: String,
 }
 
 pub struct DnsChecker {
     txt: Arc<dyn TxtResolver>,
     cache: Mutex<HashMap<(String, String), DnsReport>>,
+    /// Blacklist answers by the names that were looked at. Kept for one hour too.
+    pub(crate) blacklist_cache: Mutex<HashMap<String, super::health::Blacklists>>,
 }
 
 impl DnsChecker {
     pub fn new(txt: Arc<dyn TxtResolver>) -> Self {
-        Self { txt, cache: Mutex::new(HashMap::new()) }
+        Self { txt, cache: Mutex::new(HashMap::new()), blacklist_cache: Mutex::new(HashMap::new()) }
+    }
+    pub fn resolver(&self) -> &dyn TxtResolver {
+        self.txt.as_ref()
     }
 }
 
@@ -201,6 +255,17 @@ fn worst(checks: &[&Check]) -> String {
     "ok".to_string()
 }
 
+fn a_check(a: &IpAnswer, domain: &str) -> Check {
+    match a {
+        IpAnswer::Ips(ips) => Check { found: Some(ips.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(", ")), ..check("ok", "The domain points at a website.") },
+        IpAnswer::None => Check {
+            fix: Some(format!("Point {domain} at a website (an A record). A domain with no website looks new or fake to spam filters.")),
+            ..check("warn", "The domain has no website (no A record).")
+        },
+        IpAnswer::Unknown => check("unknown", "The DNS did not answer. Try again in a minute."),
+    }
+}
+
 fn mx_check(a: MxAnswer, domain: &str) -> Check {
     match a {
         MxAnswer::Has => check("ok", "The domain has a mail server."),
@@ -224,10 +289,11 @@ impl DnsChecker {
         selectors.extend(COMMON_SELECTORS.iter().map(|s| s.to_string()).filter(|s| Some(s) != typed.as_ref()));
         let dmarc_name = format!("_dmarc.{domain}");
         let dkim_names: Vec<String> = selectors.iter().map(|s| format!("{s}._domainkey.{domain}")).collect();
-        let (spf_a, dmarc_a, mx_a, dkim_a) = tokio::join!(
+        let (spf_a, dmarc_a, mx_a, a_a, dkim_a) = tokio::join!(
             self.txt.txt(&domain),
             self.txt.txt(&dmarc_name),
             mx.lookup(&domain),
+            self.txt.ipv4(&domain),
             futures::future::join_all(dkim_names.iter().map(|n| self.txt.txt(n)))
         );
         // DKIM: the first selector with a key
@@ -268,8 +334,9 @@ impl DnsChecker {
         let spf = spf(&spf_a, &domain, provider);
         let dmarc = dmarc(&dmarc_a, &domain);
         let mx = mx_check(mx_a, &domain);
+        let a = a_check(&a_a, &domain);
         let overall = worst(&[&spf, &dkim, &dmarc, &mx]);
-        let report = DnsReport { domain, checked_at: now, spf, dkim, dmarc, mx, overall };
+        let report = DnsReport { domain, checked_at: now, spf, dkim, dmarc, mx, a, overall };
         self.cache.lock().unwrap().insert(key, report.clone());
         report
     }

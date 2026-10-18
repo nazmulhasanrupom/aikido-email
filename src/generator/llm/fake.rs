@@ -68,6 +68,9 @@ fn default_answer(req: &LlmRequest) -> Result<LlmResponse, LlmError> {
             .to_string(),
         ));
     }
+    if req.system.contains("write short points about it") {
+        return Ok(response(json!({ "points": ["Fake point one.", "Fake point two."] }).to_string()));
+    }
     if req.system.contains("You turn raw notes about a person") {
         // the sender profile builder: every field gets text and cites the first source
         let tag = req.user.split("<source tag=\"").nth(1).and_then(|s| s.split('"').next()).map(str::to_string);

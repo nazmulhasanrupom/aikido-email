@@ -12,6 +12,7 @@ import { stepName } from "./EmailDrawer";
 const LEAD_VARS = ["first_name", "last_name", "company_name", "job_title", "website", "location", "phone", "linkedin_url"];
 const PROMPT_ONLY = [
   ["brief", "The text in About your offer"],
+  ["my_business", "Your business points from Personalize"],
   ["previous_emails", "The saved text of this lead's earlier emails"],
   ["lead_notes", "The last 5 notes about the lead"],
 ] as const;

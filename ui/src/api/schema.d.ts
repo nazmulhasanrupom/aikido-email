@@ -152,6 +152,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/accounts/{id}/health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The health of an account: DNS records, sending power and blacklists, as one score from 0 to 100.
+         * @description Scope: `accounts`. DNS health (MX 40, SPF 20, DKIM 20, DMARC 10, A 10; a warning gives half), sending power (send success and bounces of the last 30 days, from 10 sent emails) and DNS blacklists. The score is the mean of DNS health and sending power, minus 20 per listing. DNS and blacklist answers are kept for one hour.
+         */
+        get: operations["health"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/accounts/{id}/test": {
         parameters: {
             query?: never;
@@ -2092,6 +2112,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/personalization/business": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Save the business points as a new profile version. The other profile fields stay as they are.
+         * @description Scope: `personalization`. Unsent emails of campaigns with the optimized prompt are marked out of date.
+         */
+        put: operations["save_business"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/personalization/business/generate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * The AI writes short points about the business from the sources. Nothing is saved.
+         * @description Scope: `personalization`. Costs tokens. Reads the same cleaned sources as the profile builder (a business link, a file). Save the points with `PUT /v1/personalization/business`. Prompts use the saved points as `{{my_business}}`.
+         */
+        post: operations["generate_business"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/personalization/profile": {
         parameters: {
             query?: never;
@@ -2106,7 +2166,7 @@ export interface paths {
         get: operations["get_profile"];
         /**
          * Save the profile as a new version. The old versions stay.
-         * @description Scope: `personalization`. Only a saved profile is used by campaigns; an AI draft never saves by itself. `allow_low_personalization` is set only here. Unsent emails of campaigns with the optimized prompt are marked out of date.
+         * @description Scope: `personalization`. Only a saved profile is used by campaigns; an AI draft never saves by itself. `allow_low_personalization` is set only here. An empty `my_business` keeps the saved points (clear them with `PUT /v1/personalization/business`). Unsent emails of campaigns with the optimized prompt are marked out of date.
          */
         put: operations["save_profile"];
         post?: never;
@@ -3640,6 +3700,25 @@ export interface components {
             /** Format: int64 */
             instant_credits?: number | null;
         };
+        Blacklists: {
+            /**
+             * Format: int32
+             * @description How many lookups were made.
+             */
+            checked: number;
+            /** Format: date-time */
+            checked_at: string;
+            listed: components["schemas"]["Listing"][];
+            /** @description Why some IPs were not looked up. */
+            note?: string | null;
+            /** @description The domain and IPs that were looked up. */
+            targets: string[];
+            /**
+             * Format: int32
+             * @description Lookups the list did not answer (timeout, or it refused the query).
+             */
+            unknown: number;
+        };
         /** @description What a bounce report says. */
         BounceInfo: {
             /** @description `failed`, `delayed`, ... */
@@ -3727,6 +3806,16 @@ export interface components {
             skipped: number;
             /** Format: int64 */
             updated: number;
+        };
+        BusinessReply: {
+            /** @description The points, one `- point` per line. A draft: it is not saved. */
+            my_business: string;
+            /** @description The tags of the sources the AI read. */
+            sources: string[];
+            /** Format: int64 */
+            tokens_in: number;
+            /** Format: int64 */
+            tokens_out: number;
         };
         Campaign: {
             account_pick: components["schemas"]["AccountPick"];
@@ -4186,14 +4275,37 @@ export interface components {
             key: string;
             value: string;
         };
+        DnsHealth: {
+            items: components["schemas"]["DnsItem"][];
+            /** Format: int32 */
+            score: number;
+        };
+        DnsItem: {
+            check: components["schemas"]["Check"];
+            /**
+             * Format: int32
+             * @description The points it gives now.
+             */
+            earned: number;
+            /** @description `mx`, `spf`, `dkim`, `dmarc` or `a`. */
+            key: string;
+            label: string;
+            /**
+             * Format: int32
+             * @description The most points this record can give.
+             */
+            points: number;
+        };
         DnsReport: {
+            /** @description The A record: the domain points at a real website. Not needed to send, so it is not in `overall`. */
+            a: components["schemas"]["Check"];
             /** Format: date-time */
             checked_at: string;
             dkim: components["schemas"]["Check"];
             dmarc: components["schemas"]["Check"];
             domain: string;
             mx: components["schemas"]["Check"];
-            /** @description The worst of the four: `ok`, `warn`, `fail` or `unknown`. */
+            /** @description The worst of SPF, DKIM, DMARC and MX: `ok`, `warn`, `fail` or `unknown`. */
             overall: string;
             spf: components["schemas"]["Check"];
         };
@@ -4787,6 +4899,23 @@ export interface components {
         Health: {
             status: string;
         };
+        HealthReport: {
+            blacklists: components["schemas"]["Blacklists"];
+            /** Format: date-time */
+            checked_at: string;
+            dns: components["schemas"]["DnsHealth"];
+            domain: string;
+            /** @description DNS health of at least `ready_min` and no blacklist listing. */
+            ready: boolean;
+            /** Format: int32 */
+            ready_min: number;
+            /**
+             * Format: int32
+             * @description 0 to 100.
+             */
+            score: number;
+            sending: components["schemas"]["SendingPower"];
+        };
         HostInfo: {
             host: string;
             /** Format: int32 */
@@ -5369,6 +5498,13 @@ export interface components {
             /** @description Example: `https://example.com/unsubscribe` */
             url?: string | null;
         };
+        Listing: {
+            /** @description The code the list answered. */
+            answer: string;
+            list: string;
+            /** @description The IP or domain that is on the list. */
+            target: string;
+        };
         LoginBody: {
             email: string;
             password: string;
@@ -5425,6 +5561,11 @@ export interface components {
         };
         /** @enum {string} */
         MatchMethod: "dsn_original" | "in_reply_to" | "references" | "thread" | "bounce_recipient" | "sender_address" | "none";
+        Metric: {
+            detail: string;
+            /** Format: int32 */
+            score: number;
+        };
         /** @enum {string} */
         Mode: "quick" | "power";
         NewEnrollment: {
@@ -6081,6 +6222,10 @@ export interface components {
         RunsReply: {
             runs: components["schemas"]["Run"][];
         };
+        SaveBusiness: {
+            /** @description The points, up to 4000 characters. Empty clears them. */
+            my_business: string;
+        };
         SaveProfile: {
             fields: components["schemas"]["SenderFields"];
             other_offers?: string[] | null;
@@ -6127,6 +6272,8 @@ export interface components {
             allow_low_personalization?: boolean;
             ideal_customer?: string;
             low_friction_offer?: string;
+            /** @description Short points about the business, one per line. Up to 4000 characters. */
+            my_business?: string;
             not_a_fit?: string;
             offer?: string;
             outcome?: string;
@@ -6142,6 +6289,8 @@ export interface components {
             id: string;
             ideal_customer: string;
             low_friction_offer: string;
+            /** @description Short points about the business, one per line. Prompts use them as `{{my_business}}`. */
+            my_business: string;
             not_a_fit: string;
             offer: string;
             other_offers: string[];
@@ -6154,6 +6303,30 @@ export interface components {
             sources_used: Record<string, never>;
             /** Format: int32 */
             version: number;
+        };
+        SendingPower: {
+            /** @description `perfect_setup`, `maturity`, `perfect_performance`. */
+            bonuses: string[];
+            /** Format: int64 */
+            bounced: number;
+            bounces?: components["schemas"]["Metric"] | null;
+            /** Format: int64 */
+            complained: number;
+            /** Format: int64 */
+            failed: number;
+            /** Format: date-time */
+            first_sent_at?: string | null;
+            performance?: components["schemas"]["Metric"] | null;
+            /**
+             * Format: int32
+             * @description `null`: fewer than 10 emails sent in the last 30 days.
+             */
+            score?: number | null;
+            /**
+             * Format: int64
+             * @description The last 30 days.
+             */
+            sent: number;
         };
         SendingSettings: {
             /**
@@ -7016,6 +7189,36 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DnsReport"];
+                };
+            };
+            /** @description No such account */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    health: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                /** @description A DKIM selector to look at first (for example `google`). */
+                selector: string | null;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HealthReport"];
                 };
             };
             /** @description No such account */
@@ -10754,6 +10957,69 @@ export interface operations {
         responses: {
             /** @description Everything is deleted */
             204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    save_business: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaveBusiness"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SenderProfile"];
+                };
+            };
+            /** @description The text is longer than 4000 characters */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    generate_business: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BusinessReply"];
+                };
+            };
+            /** @description no_sources, generator_not_ready (set up an AI provider first) or generation_failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description rate_limited: 10 a minute */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };

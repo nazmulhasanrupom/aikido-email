@@ -1452,6 +1452,66 @@ async fn the_domain_check_shows_green_orange_and_red_and_keeps_answers_for_an_ho
 }
 
 #[sqlx::test]
+async fn the_health_check_scores_dns_sending_and_blacklists(pool: PgPool) {
+    use aikido_email::accounts::dns_check::{DnsChecker, fake::FakeTxt};
+    let mut c = C::new(pool).await;
+    let txt = FakeTxt::new();
+    c.h.state.dns = Arc::new(DnsChecker::new(txt.clone()));
+    let a = c.account("sales@acme-outreach.test").await;
+    let get = || {
+        let st = c.h.state.clone();
+        let key = c.keys[&Scope::Accounts].clone();
+        async move { call(&st, "GET", &format!("/v1/accounts/{a}/health"), Some(&key), None).await }
+    };
+
+    // only MX (the fake resolver has one): 40, plus half of DKIM and A (warnings): 55. Not ready, no sending data yet
+    let r = get().await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.body);
+    assert_eq!(r.body["dns"]["score"], 55, "{}", r.body["dns"]);
+    assert_eq!(r.body["score"], 55, "DNS only");
+    assert_eq!(r.body["ready"], false);
+    assert!(r.body["sending"]["score"].is_null());
+    assert_eq!(r.body["blacklists"]["listed"].as_array().unwrap().len(), 0);
+    assert!(r.body["blacklists"]["note"].as_str().unwrap().contains("local server"), "{}", r.body["blacklists"]);
+
+    // every record, 50 sent with one hard bounce, and the domain on one list
+    txt.set("acme-outreach.test", &["v=spf1 include:_spf.google.com ~all"]);
+    txt.set("_dmarc.acme-outreach.test", &["v=DMARC1; p=none"]);
+    txt.set("google._domainkey.acme-outreach.test", &["v=DKIM1; k=rsa; p=ABC"]);
+    txt.set_ip("acme-outreach.test", &["93.184.216.34"]);
+    txt.set_ip("acme-outreach.test.dbl.spamhaus.org", &["127.0.1.2"]);
+    txt.set_ip("acme-outreach.test.multi.uribl.com", &["127.0.0.1"]);
+    for i in 0..50 {
+        sqlx::query(
+            "INSERT INTO send_jobs (id, account_id, to_email, recipient_domain, subject, status, sent_at, bounced_at, bounce_kind)
+             VALUES ($1, $2, $3, 'x.com', 'Hi', 'sent', $4, $5, $6::bounce_kind)",
+        )
+        .bind(uuid::Uuid::new_v4())
+        .bind(a)
+        .bind(format!("p{i}@x.com"))
+        .bind(c.h.state.now())
+        .bind((i == 0).then(|| c.h.state.now()))
+        .bind((i == 0).then_some("hard"))
+        .execute(&c.h.state.pool)
+        .await
+        .unwrap();
+    }
+    c.h.advance(Duration::minutes(61));
+    let r = get().await;
+    assert_eq!(r.body["dns"]["score"], 100, "{}", r.body["dns"]);
+    assert_eq!(r.body["sending"]["performance"]["score"], 100);
+    assert_eq!(r.body["sending"]["bounces"]["score"], 60, "2% bounces");
+    assert_eq!(r.body["sending"]["score"], 80);
+    let listed = r.body["blacklists"]["listed"].as_array().unwrap();
+    assert_eq!(listed.len(), 1, "a refused query (127.0.0.1) is not a listing");
+    assert_eq!(listed[0]["list"], "dbl.spamhaus.org");
+    assert_eq!(r.body["blacklists"]["unknown"], 1);
+    assert_eq!(r.body["score"], 70, "(100 + 80) / 2 - 20");
+    assert_eq!(r.body["ready"], false, "listed");
+    assert!(r.body["sending"]["bonuses"].as_array().unwrap().iter().any(|b| b == "perfect_setup"));
+}
+
+#[sqlx::test]
 async fn a_lead_missing_a_value_the_emails_need_is_found_and_listed(pool: PgPool) {
     let c = C::new(pool).await;
     let a = c.account("a@x.test").await;

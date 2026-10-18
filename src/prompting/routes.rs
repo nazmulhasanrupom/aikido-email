@@ -23,6 +23,8 @@ pub fn router(state: AppState) -> OpenApiRouter<AppState> {
         .routes(routes!(delete_source))
         .routes(routes!(delete_all))
         .routes(routes!(generate_profile))
+        .routes(routes!(generate_business))
+        .routes(routes!(save_business))
         .routes(routes!(get_profile, save_profile))
         .routes(routes!(list_versions))
         .route_layer(axum::middleware::from_fn_with_state((state.clone(), Scope::Personalization), require_scope));
@@ -218,33 +220,115 @@ pub struct GenerateReply {
     description = "Scope: `personalization`. Costs tokens. The sources are cut to about 6000 tokens (portfolio pages first, guide answers last), then sent. \
         The code removes dashes, drops unknown source tags, and clears a field that no source supports. `allow_low_personalization` is always false in a draft.")]
 async fn generate_profile(State(st): State<AppState>, who: Option<Extension<Uuid>>) -> ApiResult<ApiJson<GenerateReply>> {
-    crate::prompting::limit::check_user(&st, who.map(|e| e.0))?;
-    let now = st.now();
-    let mut conn = st.pool.acquire().await?;
-    let list = sources::list(&mut conn).await?;
-    if list.is_empty() {
-        return Err(ApiError::unprocessable("no_sources", "Add something about you first: a link, a CV, some text, or answers to the guide questions."));
-    }
-    let settings = crate::generator::repo::load_settings(&mut conn).await?;
-    let provider = crate::campaigns::email_routes::ready_provider(&mut conn)
-        .await
-        .map_err(|_| ApiError::unprocessable("generator_not_ready", "Set up an AI provider first (Settings, AI)."))?;
-    let (cfg, _) = crate::generator::providers::load_config(&st.pool, &st.crypto, provider.id, settings.max_attempts)
-        .await
-        .map_err(|_| ApiError::unprocessable("generator_not_ready", "The AI model can not be used (its key can not be read)."))?;
-    let client = st.llm.build(&cfg).map_err(|_| ApiError::unprocessable("generator_not_ready", "The AI model can not be used."))?;
-    let chunks = sources::fit_budget(sources::chunks_of(&list), sources::TOKEN_BUDGET);
-    let result = sender_builder::build_draft(client.as_ref(), &chunks, settings.max_output_tokens, settings.temperature).await;
+    let g = Gen::start(&st, who).await?;
+    let result = sender_builder::build_draft(g.client.as_ref(), &g.chunks, g.settings.max_output_tokens, g.settings.temperature).await;
     let calls = match &result {
         Ok((_, c)) => c.clone(),
         Err(f) => f.calls.clone(),
     };
-    for c in &calls {
-        crate::generator::repo::record_call(&mut conn, &c.record("sender_profile", Some(provider.id), None, &provider.model), now).await?;
-    }
-    let (tin, tout, _) = crate::generator::pipeline::totals(&calls);
+    let (tin, tout) = g.record(&st, &calls).await?;
     let (draft, _) = result.map_err(|f| ApiError::unprocessable("generation_failed", format!("{} ({})", f.message, f.code)))?;
-    Ok(ApiJson(GenerateReply { draft, sources: chunks.iter().map(|c| c.tag.clone()).collect(), tokens_in: tin as i64, tokens_out: tout as i64 }))
+    Ok(ApiJson(GenerateReply { draft, sources: g.tags(), tokens_in: tin, tokens_out: tout }))
+}
+
+/// What every AI step of this page needs: the sources cut to the budget, the model and the settings.
+struct Gen {
+    chunks: Vec<Chunk>,
+    client: std::sync::Arc<dyn crate::generator::llm::LlmClient>,
+    settings: crate::generator::settings::GeneratorSettings,
+    provider: crate::generator::providers::Provider,
+}
+
+impl Gen {
+    async fn start(st: &AppState, who: Option<Extension<Uuid>>) -> ApiResult<Gen> {
+        crate::prompting::limit::check_user(st, who.map(|e| e.0))?;
+        let mut conn = st.pool.acquire().await?;
+        let list = sources::list(&mut conn).await?;
+        if list.is_empty() {
+            return Err(ApiError::unprocessable("no_sources", "Add something about you first: a link or a file."));
+        }
+        let settings = crate::generator::repo::load_settings(&mut conn).await?;
+        let provider = crate::campaigns::email_routes::ready_provider(&mut conn)
+            .await
+            .map_err(|_| ApiError::unprocessable("generator_not_ready", "Set up an AI provider first (Settings, AI)."))?;
+        let (cfg, _) = crate::generator::providers::load_config(&st.pool, &st.crypto, provider.id, settings.max_attempts)
+            .await
+            .map_err(|_| ApiError::unprocessable("generator_not_ready", "The AI model can not be used (its key can not be read)."))?;
+        let client = st.llm.build(&cfg).map_err(|_| ApiError::unprocessable("generator_not_ready", "The AI model can not be used."))?;
+        let chunks = sources::fit_budget(sources::chunks_of(&list), sources::TOKEN_BUDGET);
+        Ok(Gen { chunks, client, settings, provider })
+    }
+
+    /// Log the calls. Returns the tokens in and out.
+    async fn record(&self, st: &AppState, calls: &[crate::generator::pipeline::CallInfo]) -> ApiResult<(i64, i64)> {
+        let mut conn = st.pool.acquire().await?;
+        let now = st.now();
+        for c in calls {
+            crate::generator::repo::record_call(&mut conn, &c.record("sender_profile", Some(self.provider.id), None, &self.provider.model), now).await?;
+        }
+        let (tin, tout, _) = crate::generator::pipeline::totals(calls);
+        Ok((tin as i64, tout as i64))
+    }
+
+    fn tags(&self) -> Vec<String> {
+        self.chunks.iter().map(|c| c.tag.clone()).collect()
+    }
+}
+
+// ---------- my business ----------
+
+#[derive(Serialize, ToSchema)]
+pub struct BusinessReply {
+    /// The points, one `- point` per line. A draft: it is not saved.
+    pub my_business: String,
+    /// The tags of the sources the AI read.
+    pub sources: Vec<String>,
+    pub tokens_in: i64,
+    pub tokens_out: i64,
+}
+
+/// The AI writes short points about the business from the sources. Nothing is saved.
+#[utoipa::path(post, path = "/v1/personalization/business/generate", tag = "personalization",
+    responses((status = 200, body = BusinessReply), (status = 422, description = "no_sources, generator_not_ready (set up an AI provider first) or generation_failed"),
+        (status = 429, description = "rate_limited: 10 a minute")),
+    security(("api_key" = ["personalization"])),
+    description = "Scope: `personalization`. Costs tokens. Reads the same cleaned sources as the profile builder (a business link, a file). \
+        Save the points with `PUT /v1/personalization/business`. Prompts use the saved points as `{{my_business}}`.")]
+async fn generate_business(State(st): State<AppState>, who: Option<Extension<Uuid>>) -> ApiResult<ApiJson<BusinessReply>> {
+    let g = Gen::start(&st, who).await?;
+    let result = super::business::build_points(g.client.as_ref(), &g.chunks, g.settings.max_output_tokens, g.settings.temperature).await;
+    let calls = match &result {
+        Ok((_, c)) => c.clone(),
+        Err(f) => f.calls.clone(),
+    };
+    let (tin, tout) = g.record(&st, &calls).await?;
+    let (points, _) = result.map_err(|f| ApiError::unprocessable("generation_failed", format!("{} ({})", f.message, f.code)))?;
+    Ok(ApiJson(BusinessReply { my_business: super::business::as_text(&points), sources: g.tags(), tokens_in: tin, tokens_out: tout }))
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct SaveBusiness {
+    /// The points, up to 4000 characters. Empty clears them.
+    pub my_business: String,
+}
+
+/// Save the business points as a new profile version. The other profile fields stay as they are.
+#[utoipa::path(put, path = "/v1/personalization/business", tag = "personalization",
+    request_body = SaveBusiness,
+    responses((status = 200, body = SenderProfile), (status = 422, description = "The text is longer than 4000 characters")),
+    security(("api_key" = ["personalization"])),
+    description = "Scope: `personalization`. Unsent emails of campaigns with the optimized prompt are marked out of date.")]
+async fn save_business(State(st): State<AppState>, ApiJson(b): ApiJson<SaveBusiness>) -> ApiResult<ApiJson<SenderProfile>> {
+    let mut tx = st.pool.begin().await?;
+    let (base, offers, used) = match sender::current(&mut tx).await? {
+        Some(p) => (p.fields(), p.other_offers, p.sources_used),
+        None => (SenderFields::default(), json!([]), json!({})),
+    };
+    let f = SenderFields { my_business: b.my_business, ..base }.cleaned().map_err(|m| ApiError::unprocessable("invalid_profile", m))?;
+    let saved = sender::save(&mut tx, &f, &offers, &used, st.now()).await?;
+    sender::profile_changed(&mut tx).await?;
+    tx.commit().await?;
+    Ok(ApiJson(saved))
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -269,10 +353,15 @@ pub struct ProfileReply {
     responses((status = 200, body = SenderProfile), (status = 422, description = "A field is longer than 1000 characters")),
     security(("api_key" = ["personalization"])),
     description = "Scope: `personalization`. Only a saved profile is used by campaigns; an AI draft never saves by itself. `allow_low_personalization` is set only here. \
+        An empty `my_business` keeps the saved points (clear them with `PUT /v1/personalization/business`). \
         Unsent emails of campaigns with the optimized prompt are marked out of date.")]
 async fn save_profile(State(st): State<AppState>, ApiJson(b): ApiJson<SaveProfile>) -> ApiResult<ApiJson<SenderProfile>> {
-    let f = b.fields.cleaned().map_err(|m| ApiError::unprocessable("invalid_profile", m))?;
+    let mut f = b.fields.cleaned().map_err(|m| ApiError::unprocessable("invalid_profile", m))?;
     let mut tx = st.pool.begin().await?;
+    // the business points have their own save; an empty value here keeps them
+    if f.my_business.is_empty() {
+        f.my_business = sender::current(&mut tx).await?.map(|p| p.my_business).unwrap_or_default();
+    }
     let saved = sender::save(&mut tx, &f, &json!(b.other_offers.unwrap_or_default()), &Value::Object(b.sources_used.unwrap_or_default()), st.now()).await?;
     sender::profile_changed(&mut tx).await?;
     tx.commit().await?;

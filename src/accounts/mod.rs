@@ -3,3 +3,4 @@ pub mod oauth;
 pub mod repo;
 pub mod routes;
 pub mod dns_check;
+pub mod health;

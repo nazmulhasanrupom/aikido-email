@@ -9,17 +9,15 @@ import { cn } from "@/lib/cn";
 const MODES = [
   ["template", "Template"],
   ["ai", "AI"],
-  ["optimized", "Optimised"],
 ] as const;
 type Mode = (typeof MODES)[number][0];
 
 const HINT: Record<Mode, string> = {
   template: "You write the email once. Save fills it for every lead.",
   ai: "The AI writes each email from your prompts. Generate saves them per lead.",
-  optimized: "One prompt writes the first email and 3 follow-ups for each lead.",
 };
 
-/** Template | AI | Optimised. */
+/** Template | AI. */
 export function ModeSwitch({ campaign }: { campaign: S["CampaignDetail"] }) {
   const qc = useQueryClient();
   const [ask, setAsk] = useState<Mode | null>(null);
@@ -27,7 +25,10 @@ export function ModeSwitch({ campaign }: { campaign: S["CampaignDetail"] }) {
   const current = campaign.content_mode as Mode;
   async function change(m: Mode) {
     try {
-      await http.patch("/v1/campaigns/{id}", { path: { id: campaign.id }, body: { content_mode: m } });
+      await http.patch("/v1/campaigns/{id}", {
+        path: { id: campaign.id },
+        body: { content_mode: m },
+      });
       await qc.invalidateQueries({ queryKey: ["campaigns", campaign.id] });
     } catch (e) {
       toast.error(messageOf(e));
@@ -35,7 +36,11 @@ export function ModeSwitch({ campaign }: { campaign: S["CampaignDetail"] }) {
   }
   return (
     <div className="flex items-center gap-3">
-      <div role="group" aria-label="How the emails are written" className="flex rounded-(--radius-control) border border-border p-0.5 text-sm">
+      <div
+        role="group"
+        aria-label="How the emails are written"
+        className="flex rounded-(--radius-control) border border-border p-0.5 text-sm"
+      >
         {MODES.map(([m, label]) => (
           <button
             key={m}
@@ -52,7 +57,7 @@ export function ModeSwitch({ campaign }: { campaign: S["CampaignDetail"] }) {
           </button>
         ))}
       </div>
-      <p className="text-xs text-muted">{HINT[current]}</p>
+      <p className="text-xs text-muted">{HINT[current] ?? ""}</p>
       <ConfirmDialog
         open={ask !== null}
         onClose={() => setAsk(null)}

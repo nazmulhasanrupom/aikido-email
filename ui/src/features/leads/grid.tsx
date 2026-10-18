@@ -3,8 +3,8 @@ import { Columns3, Plus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { toast } from "sonner";
-import { ApiProblem, messageOf } from "@/api/errors";
 import { authStateQuery } from "@/api/auth";
+import { ApiProblem, messageOf } from "@/api/errors";
 import { http, type S } from "@/api/http";
 import { q } from "@/api/queries";
 import {
@@ -72,12 +72,15 @@ export function useColumns(tableId: string, base: GridCol[]) {
   const qc = useQueryClient();
   const fields = useQuery(q.fields);
   const auth = useQuery(authStateQuery);
-  const saved = (
-    auth.data?.user?.preferences as { tables?: Record<string, Pref> } | undefined
-  )?.tables?.[tableId];
+  const saved = (auth.data?.user?.preferences as { tables?: Record<string, Pref> } | undefined)
+    ?.tables?.[tableId];
   const all: GridCol[] = [
     ...base,
-    ...(fields.data ?? []).map((f) => ({ id: `custom:${f.key}`, label: f.label || f.key, field: f })),
+    ...(fields.data ?? []).map((f) => ({
+      id: `custom:${f.key}`,
+      label: f.label || f.key,
+      field: f,
+    })),
   ];
   const order = saved?.order ?? [];
   // no saved order: the email first, then the optimized columns, then the rest
@@ -147,7 +150,6 @@ export function ColumnsMenu({ cols }: { cols: ReturnType<typeof useColumns> }) {
                 aria-label={`Show ${c.label}`}
               />
               {c.label}
-              {OPTIMIZED_COLS.has(c.id) && <OptimizedBadge />}
             </MenuItem>
             <button
               type="button"
@@ -310,12 +312,7 @@ export function EditableCell({
             }}
           >
             {kind === "text" ? (
-              <textarea
-                ref={ref}
-                rows={1}
-                {...common}
-                onChange={(e) => setDraft(e.target.value)}
-              />
+              <textarea ref={ref} rows={1} {...common} onChange={(e) => setDraft(e.target.value)} />
             ) : (
               <input
                 ref={ref}
@@ -325,7 +322,10 @@ export function EditableCell({
               />
             )}
             {error && (
-              <p role="alert" className="mt-1 rounded bg-surface px-2 py-1 text-xs text-danger shadow">
+              <p
+                role="alert"
+                className="mt-1 rounded bg-surface px-2 py-1 text-xs text-danger shadow"
+              >
                 {error}
               </p>
             )}
@@ -427,7 +427,9 @@ export function AddColumn() {
               <CopyButton text={`{{${key}}}`} />
             </div>
           )}
-          {exists && <p className="text-xs text-danger">A column with this key exists. Pick another name.</p>}
+          {exists && (
+            <p className="text-xs text-danger">A column with this key exists. Pick another name.</p>
+          )}
           {!VALID_KEY.test(key) && name.trim() && (
             <p className="text-xs text-danger">Use letters and digits.</p>
           )}
@@ -465,13 +467,7 @@ export function ColumnHeader({ col }: { col: GridCol }) {
       await done();
     },
   });
-  if (!f)
-    return (
-      <>
-        {col.label}
-        {OPTIMIZED_COLS.has(col.id) && <OptimizedBadge />}
-      </>
-    );
+  if (!f) return <>{col.label}</>;
   const err = mode === "delete" ? del.error : save.error;
   return (
     <>
@@ -507,7 +503,11 @@ export function ColumnHeader({ col }: { col: GridCol }) {
         onClose={() => setMode(null)}
         size="sm"
         title={
-          mode === "rename" ? "Rename column" : mode === "fallback" ? "Value when empty" : "Delete column?"
+          mode === "rename"
+            ? "Rename column"
+            : mode === "fallback"
+              ? "Value when empty"
+              : "Delete column?"
         }
         footer={
           <>
@@ -519,7 +519,11 @@ export function ColumnHeader({ col }: { col: GridCol }) {
                 Delete column
               </Button>
             ) : (
-              <Button busy={save.isPending} disabled={mode === "rename" && !text.trim()} onClick={() => save.mutate()}>
+              <Button
+                busy={save.isPending}
+                disabled={mode === "rename" && !text.trim()}
+                onClick={() => save.mutate()}
+              >
                 Save
               </Button>
             )}
