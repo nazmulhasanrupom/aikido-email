@@ -36,7 +36,12 @@ pub struct Upserted {
     pub repeat_in_batch: bool,
 }
 
-const TEXT_COLS: [&str; 10] = ["first_name", "last_name", "company_name", "job_title", "phone", "website", "linkedin_url", "location", "timezone", "notes"];
+const TEXT_COLS: [&str; 13] = [
+    "first_name", "last_name", "company_name", "job_title", "phone", "website", "linkedin_url", "location", "timezone", "notes", "industry",
+    "personalization_note", "trigger_event",
+];
+/// First parameter of the time. The ids, emails and domains take $1 to $3, the text columns the next ones.
+const TIME_PARAM: usize = 4 + TEXT_COLS.len();
 
 fn text_of(l: &LeadInput, col: &str) -> Option<String> {
     match col {
@@ -50,6 +55,9 @@ fn text_of(l: &LeadInput, col: &str) -> Option<String> {
         "location" => l.location.clone(),
         "timezone" => l.timezone.clone(),
         "notes" => l.notes.clone(),
+        "industry" => l.industry.clone(),
+        "personalization_note" => l.personalization_note.clone(),
+        "trigger_event" => l.trigger_event.clone(),
         _ => None,
     }
 }
@@ -70,6 +78,8 @@ fn conflict_sql(mode: DedupeMode) -> String {
         _ => "excluded.custom_fields || leads.custom_fields",
     };
     new_values.push(("custom_fields".into(), custom.into()));
+    // an import can set the flag, never clear it
+    new_values.push(("trigger_verified".into(), "(leads.trigger_verified OR excluded.trigger_verified)".into()));
     // union, first seen order kept. Over 20 tags: the old tags stay.
     let union = "COALESCE((SELECT array_agg(t ORDER BY n) FROM (SELECT t, min(n) AS n FROM unnest(leads.tags || excluded.tags) WITH ORDINALITY u(t, n) GROUP BY t) x), '{}'::text[])";
     new_values.push(("tags".into(), format!("CASE WHEN cardinality({union}) > 20 THEN leads.tags ELSE {union} END")));
@@ -78,8 +88,9 @@ fn conflict_sql(mode: DedupeMode) -> String {
     let old: Vec<String> = new_values.iter().map(|(c, _)| format!("leads.{c}")).collect();
     let new: Vec<&str> = new_values.iter().map(|(_, e)| e.as_str()).collect();
     format!(
-        "ON CONFLICT (email) DO UPDATE SET {}, updated_at = $14 WHERE ({}) IS DISTINCT FROM ({}) RETURNING email, (xmax = 0) AS inserted",
+        "ON CONFLICT (email) DO UPDATE SET {}, updated_at = ${} WHERE ({}) IS DISTINCT FROM ({}) RETURNING email, (xmax = 0) AS inserted",
         set.join(", "),
+        TIME_PARAM,
         old.join(", "),
         new.join(", ")
     )
@@ -116,31 +127,33 @@ pub async fn upsert_batch(conn: &mut PgConnection, rows: &[LeadInput], ctx: &Ups
     let text: Vec<Vec<Option<String>>> = TEXT_COLS.iter().map(|c| unique.iter().map(|l| text_of(l, c)).collect()).collect();
     let custom: Vec<Value> = unique.iter().map(|l| Value::Object(l.custom_fields.clone())).collect();
     let tags: Vec<Value> = unique.iter().map(|l| json!(l.tags)).collect();
+    let verified: Vec<Option<bool>> = unique.iter().map(|l| l.trigger_verified).collect();
 
     let mode_sql = match ctx.mode {
         DedupeMode::Skip => "ON CONFLICT (email) DO NOTHING RETURNING email, true AS inserted".to_string(),
         m => conflict_sql(m),
     };
-    // $1 ids, $2 emails, $3 domains, $4..$13 the ten text columns, $14 time, $15 custom, $16 tags, $17 source, $18 source_ref
+    // $1 ids, $2 emails, $3 domains, then the text columns, then time, custom, tags, source, source_ref, trigger_verified
+    let (t, c, g, src, srcref, tv) = (TIME_PARAM, TIME_PARAM + 1, TIME_PARAM + 2, TIME_PARAM + 3, TIME_PARAM + 4, TIME_PARAM + 5);
+    let text_params: Vec<String> = (0..TEXT_COLS.len()).map(|i| format!("${}::text[]", 4 + i)).collect();
+    let cols = TEXT_COLS.join(", ");
     let sql = format!(
         "WITH incoming AS (
-            SELECT * FROM unnest($1::uuid[], $2::text[], $3::text[], $4::text[], $5::text[], $6::text[], $7::text[], $8::text[], $9::text[],
-                                 $10::text[], $11::text[], $12::text[], $13::text[], $15::jsonb[], $16::jsonb[])
-              AS t(id, email, email_domain, first_name, last_name, company_name, job_title, phone, website, linkedin_url, location, timezone, notes,
-                   custom_fields, tags)
+            SELECT * FROM unnest($1::uuid[], $2::text[], $3::text[], {}, ${c}::jsonb[], ${g}::jsonb[], ${tv}::boolean[])
+              AS t(id, email, email_domain, {cols}, custom_fields, tags, trigger_verified)
          )
-         INSERT INTO leads (id, email, email_domain, first_name, last_name, company_name, job_title, phone, website, linkedin_url, location, timezone,
-                            notes, custom_fields, tags, verification, source, source_ref, created_at, updated_at)
-         SELECT id, email, email_domain, first_name, last_name, company_name, job_title, phone, website, linkedin_url, location, timezone,
-                notes, custom_fields, ARRAY(SELECT jsonb_array_elements_text(tags)), 'syntax_ok', $17, $18, $14, $14
+         INSERT INTO leads (id, email, email_domain, {cols}, custom_fields, tags, trigger_verified, verification, source, source_ref, created_at, updated_at)
+         SELECT id, email, email_domain, {cols}, custom_fields, ARRAY(SELECT jsonb_array_elements_text(tags)), COALESCE(trigger_verified, false),
+                'syntax_ok', ${src}, ${srcref}, ${t}, ${t}
            FROM incoming
-         {mode_sql}"
+         {mode_sql}",
+        text_params.join(", ")
     );
     let mut q = sqlx::query_as::<_, (String, bool)>(&sql).bind(&ids).bind(&emails).bind(&domains);
     for col in &text {
         q = q.bind(col);
     }
-    let returned: Vec<(String, bool)> = q.bind(ctx.now).bind(&custom).bind(&tags).bind(ctx.source).bind(ctx.source_ref).fetch_all(&mut *conn).await?;
+    let returned: Vec<(String, bool)> = q.bind(ctx.now).bind(&custom).bind(&tags).bind(ctx.source).bind(ctx.source_ref).bind(&verified).fetch_all(&mut *conn).await?;
     let changed: HashMap<String, bool> = returned.into_iter().collect();
 
     // ids of every address, new and old

@@ -27,6 +27,10 @@ pub struct AppState {
     /// Builds the Reoon client for a key. Tests replace it with a fake.
     pub verifier: Arc<dyn crate::verify_reoon::client::VerifierFactory>,
     pub dns: Arc<crate::accounts::dns_check::DnsChecker>,
+    /// Fetches portfolio pages for PERSONALIZATION. Tests replace it with a fetcher that has a fake resolver.
+    pub fetcher: Arc<crate::net::safe_fetch::SafeFetcher>,
+    /// Limits the routes that cost tokens (10 a minute per user).
+    pub ai_limiter: Arc<crate::prompting::limit::RateLimiter>,
 }
 
 pub type Clock = Arc<dyn Fn() -> DateTime<Utc> + Send + Sync>;
@@ -45,6 +49,8 @@ impl AppState {
             llm: Arc::new(RealLlmFactory::default()),
             verifier: Arc::new(crate::verify_reoon::client::RealVerifierFactory::default()),
             dns: Arc::new(crate::accounts::dns_check::DnsChecker::default()),
+            fetcher: Arc::new(crate::net::safe_fetch::SafeFetcher::default()),
+            ai_limiter: Arc::new(crate::prompting::limit::RateLimiter::default()),
         }
     }
 

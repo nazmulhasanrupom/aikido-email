@@ -14,4 +14,6 @@ pub mod routes;
 pub mod emails;
 pub mod email_routes;
 pub mod email_ai;
+pub mod email_opt;
+pub mod prompt_routes;
 pub mod extras;

@@ -75,6 +75,8 @@ pub enum Target {
     Custom(String),
     /// One column with a full name: the last word is the last name, the rest is the first name.
     FullName,
+    /// `yes/no`, `true/false`, `1/0`, `y/n`. A bad value is a row error.
+    TriggerVerified,
 }
 
 fn parse_target(t: &str) -> Result<Option<Target>, String> {
@@ -83,6 +85,7 @@ fn parse_target(t: &str) -> Result<Option<Target>, String> {
         "email" => Some(Target::Email),
         "tags" => Some(Target::Tags),
         "full_name" => Some(Target::FullName),
+        "trigger_verified" => Some(Target::TriggerVerified),
         "notes" => Some(Target::Text("notes".into())),
         t if TEXT_FIELDS.contains(&t) => Some(Target::Text(t.into())),
         t => match t.strip_prefix("custom:") {
@@ -121,6 +124,9 @@ fn set_text(raw: &mut RawLead, name: &str, v: String) {
         "location" => raw.location = v,
         "timezone" => raw.timezone = v,
         "notes" => raw.notes = v,
+        "industry" => raw.industry = v,
+        "personalization_note" => raw.personalization_note = v,
+        "trigger_event" => raw.trigger_event = v,
         _ => {}
     }
 }
@@ -152,6 +158,7 @@ pub fn row_to_raw(rec: &csv::ByteRecord, columns: &[(usize, Target)]) -> RawLead
                 raw.first_name = Some(first);
                 raw.last_name = last;
             }
+            Target::TriggerVerified => raw.trigger_verified_text = Some(v),
             Target::Tags => tags.extend(v.split([',', ';', '|']).map(str::to_string)),
             Target::Custom(k) => {
                 custom.insert(k.clone(), Value::String(v));

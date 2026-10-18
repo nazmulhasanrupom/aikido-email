@@ -26,9 +26,9 @@ pub fn safe_cell(v: &str) -> String {
     if v.starts_with(['=', '+', '-', '@', '\t', '\r']) { format!("'{v}") } else { v.to_string() }
 }
 
-const BASE_COLUMNS: [&str; 19] = [
+const BASE_COLUMNS: [&str; 23] = [
     "email", "first_name", "last_name", "company_name", "job_title", "phone", "website", "linkedin_url", "location", "timezone", "tags", "contact_state",
-    "interest", "verification", "source", "notes", "last_contacted_at", "last_replied_at", "created_at",
+    "interest", "verification", "source", "notes", "last_contacted_at", "last_replied_at", "created_at", "industry", "personalization_note", "trigger_event", "trigger_verified",
 ];
 
 fn row_of(l: &Lead, custom_keys: &[String]) -> Vec<String> {
@@ -54,6 +54,10 @@ fn row_of(l: &Lead, custom_keys: &[String]) -> Vec<String> {
         d(&l.last_contacted_at),
         d(&l.last_replied_at),
         l.created_at.to_rfc3339(),
+        t(&l.industry),
+        t(&l.personalization_note),
+        t(&l.trigger_event),
+        if l.trigger_verified { "yes" } else { "no" }.to_string(),
     ];
     for k in custom_keys {
         row.push(l.custom_fields.get(k).and_then(|v| v.as_str()).unwrap_or_default().to_string());

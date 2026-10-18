@@ -88,6 +88,7 @@ pub fn api_router(state: AppState) -> (axum::Router<AppState>, utoipa::openapi::
         .merge(crate::generator::routes::router(state.clone()))
         .merge(crate::integrations::routes::router(state.clone()))
         .merge(crate::verify_reoon::routes::router(state.clone()))
+        .merge(crate::prompting::routes::router(state.clone()))
         .merge(crate::reports::routes::router(state.clone()))
         .merge(crate::admin::routes::router(state.clone()))
         .merge(crate::users::routes::public_router())

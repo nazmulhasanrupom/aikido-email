@@ -14,6 +14,10 @@ pub const BUILTINS: &[(&str, &str)] = &[
     ("location", "the city, region or country of the person"),
     ("timezone", "an IANA time zone name like Asia/Dhaka"),
     ("notes", "free notes about the person"),
+    ("industry", "the industry or sector of the company"),
+    ("personalization_note", "a fact about the person or company that an email can use"),
+    ("trigger_event", "a recent event about the person or company (news, launch, hire, funding, post)"),
+    ("trigger_verified", "yes or no: was the trigger event checked by a person"),
     ("tags", "labels for the person (many columns may go here)"),
 ];
 

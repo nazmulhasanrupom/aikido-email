@@ -11,12 +11,12 @@ use serde_json::{Value, json};
 use sqlx::PgPool;
 use std::sync::Arc;
 
-const CSV: &str = "E-mail Addr,Sector,Full Name,Contact No,Backup,Internal ID\n\
+const CSV: &str = "E-mail Addr,Segment,Full Name,Contact No,Backup,Internal ID\n\
 john@acme.com,SaaS,Mary Ann Smith,+1 415 555 0101,bob@x.io,77\n\
 sam@globex.io,Fintech,Cher,+1 415 555 0102,amy@y.io,78\n";
 
 const ANSWER: &str = r#"{"columns":[
- {"index":1,"target":"new_field","key":"industry","field_kind":"text","confidence":0.82,"reason":"business sector"},
+ {"index":1,"target":"new_field","key":"segment","field_kind":"text","confidence":0.82,"reason":"business segment"},
  {"index":2,"target":"first_name","transform":"split_full_name","confidence":0.9,"reason":"full name"},
  {"index":3,"target":"phone","confidence":0.9,"reason":"phone"},
  {"index":4,"target":"skip","confidence":0.6,"reason":"second email"},
@@ -53,7 +53,7 @@ async fn odd_headers_get_a_full_proposal_and_nothing_is_imported_before_confirm(
     assert_eq!(col(0)["source"], "rule");
     assert_eq!(col(0)["samples"][0], "j***@acme.com");
     assert_eq!(col(1)["target"]["kind"], "new_field");
-    assert_eq!(col(1)["target"]["key"], "industry");
+    assert_eq!(col(1)["target"]["key"], "segment");
     assert_eq!(col(2)["transform"], "split_full_name");
     assert_eq!(col(5)["target"], json!({ "kind": "skip" }));
     assert_eq!(p["ai"]["used"], true);
@@ -101,7 +101,7 @@ async fn confirm_uses_the_users_target_makes_the_field_and_imports(pool: PgPool)
         .await;
     assert_eq!(bad.status, StatusCode::UNPROCESSABLE_ENTITY);
     assert!(bad.body["error"]["problems"].as_array().unwrap().len() >= 2, "{}", bad.body);
-    // the user changes Sector: company_name instead of the AI's new field
+    // the user changes Segment: company_name instead of the AI's new field
     let ok = g
         .ok(Scope::Leads, "POST", &url, Some(json!({ "columns": [{ "index": 1, "target": { "kind": "builtin", "key": "company_name" } }], "tags": ["csv"] })))
         .await;
@@ -124,11 +124,11 @@ async fn a_new_field_is_made_only_on_confirm_and_a_template_saves_the_next_call(
     let id = r.body["id"].as_str().unwrap();
     let done = g.ok(Scope::Leads, "POST", &format!("/v1/leads/imports/{id}/mapping/confirm"), Some(json!({}))).await;
     assert_eq!(done["warnings"], json!([]));
-    let kind: String = sqlx::query_scalar("SELECT kind::text FROM lead_fields WHERE key = 'industry'").fetch_one(&g.h.state.pool).await.unwrap();
+    let kind: String = sqlx::query_scalar("SELECT kind::text FROM lead_fields WHERE key = 'segment'").fetch_one(&g.h.state.pool).await.unwrap();
     assert_eq!(kind, "text");
     assert_eq!(import::tick(&g.h.state, &RunOpts::default()).await.unwrap(), 1);
     let v: Value = sqlx::query_scalar("SELECT custom_fields FROM leads WHERE email = 'john@acme.com'").fetch_one(&g.h.state.pool).await.unwrap();
-    assert_eq!(v["industry"], "SaaS");
+    assert_eq!(v["segment"], "SaaS");
     // same headers again: no model call
     assert_eq!(g.fake.call_count(), 1);
     let r2 = upload(&g, CSV, "?auto_map=true").await;
@@ -140,7 +140,7 @@ async fn a_new_field_is_made_only_on_confirm_and_a_template_saves_the_next_call(
     assert_eq!(list["templates"].as_array().unwrap().len(), 1);
     assert_eq!(list["templates"][0]["used_count"], 1);
     // other order of headers: new hash, new proposal, one more call
-    let swapped = "Sector,E-mail Addr\nSaaS,a@b.io\n";
+    let swapped = "Segment,E-mail Addr\nSaaS,a@b.io\n";
     let r3 = upload(&g, swapped, "?auto_map=true").await;
     assert!(r3.body["proposal"]["template_used"].is_null());
     // "map again" asks the model again

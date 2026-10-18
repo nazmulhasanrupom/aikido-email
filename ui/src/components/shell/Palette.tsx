@@ -79,6 +79,7 @@ export function Palette({ open, onClose, ws }: { open: boolean; onClose: () => v
       }),
       p("p-inbox", "Pages and settings", "Inbox", "/w/$ws/inbox"),
       p("p-acc", "Pages and settings", "Email Accounts", "/w/$ws/accounts"),
+      p("p-pers", "Pages and settings", "PERSONALIZATION", "/w/$ws/personalization"),
       p("p-rep", "Pages and settings", "Reports", "/w/$ws/reports"),
       p("p-set", "Pages and settings", "Settings: Account", "/w/$ws/settings/account"),
       p("p-api", "Pages and settings", "Settings: API keys", "/w/$ws/settings/api"),

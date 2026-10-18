@@ -21,7 +21,7 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 pub const EMAIL_COLS: &str = "id, campaign_id, lead_id, step_number, variant_key, subject, body_text, body_html, source, status, edited_by_hand, \
-    input_hash, error_code, tokens_in, tokens_out, job_id, run_id, created_at, updated_at";
+    input_hash, error_code, tokens_in, tokens_out, job_id, run_id, created_at, updated_at, angle_used, used_trigger, claims_check, hold_reason, check_failures";
 
 #[derive(FromRow, Serialize, Clone, Debug, ToSchema)]
 pub struct LeadEmail {
@@ -36,7 +36,7 @@ pub struct LeadEmail {
     pub body_html: Option<String>,
     /// `template`, `ai` or `manual`.
     pub source: String,
-    /// `none`, `writing`, `review`, `ready`, `stale`, `failed` or `sent`.
+    /// `none`, `writing`, `review`, `ready`, `stale`, `failed`, `held` or `sent`.
     pub status: String,
     pub edited_by_hand: bool,
     #[serde(skip)]
@@ -48,6 +48,18 @@ pub struct LeadEmail {
     pub run_id: Option<Uuid>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    /// Optimized prompt: the angle of this mail (3 to 8 words). The next step must use another one.
+    pub angle_used: Option<String>,
+    /// Optimized prompt: did the mail use the lead's trigger?
+    pub used_trigger: Option<bool>,
+    /// Optimized prompt: the claims in the mail and where each one comes from.
+    #[schema(value_type = Option<Vec<String>>)]
+    pub claims_check: Option<Value>,
+    /// Status `held`: why the mail was not written or not sent (`missing_required: company`, `checks_failed: ...`, `previous_step_held`, or the model's reason).
+    pub hold_reason: Option<String>,
+    /// Status `held`: the checks that failed.
+    #[schema(value_type = Option<Vec<String>>)]
+    pub check_failures: Option<Value>,
 }
 
 #[derive(FromRow, Serialize, Clone, Debug, ToSchema)]
@@ -471,6 +483,7 @@ pub async fn for_send(conn: &mut PgConnection, campaign_id: Uuid, lead: &Lead, s
     if ai_mode {
         return Ok(ForSend::Hold(match row.as_ref().map(|r| r.status.as_str()) {
             Some("review") => "email_review",
+            Some("held") => "email_held",
             _ => "email_not_ready",
         }));
     }

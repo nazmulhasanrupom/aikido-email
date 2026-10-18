@@ -34,6 +34,8 @@ const SCOPES = [
   "leads",
   "campaigns",
   "generator",
+  "integrations",
+  "personalization",
 ];
 
 function Api() {

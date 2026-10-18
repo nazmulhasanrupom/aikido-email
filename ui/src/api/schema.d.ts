@@ -776,6 +776,70 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/campaigns/{id}/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run the optimized prompt on one lead and step. Saves nothing except an `llm_calls` row (purpose `lead_email_test`).
+         * @description Scope: `campaigns`. Costs tokens (up to 3 model calls), unless `dry_run` is true. Shows the built prompts, the result, the word count and each code check.
+         */
+        post: operations["preview"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/campaigns/{id}/prompts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The optimized prompt of a campaign.
+         * @description Scope: `campaigns`. `kind` is `optimized` (the server builds the user prompt; the three blocks are the system prompt) or `custom` (today's prompts, unchanged).
+         */
+        get: operations["get_prompts"];
+        /**
+         * Change the kind and the blocks of a campaign.
+         * @description Scope: `campaigns`. Edits change this campaign only. A block is up to 16000 characters. Switching an old campaign to `optimized` copies the shipped blocks in. Unsent emails are marked out of date.
+         */
+        put: operations["put_prompts"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/campaigns/{id}/prompts/reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reset one block to the shipped default.
+         * @description Scope: `campaigns`. The block is set to null, so the campaign uses the shipped default (and follows later versions).
+         */
+        post: operations["reset_prompt"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/campaigns/{id}/resume": {
         parameters: {
             query?: never;
@@ -808,6 +872,26 @@ export interface paths {
          * @description Scope: `campaigns`. `sent` comes from the send jobs of the campaign. Replies, bounces and unsubscribes come from the inbound emails the Reply Check linked to those jobs; each person counts once per row. Per step, the number is for the email that was answered.
          */
         get: operations["stats"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/fields": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The field registry: every key the default mail prompt uses.
+         * @description Scope: `leads`. Sender, lead and system fields. A lead field with `optimized: true` is used by the default prompt; `column` is the lead column it comes from (`company` is `company_name`, `title` is `job_title`, `trigger` is `trigger_event`). `required` fields hold the mail when they are empty.
+         */
+        get: operations["get_fields"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2046,6 +2130,174 @@ export interface paths {
          * @description Scope: `leads`. Writes an event of kind `note`.
          */
         post: operations["add_note"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/personalization": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete every source and every profile version.
+         * @description Scope: `personalization`. For privacy: a CV is personal data. Campaigns that used the profile have no profile after this, so their mails are held.
+         */
+        delete: operations["delete_all"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/personalization/profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The saved profile.
+         * @description Scope: `personalization`. The newest saved version, or `profile: null`.
+         */
+        get: operations["get_profile"];
+        /**
+         * Save the profile as a new version. The old versions stay.
+         * @description Scope: `personalization`. Only a saved profile is used by campaigns; an AI draft never saves by itself. `allow_low_personalization` is set only here. Unsent emails of campaigns with the optimized prompt are marked out of date.
+         */
+        put: operations["save_profile"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/personalization/profile/generate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * The AI drafts a sender profile from the cleaned sources. Nothing is saved.
+         * @description Scope: `personalization`. Costs tokens. The sources are cut to about 6000 tokens (portfolio pages first, guide answers last), then sent. The code removes dashes, drops unknown source tags, and clears a field that no source supports. `allow_low_personalization` is always false in a draft.
+         */
+        post: operations["generate_profile"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/personalization/profile/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The last 10 saved versions, newest first.
+         * @description Scope: `personalization`.
+         */
+        get: operations["list_versions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/personalization/sources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The cleaned sources. This is exactly the text the AI would read.
+         * @description Scope: `personalization`.
+         */
+        get: operations["list_sources"];
+        put?: never;
+        /**
+         * Add input. It is cleaned and saved as tagged text. Nothing goes to the AI yet.
+         * @description Scope: `personalization`. Step A runs in code: a page is fetched safely (public addresses only, ports 80 and 443, 10 s, 2 MB), turned to text, cleaned and tagged. A source with the same tag replaces the old one. Returns the sources that were saved.
+         */
+        post: operations["add_source"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/personalization/sources/cv": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload a CV. Only its text is kept, never the file.
+         * @description Scope: `personalization`. The text is extracted, cleaned and saved with the tag `cv`. The file itself is not stored. A new CV replaces the old one.
+         */
+        post: operations["add_cv"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/personalization/sources/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete one source and its text.
+         * @description Scope: `personalization`.
+         */
+        delete: operations["delete_source"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/prompts/defaults": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The shipped default prompt blocks.
+         * @description Scope: `campaigns`. Core is used by every step. Primary is for step 1. Follow-up is for step 2 and later.
+         */
+        get: operations["get_defaults"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -3361,6 +3613,17 @@ export interface components {
             /** @description 1 to 5000 characters. */
             text: string;
         };
+        AddSource: {
+            /** @description kind `detail`: up to 20 key and value rows. */
+            details?: components["schemas"]["DetailRow"][] | null;
+            guide?: components["schemas"]["Guide"] | null;
+            /** @description `url`, `text`, `detail` or `guide`. */
+            kind: string;
+            /** @description kind `text`: up to 10000 characters. */
+            text?: string | null;
+            /** @description kind `url`: a portfolio address. Up to 3 sites. The page and up to 4 useful pages of the same site are read. */
+            url?: string | null;
+        };
         AddSuppression: {
             kind: components["schemas"]["SuppressionKind"];
             reason?: components["schemas"]["SuppressionReason"] | null;
@@ -3662,6 +3925,31 @@ export interface components {
             /** Format: uuid */
             next_cursor?: string | null;
         };
+        CampaignPrompts: {
+            core: components["schemas"]["PromptBlock"];
+            /** @description The delay of each step. Change it in the Follow-ups tab. */
+            delays: components["schemas"]["StepDelay"][];
+            followup: components["schemas"]["PromptBlock"];
+            /** @description A sender profile is saved. Without one, mails are held. */
+            has_profile: boolean;
+            /** @description `optimized` or `custom`. */
+            kind: string;
+            /** @description The shipped blocks are newer than the copy. Nothing is updated by itself. */
+            newer_default: boolean;
+            primary: components["schemas"]["PromptBlock"];
+            /** Format: int32 */
+            profile_version?: number | null;
+            /** Format: uuid */
+            sender_profile_id?: string | null;
+            /** Format: int32 */
+            shipped_version: number;
+            /**
+             * Format: int32
+             * @description The shipped version the campaign copy came from.
+             */
+            version?: number | null;
+            warnings: string[];
+        };
         CampaignRef: {
             /** Format: uuid */
             id: string;
@@ -3692,6 +3980,12 @@ export interface components {
             /** @description `ok` (green), `warn` (orange), `fail` (red) or `unknown` (the DNS did not answer). */
             status: string;
             summary: string;
+        };
+        CheckResult: {
+            /** @description Why it failed. Empty when it passed. */
+            detail: string;
+            name: string;
+            passed: boolean;
         };
         Checklist: {
             items: components["schemas"]["ChecklistItem"][];
@@ -3962,6 +4256,16 @@ export interface components {
          * @enum {string}
          */
         DedupeMode: "skip" | "fill_empty" | "overwrite";
+        Defaults: {
+            core: string;
+            followup: string;
+            primary: string;
+            /**
+             * Format: int32
+             * @description The version of the shipped blocks.
+             */
+            version: number;
+        };
         /** @enum {string} */
         DelayType: "business_days" | "calendar_days";
         DeleteFieldReply: {
@@ -3983,6 +4287,10 @@ export interface components {
         DeletedTemplate: {
             deleted: boolean;
         };
+        DetailRow: {
+            key: string;
+            value: string;
+        };
         DnsReport: {
             /** Format: date-time */
             checked_at: string;
@@ -3993,6 +4301,14 @@ export interface components {
             /** @description The worst of the four: `ok`, `warn`, `fail` or `unknown`. */
             overall: string;
             spf: components["schemas"]["Check"];
+        };
+        Draft: {
+            fields: components["schemas"]["SenderFields"];
+            /** @description Fields with no support. The UI shows "Needs your input". */
+            missing: string[];
+            other_offers: string[];
+            /** @description Field key to the real source tags that support it. */
+            sources_used: Record<string, never>;
         };
         DraftBrief: {
             /** @description Who you write to. */
@@ -4044,7 +4360,14 @@ export interface components {
         EmailCell: {
             edited_by_hand: boolean;
             error_code?: string | null;
-            /** @description `none`, `writing`, `review`, `ready`, `stale`, `failed` or `sent`. */
+            /** @description Status `held`: why (`missing_required: company`, `checks_failed: ...`). */
+            hold_reason?: string | null;
+            /**
+             * Format: uuid
+             * @description The saved email. Use it with `POST .../emails/actions`.
+             */
+            id: string;
+            /** @description `none`, `writing`, `review`, `ready`, `stale`, `failed`, `held` or `sent`. */
             status: string;
             /** Format: int32 */
             step_number: number;
@@ -4268,8 +4591,26 @@ export interface components {
             /** @description Active campaigns that are stuck: usually because no account of the pool is healthy. */
             waiting: components["schemas"]["WaitingCampaign"][];
         };
+        FieldInfo: {
+            /** @description The database column (leads and the sender profile). Null for system fields. */
+            column?: string | null;
+            /** @description What the prompt shows when there is no value. */
+            empty: string;
+            group: components["schemas"]["Group"];
+            /** @description The key in the prompt. */
+            key: string;
+            /** @description The label in the UI. */
+            label: string;
+            /** @description Used by the default mail prompt. The lead table shows a badge. */
+            optimized: boolean;
+            /** @description A lead field that must have a value, or the mail is held (`missing_required`). */
+            required: boolean;
+            type: components["schemas"]["FieldType"];
+        };
         /** @enum {string} */
         FieldKind: "text" | "number" | "url" | "date";
+        /** @enum {string} */
+        FieldType: "text" | "bool";
         FolderStatus: {
             /** Format: int32 */
             consecutive_errors: number;
@@ -4335,6 +4676,16 @@ export interface components {
             overwrite?: components["schemas"]["Overwrite"] | null;
             /** @description Step numbers (1 = Primary email). Default: all steps. */
             steps?: number[] | null;
+        };
+        GenerateReply: {
+            /** @description A draft. It is not saved. */
+            draft: components["schemas"]["Draft"];
+            /** @description The tags of the sources the AI read. */
+            sources: string[];
+            /** Format: int64 */
+            tokens_in: number;
+            /** Format: int64 */
+            tokens_out: number;
         };
         Generation: {
             /** Format: int32 */
@@ -4530,8 +4881,20 @@ export interface components {
             /** @description `false` when the server runs with `AIKIDO_GENERATOR_ENABLED=false` (this copy writes no AI text). */
             worker_enabled: boolean;
         };
+        /** @enum {string} */
+        Group: "sender" | "lead" | "system";
+        Guide: {
+            real_proof?: string | null;
+            result_you_give?: string | null;
+            who_you_do_not_help?: string | null;
+            who_you_help?: string | null;
+        };
         Health: {
             status: string;
+        };
+        HeldInfo: {
+            failures: string[];
+            reason: string;
         };
         HostInfo: {
             host: string;
@@ -4798,6 +5161,8 @@ export interface components {
             first_name?: string | null;
             /** Format: uuid */
             id: string;
+            /** @description The industry of the company. Used by the default mail prompt. */
+            industry?: string | null;
             interest?: components["schemas"]["Interest"] | null;
             job_title?: string | null;
             /** Format: date-time */
@@ -4808,12 +5173,18 @@ export interface components {
             linkedin_url?: string | null;
             location?: string | null;
             notes?: string | null;
+            /** @description A fact about this lead the mail may use. Used by the default mail prompt. */
+            personalization_note?: string | null;
             phone?: string | null;
             source: components["schemas"]["LeadSource"];
             source_ref?: string | null;
             tags: string[];
             /** @description IANA name, like `Asia/Dhaka`. Stored only for now. */
             timezone?: string | null;
+            /** @description A recent event about the lead or company (the `trigger` of the prompt). */
+            trigger_event?: string | null;
+            /** @description True when a person checked `trigger_event`. */
+            trigger_verified: boolean;
             /** Format: date-time */
             updated_at: string;
             verification: components["schemas"]["Verification"];
@@ -4853,14 +5224,22 @@ export interface components {
             suppressed: boolean;
         };
         LeadEmail: {
+            /** @description Optimized prompt: the angle of this mail (3 to 8 words). The next step must use another one. */
+            angle_used?: string | null;
             body_html?: string | null;
             body_text?: string | null;
             /** Format: uuid */
             campaign_id: string;
+            /** @description Status `held`: the checks that failed. */
+            check_failures?: string[] | null;
+            /** @description Optimized prompt: the claims in the mail and where each one comes from. */
+            claims_check?: string[] | null;
             /** Format: date-time */
             created_at: string;
             edited_by_hand: boolean;
             error_code?: string | null;
+            /** @description Status `held`: why the mail was not written or not sent (`missing_required: company`, `checks_failed: ...`, `previous_step_held`, or the model's reason). */
+            hold_reason?: string | null;
             /** Format: uuid */
             id: string;
             /** Format: uuid */
@@ -4871,7 +5250,7 @@ export interface components {
             run_id?: string | null;
             /** @description `template`, `ai` or `manual`. */
             source: string;
-            /** @description `none`, `writing`, `review`, `ready`, `stale`, `failed` or `sent`. */
+            /** @description `none`, `writing`, `review`, `ready`, `stale`, `failed`, `held` or `sent`. */
             status: string;
             /**
              * Format: int32
@@ -4885,6 +5264,8 @@ export interface components {
             tokens_out: number;
             /** Format: date-time */
             updated_at: string;
+            /** @description Optimized prompt: did the mail use the lead's trigger? */
+            used_trigger?: boolean | null;
             variant_key?: string | null;
         };
         LeadEvent: {
@@ -5321,6 +5702,40 @@ export interface components {
             /** @description `connect-email`, `sending-basics`, `ai`, `import` or `done`. */
             step: string;
         };
+        OptimizedPreviewBody: {
+            /** @description `true`: only build the prompts. No model call, no tokens, no limit. `status` is `PROMPTS_ONLY`. */
+            dry_run?: boolean | null;
+            /** Format: uuid */
+            lead_id: string;
+            /** @description Angles of the earlier mails. Without it, the saved emails of the lead are used. */
+            previous_angles?: string[] | null;
+            /**
+             * Format: int32
+             * @description 1 = Primary email. 2 and later are follow-ups.
+             */
+            step: number;
+        };
+        OptimizedPreviewReply: {
+            angle_used: string;
+            body: string;
+            calls: number;
+            /** @description Every check on the last answer of the model. */
+            checks: components["schemas"]["CheckResult"][];
+            claims_check: string[];
+            held?: components["schemas"]["HeldInfo"] | null;
+            previous_angles: string[];
+            /** @description The mail, when it passed. Null when it was held. */
+            status: string;
+            subject: string;
+            system: string;
+            /** Format: int64 */
+            tokens_in: number;
+            /** Format: int64 */
+            tokens_out: number;
+            used_trigger: boolean;
+            user: string;
+            word_count: number;
+        };
         /**
          * @description How `write` treats an email that exists.
          * @enum {string}
@@ -5365,16 +5780,20 @@ export interface components {
             /** @description Refused (409 `email_locked`) while the lead has an open enrollment. */
             email?: string | null;
             first_name?: string | null;
+            industry?: string | null;
             interest?: components["schemas"]["Interest"] | null;
             job_title?: string | null;
             last_name?: string | null;
             linkedin_url?: string | null;
             location?: string | null;
             notes?: string | null;
+            personalization_note?: string | null;
             phone?: string | null;
             /** @description Replaces the tags. */
             tags?: string[] | null;
             timezone?: string | null;
+            trigger_event?: string | null;
+            trigger_verified?: boolean | null;
             website?: string | null;
         };
         PatchList: {
@@ -5441,6 +5860,21 @@ export interface components {
         };
         PausedReply: {
             paused: boolean;
+        };
+        PersonalizationSource: {
+            clean_text: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: uuid */
+            id: string;
+            /** @description `url`, `cv`, `text`, `detail` or `guide`. */
+            kind: string;
+            /** @description The URL or the file name. */
+            origin?: string | null;
+            /** @description What the AI cites: `url:/about`, `cv`, `text`, `detail:Clients`, `guide`. */
+            tag: string;
+            /** Format: int32 */
+            token_count: number;
         };
         PoolAccount: {
             email: string;
@@ -5511,6 +5945,15 @@ export interface components {
             /** Format: double */
             output: number;
         };
+        ProfileReply: {
+            profile?: components["schemas"]["SenderProfile"] | null;
+        };
+        PromptBlock: {
+            /** @description `true`: the campaign has no copy and uses the shipped default. */
+            is_default: boolean;
+            /** @description The text in use: the campaign copy, or the shipped default when the campaign has none. */
+            text: string;
+        };
         /** @enum {string} */
         Provider: "gmail" | "microsoft" | "smtp";
         ProviderState: {
@@ -5540,15 +5983,20 @@ export interface components {
             /** @description Trimmed and lower-cased when saved. */
             email: string;
             first_name?: string | null;
+            industry?: string | null;
             job_title?: string | null;
             last_name?: string | null;
             linkedin_url?: string | null;
             location?: string | null;
             notes?: string | null;
+            personalization_note?: string | null;
             phone?: string | null;
             tags?: string[] | null;
             /** @description IANA name, like `Asia/Dhaka`. */
             timezone?: string | null;
+            trigger_event?: string | null;
+            /** @description `true` when the trigger event was checked by a person. Empty means `false`. */
+            trigger_verified?: boolean | null;
             website?: string | null;
         };
         RedirectUris: {
@@ -5716,6 +6164,10 @@ export interface components {
             /** @description Shown this one time only. Valid 1 hour. */
             link: string;
         };
+        ResetPromptBody: {
+            /** @description `core`, `primary` or `followup`. */
+            block: string;
+        };
         /** @description Extra filter on the latest Reoon result. The status filter is `verification_status` of the lead filter. */
         ResultFilter: {
             /**
@@ -5780,12 +6232,18 @@ export interface components {
         RunsReply: {
             runs: components["schemas"]["Run"][];
         };
+        SaveProfile: {
+            fields: components["schemas"]["SenderFields"];
+            other_offers?: string[] | null;
+            /** @description Field key to the source tags the AI cited (from the draft). */
+            sources_used?: Record<string, never> | null;
+        };
         /**
          * @description One scope per step. Add a variant here (and to `ALL`) for a later step.
          *     The bootstrap makes one key for every scope in `ALL` that has no active key.
          * @enum {string}
          */
-        Scope: "admin" | "accounts" | "sending" | "replies" | "followups" | "leads" | "campaigns" | "generator" | "integrations";
+        Scope: "admin" | "accounts" | "sending" | "replies" | "followups" | "leads" | "campaigns" | "generator" | "integrations" | "personalization";
         ScopeFilter: {
             status?: string | null;
             /** Format: int32 */
@@ -5814,6 +6272,39 @@ export interface components {
         SendTestReply: {
             /** Format: uuid */
             job_id: string;
+        };
+        /** @description The nine fields a person edits. Used for the save body and for a draft from the AI. */
+        SenderFields: {
+            allow_low_personalization?: boolean;
+            ideal_customer?: string;
+            low_friction_offer?: string;
+            not_a_fit?: string;
+            offer?: string;
+            outcome?: string;
+            problem_solved?: string;
+            proof_or_none?: string;
+            sender_first_name?: string;
+        };
+        SenderProfile: {
+            allow_low_personalization: boolean;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: uuid */
+            id: string;
+            ideal_customer: string;
+            low_friction_offer: string;
+            not_a_fit: string;
+            offer: string;
+            other_offers: string[];
+            outcome: string;
+            problem_solved: string;
+            /** @description `none` when there is no real proof. */
+            proof_or_none: string;
+            sender_first_name: string;
+            /** @description Field key to the source tags that support it. */
+            sources_used: Record<string, never>;
+            /** Format: int32 */
+            version: number;
         };
         SendingSettings: {
             /**
@@ -6074,7 +6565,7 @@ export interface components {
          */
         Severity: "error" | "warning" | "info";
         /** @enum {string} */
-        SkipReason: "suppressed" | "unverified" | "active_elsewhere" | "no_healthy_account" | "lead_deleted" | "already_in_campaign" | "missing_variable" | "company_replied" | "campaign_archived" | "verification_not_allowed";
+        SkipReason: "suppressed" | "unverified" | "active_elsewhere" | "no_healthy_account" | "lead_deleted" | "already_in_campaign" | "missing_variable" | "company_replied" | "campaign_archived" | "verification_not_allowed" | "held_skipped";
         /** @enum {string} */
         SpamCheck: "warn" | "fail";
         StatsReply: components["schemas"]["Tally"] & {
@@ -6133,6 +6624,13 @@ export interface components {
             wait?: components["schemas"]["WaitInfo"] | null;
             /** Format: int32 */
             warmup_day: number;
+        };
+        StepDelay: {
+            /** Format: int32 */
+            delay_amount: number;
+            delay_type: string;
+            /** Format: int32 */
+            step_number: number;
         };
         StepInput: {
             /**
@@ -7613,6 +8111,8 @@ export interface operations {
                 limit: number | null;
                 /** @description `true`: only leads that lack a value one of the emails needs (a variable with no fallback). */
                 missing: boolean | null;
+                /** @description `true`: only leads that have a held email (optimized prompt: required field empty, model HOLD, or checks failed twice). */
+                held: boolean | null;
                 /** @description Latest Reoon status, a comma list like `safe,catch_all`. `none` means not verified yet. */
                 verification_status: string | null;
             };
@@ -7877,6 +8377,159 @@ export interface operations {
             };
         };
     };
+    preview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OptimizedPreviewBody"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OptimizedPreviewReply"];
+                };
+            };
+            /** @description No such campaign, lead or step */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description generator_not_ready, wrong_mode (not the optimized prompt) or generation_failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description rate_limited: 10 a minute */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_prompts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CampaignPrompts"];
+                };
+            };
+            /** @description No such campaign */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    put_prompts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        /** @description `{ kind?, core?, primary?, followup?, sender_profile_id? }`. A block that is not sent stays. `null` resets a block to the shipped default. */
+        requestBody: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CampaignPrompts"];
+                };
+            };
+            /** @description No such campaign */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description A value is not valid */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    reset_prompt: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResetPromptBody"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CampaignPrompts"];
+                };
+            };
+            /** @description No such campaign */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unknown block */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     resume: {
         parameters: {
             query?: never;
@@ -7937,6 +8590,25 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    get_fields: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FieldInfo"][];
+                };
             };
         };
     };
@@ -10371,6 +11043,251 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    delete_all: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Everything is deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_profile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfileReply"];
+                };
+            };
+        };
+    };
+    save_profile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaveProfile"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SenderProfile"];
+                };
+            };
+            /** @description A field is longer than 1000 characters */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    generate_profile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenerateReply"];
+                };
+            };
+            /** @description no_sources, generator_not_ready (set up an AI provider first) or generation_failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description rate_limited: 10 a minute */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_versions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SenderProfile"][];
+                };
+            };
+        };
+    };
+    list_sources: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PersonalizationSource"][];
+                };
+            };
+        };
+    };
+    add_source: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AddSource"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PersonalizationSource"][];
+                };
+            };
+            /** @description invalid_source: the address, the text or a limit is not valid */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    add_cv: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description A `file` part: PDF, DOCX or TXT, up to 5 MB. */
+        requestBody: {
+            content: {
+                "multipart/form-data": Record<string, never>;
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PersonalizationSource"];
+                };
+            };
+            /** @description invalid_source: wrong type, too large, or "No text found in this file." */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    delete_source: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No such source */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_defaults: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Defaults"];
+                };
             };
         };
     };

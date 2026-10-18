@@ -159,6 +159,16 @@ pub async fn patch(conn: &mut PgConnection, id: Uuid, patch: &Map<String, Value>
             "website" => lead.website = text(MAX_VALUE_CHARS)?,
             "linkedin_url" => lead.linkedin_url = text(MAX_VALUE_CHARS)?,
             "location" => lead.location = text(MAX_VALUE_CHARS)?,
+            "industry" => lead.industry = text(MAX_VALUE_CHARS)?,
+            "personalization_note" => lead.personalization_note = text(MAX_VALUE_CHARS)?,
+            "trigger_event" => lead.trigger_event = text(MAX_VALUE_CHARS)?,
+            "trigger_verified" => {
+                lead.trigger_verified = match value {
+                    Value::Bool(b) => *b,
+                    Value::Null => false,
+                    _ => return Err(PatchError::Invalid("trigger_verified must be true or false".into())),
+                }
+            }
             "notes" => lead.notes = text(MAX_NOTES_CHARS)?,
             "timezone" => {
                 let raw = match value {
@@ -212,7 +222,8 @@ pub async fn patch(conn: &mut PgConnection, id: Uuid, patch: &Map<String, Value>
     let res = sqlx::query(
         "UPDATE leads SET email = $2, email_domain = $3, first_name = $4, last_name = $5, company_name = $6, job_title = $7, phone = $8,
                 website = $9, linkedin_url = $10, location = $11, timezone = $12, custom_fields = $13, tags = $14, interest = $15,
-                verification = $16, notes = $17, updated_at = $18 WHERE id = $1",
+                verification = $16, notes = $17, updated_at = $18, industry = $19, personalization_note = $20, trigger_event = $21,
+                trigger_verified = $22 WHERE id = $1",
     )
     .bind(id)
     .bind(&lead.email)
@@ -232,6 +243,10 @@ pub async fn patch(conn: &mut PgConnection, id: Uuid, patch: &Map<String, Value>
     .bind(lead.verification)
     .bind(&lead.notes)
     .bind(now)
+    .bind(&lead.industry)
+    .bind(&lead.personalization_note)
+    .bind(&lead.trigger_event)
+    .bind(lead.trigger_verified)
     .execute(&mut *conn)
     .await;
     match res {

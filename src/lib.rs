@@ -14,6 +14,8 @@ pub mod followups;
 pub mod generator;
 pub mod integrations;
 pub mod leads;
+pub mod net;
+pub mod prompting;
 pub mod replies;
 pub mod reports;
 pub mod sending;

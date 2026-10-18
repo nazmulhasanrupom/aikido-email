@@ -482,6 +482,10 @@ pub struct PatchLead {
     pub linkedin_url: Option<String>,
     pub location: Option<String>,
     pub timezone: Option<String>,
+    pub industry: Option<String>,
+    pub personalization_note: Option<String>,
+    pub trigger_event: Option<String>,
+    pub trigger_verified: Option<bool>,
     /// Merged into the old values. A `null` value removes the key.
     #[schema(value_type = Option<Object>)]
     pub custom_fields: Option<Map<String, Value>>,

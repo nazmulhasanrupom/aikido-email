@@ -28,6 +28,7 @@ The engine stores connected email accounts and sends queued emails one at a time
 19. [Campaigns (`campaigns`)](#19-campaigns-campaigns)
 20. [Email Generator (`generator`)](#20-email-generator-generator)
 21. [Web app: login, team, helpers, reports](#21-web-app-login-team-helpers-reports)
+25. [Email optimization (`personalization`, `campaigns`, `leads`)](#25-email-optimization-personalization-campaigns-leads)
 
 ---
 
@@ -109,6 +110,8 @@ Each step has its own key. A key works only on routes of its own scope. A key wi
 | `leads` | `/v1/leads/*` | Yes |
 | `campaigns` | `/v1/campaigns/*` | Yes |
 | `generator` | `/v1/generator/*` | Yes |
+| `integrations` | `/v1/integrations/*`, `/v1/verify/*` | Yes |
+| `personalization` | `/v1/personalization/*` | Yes |
 
 **Routes that need no key:** `GET /health`, `GET /docs`, `GET /openapi.json`, `GET /v1/accounts/oauth/{provider}/callback` (protected by a sealed `state` value), and `/v1/auth/*` (the web login, [section 21](#21-web-app-login-team-helpers-reports)).
 
@@ -1821,3 +1824,56 @@ The lead timeline gets the event `email_verified` (`status`, `mode`, `score`). T
 - `GET /v1/campaigns/{id}` `warnings` has "N pending leads will be skipped by the verification rule." and "N pending leads are not verified."
 - `GET /v1/verify/reoon/status` (scope `integrations`): `installed`, `paused`, `worker_enabled`, `last_tick_at`, `open_runs`, `pending_items`, `integration_status`.
 - New alert kinds `integration_auth_failed` and `verification_out_of_credits` (both link to the Reoon page). `engine_paused` also covers the verifier.
+
+---
+
+## 25. Email optimization (`personalization`, `campaigns`, `leads`)
+
+The default mail prompt, a sender profile, a field registry, and code checks on every mail. It works only for campaigns in AI mode whose prompt kind is `optimized`. Custom prompts and the slot generator are not changed.
+
+### Lead columns
+
+Four new columns on a lead: `industry`, `personalization_note`, `trigger_event` (the `trigger` of the prompt) and `trigger_verified` (bool, default `false`). They are in `POST/PATCH /v1/leads`, the bulk route, CSV import (header synonyms: `trigger`, `event`, `news`, `icebreaker`, `sector`, ...), CSV export and `{{variables}}`. In a CSV, `trigger_verified` accepts `yes/no`, `true/false`, `1/0`, `y/n` in any case; an empty cell is `false`; any other value is a row error. An import can set `trigger_verified` to true but never clears it. Old custom fields with one of these four keys move into the column in migration `0014`.
+
+`GET /v1/fields` (scope `leads`) is the field registry: `key`, `label`, `column`, `group` (`sender`, `lead`, `system`), `type`, `required`, `empty`, `optimized`. Lead fields with `optimized: true` are used by the default prompt. `company` is the column `company_name`, `title` is `job_title`, `trigger` is `trigger_event`. `first_name` and `company` are required: if empty, the mail is held (`missing_required: <keys>`) with no model call.
+
+### Sources and the sender profile (`personalization`)
+
+| Method | Path | Does |
+| --- | --- | --- |
+| POST | `/v1/personalization/sources` | Add input. Body `{kind: "url", url}`, `{kind: "text", text}`, `{kind: "detail", details: [{key, value}]}` or `{kind: "guide", guide: {who_you_help, who_you_do_not_help, result_you_give, real_proof}}`. Cleaned and saved as tagged text. |
+| POST | `/v1/personalization/sources/cv` | Multipart, part `file` (PDF, DOCX, TXT, up to 5 MB). Only the text is kept. A file with no text gives `422 "No text found in this file."` |
+| GET | `/v1/personalization/sources` | The cleaned chunks. This is what the AI reads. |
+| DELETE | `/v1/personalization/sources/{id}` | Delete one chunk. |
+| DELETE | `/v1/personalization` | Delete every source and every profile version. |
+| POST | `/v1/personalization/profile/generate` | Step A + B. Returns `{draft, sources, tokens_in, tokens_out}`. Saves nothing. |
+| PUT | `/v1/personalization/profile` | Save a new version `{fields, other_offers?, sources_used?}`. Old versions stay. |
+| GET | `/v1/personalization/profile` | `{profile}`: the newest version or `null`. |
+| GET | `/v1/personalization/profile/versions` | The last 10 versions. |
+
+- A URL is fetched with `src/net/safe_fetch.rs`: `http` and `https`, ports 80 and 443, every resolved address checked (loopback, private, link local incl. `169.254.169.254`, CGNAT, multicast, unspecified, IPv6 ULA), the connection goes to the checked address (no second DNS lookup), at most 3 redirects each checked again, 10 s, 2 MB, `text/html` and `text/plain`. Up to 3 sites; up to 4 same-site pages (`about`, `services`, `work`, `case`, `portfolio`). A blocked address gives `422 invalid_source`.
+- Text limits: free text 10,000 characters, 20 detail rows. The AI gets at most about 6,000 tokens. Cut order: portfolio pages, CV, free text, extra details, guide answers last.
+- `generate` and the campaign preview cost tokens: 10 per minute per user (`429 rate_limited`). A purpose `sender_profile` row goes to `llm_calls`. No AI provider: `422 generator_not_ready`.
+- The code removes dashes, drops unknown source tags, clears a field with no valid tag (listed in `missing`), keeps one word of `sender_first_name`. `allow_low_personalization` is never set by the AI.
+- Saving a new version marks unsent mails of optimized campaigns `stale`.
+
+### Prompt blocks (`campaigns`)
+
+| Method | Path | Does |
+| --- | --- | --- |
+| GET | `/v1/prompts/defaults` | Shipped `core`, `primary`, `followup` and `version`. |
+| GET / PUT | `/v1/campaigns/{id}/prompts` | `kind` (`optimized` or `custom`), the three blocks (`{text, is_default}`), `version`, `newer_default`, `has_profile`, `warnings` (`no_profile`, `core_missing_sections`), `delays` of each step. PUT takes `{kind?, core?, primary?, followup?, sender_profile_id?}`; `null` resets a block. Up to 16,000 characters per block. |
+| POST | `/v1/campaigns/{id}/prompts/reset` | `{block}`: set one block to `null` (the shipped default). |
+| POST | `/v1/campaigns/{id}/preview` | `{lead_id, step, previous_angles?, dry_run?}`. Runs the whole flow on one lead and saves nothing. Returns `system`, `user`, the result, `word_count`, `held`, and a `checks` list (8 checks, `passed`, `detail`). `dry_run: true` only builds the prompts (no tokens, no limit). |
+
+- A campaign that turns to AI mode with no prompts of its own starts `optimized`, with the three shipped blocks copied in. A campaign with prompts stays `custom`. Switching an old campaign is `PUT .../prompts {kind: "optimized"}`.
+- System prompt of a step = Core + (Primary for step 1, Follow-up for step 2 and later) + the fixed server rules. The user prompt is built by the server: a `SENDER` JSON (empty values when no profile; `sender_first_name` falls back to the first word of the account name) and a `LEAD` JSON (`first_name`, `company`, `title`, `industry`, `website`, `personalization_note`, `trigger`, `trigger_verified`, `sequence_step`, `previous_angles`, `extra`). Never in the prompt: email, phone, id, notes, tags, states, source, timestamps, suppression and Reoon data. Values are cut at 1,000 characters, `extra` at 3,000.
+
+### The flow and the checks
+
+The model answers `{status, subject, body, angle_used, used_trigger, claims_check, hold_reason}`. Per mail: required fields empty, or the step before has no `angle_used`: held, no call. Model says `HOLD`: held with its reason. `OK`: the code checks status, word limit (under 80 for step 1, under 60 later), no em or en dash, banned phrases, subject (steps 2 and 3 empty; step 1 and 4+ 2 to 5 lowercase words), links (none, except a link from Proof in step 3), `angle_used` new, no placeholder. A failed check gives one more call with the failure list; failing again holds the mail (`checks_failed: ...`). At most 3 calls per mail. Step 4 and later have their own subject and keep `In-Reply-To` and `References`.
+
+- `lead_emails.status` has a new value `held`, with `hold_reason` and `check_failures`; saved mails also have `angle_used`, `used_trigger`, `claims_check`. A held email is never sent; the enrollment waits with `wait_reason: email_held`.
+- `GET /v1/campaigns/{id}/leads?held=true` lists leads with a held email. Each `emails` cell has `id` and `hold_reason`.
+- `POST /v1/campaigns/{id}/emails/actions`: `regenerate` is "Edit lead and retry" (it also clears the hold). New action `skip` (held emails only): the lead's enrollment stops with reason `held_skipped`, a pending lead becomes `skipped` with `skip_reason: held_skipped`.
+- Alert `emails_held` when more than 20% of an AI run is held.

@@ -23,6 +23,10 @@ const GUESSES: &[(&str, &[&str])] = &[
     ("timezone", &["timezone", "tz"]),
     ("notes", &["notes", "note", "comment", "comments"]),
     ("tags", &["tags", "tag", "labels"]),
+    ("industry", &["industry", "sector", "vertical", "companyindustry"]),
+    ("personalization_note", &["personalizationnote", "personalization", "personalisation", "icebreaker", "hook", "observation"]),
+    ("trigger_event", &["trigger", "triggerevent", "event", "news", "signal", "recentnews"]),
+    ("trigger_verified", &["triggerverified", "verifiedtrigger", "eventverified"]),
 ];
 
 /// The target string of a header (`email`, `company_name`, `custom:<key>`), if the name is known.

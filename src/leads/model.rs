@@ -68,17 +68,21 @@ pg_enum!(
 );
 
 /// Built-in text fields a caller can set. Custom field keys can not use these names.
-pub const TEXT_FIELDS: [&str; 9] = ["first_name", "last_name", "company_name", "job_title", "phone", "website", "linkedin_url", "location", "timezone"];
+pub const TEXT_FIELDS: [&str; 12] = [
+    "first_name", "last_name", "company_name", "job_title", "phone", "website", "linkedin_url", "location", "timezone", "industry", "personalization_note",
+    "trigger_event",
+];
 
 /// Every name that is taken: the text fields and the other columns of a lead.
-pub const RESERVED_KEYS: [&str; 24] = [
+pub const RESERVED_KEYS: [&str; 28] = [
     "id", "email", "email_domain", "first_name", "last_name", "company_name", "job_title", "phone", "website", "linkedin_url", "location",
     "timezone", "custom_fields", "tags", "contact_state", "interest", "verification", "source", "source_ref", "notes", "last_contacted_at",
-    "last_replied_at", "created_at", "updated_at",
+    "last_replied_at", "created_at", "updated_at", "industry", "personalization_note", "trigger_event", "trigger_verified",
 ];
 
 pub const LEAD_COLS: &str = "id, email, email_domain, first_name, last_name, company_name, job_title, phone, website, linkedin_url, location, timezone, \
-    custom_fields, tags, contact_state, interest, verification, source, source_ref, notes, last_contacted_at, last_replied_at, created_at, updated_at";
+    custom_fields, tags, contact_state, interest, verification, source, source_ref, notes, last_contacted_at, last_replied_at, created_at, updated_at, \
+    industry, personalization_note, trigger_event, trigger_verified";
 
 #[derive(FromRow, Serialize, Clone, Debug, ToSchema)]
 pub struct Lead {
@@ -108,6 +112,14 @@ pub struct Lead {
     pub last_replied_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    /// The industry of the company. Used by the default mail prompt.
+    pub industry: Option<String>,
+    /// A fact about this lead the mail may use. Used by the default mail prompt.
+    pub personalization_note: Option<String>,
+    /// A recent event about the lead or company (the `trigger` of the prompt).
+    pub trigger_event: Option<String>,
+    /// True when a person checked `trigger_event`.
+    pub trigger_verified: bool,
     /// The latest Reoon status of this address (`safe`, `catch_all`, ...). Null: not verified, or Reoon is not installed. Filled by the list and detail routes.
     #[sqlx(skip)]
     pub verification_status: Option<String>,

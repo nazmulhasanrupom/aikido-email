@@ -65,6 +65,8 @@ pub enum SkipReason {
     CampaignArchived,
     /// Reoon: the result of the lead is not allowed by the send rule.
     VerificationNotAllowed,
+    /// The email of the lead was held and a person chose to skip the lead.
+    HeldSkipped,
 }
 
 pub const CAMPAIGN_COLS: &str = "id, name, status, sequence_id, daily_new_leads, account_pick, stop_company_on_reply, allow_unverified, timezone, \

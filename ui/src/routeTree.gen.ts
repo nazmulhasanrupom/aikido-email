@@ -22,6 +22,7 @@ import { Route as WWsAiRouteImport } from './routes/w.$ws.ai'
 import { Route as WWsCampaignsRouteImport } from './routes/w.$ws.campaigns'
 import { Route as WWsInboxRouteImport } from './routes/w.$ws.inbox'
 import { Route as WWsLeadsRouteImport } from './routes/w.$ws.leads'
+import { Route as WWsPersonalizationRouteImport } from './routes/w.$ws.personalization'
 import { Route as WWsReportsRouteImport } from './routes/w.$ws.reports'
 import { Route as WWsSettingsRouteImport } from './routes/w.$ws.settings'
 import { Route as WWsStatusRouteImport } from './routes/w.$ws.status'
@@ -113,6 +114,11 @@ const WWsInboxRoute = WWsInboxRouteImport.update({
 const WWsLeadsRoute = WWsLeadsRouteImport.update({
   id: '/leads',
   path: '/leads',
+  getParentRoute: () => WWsRoute,
+} as any)
+const WWsPersonalizationRoute = WWsPersonalizationRouteImport.update({
+  id: '/personalization',
+  path: '/personalization',
   getParentRoute: () => WWsRoute,
 } as any)
 const WWsReportsRoute = WWsReportsRouteImport.update({
@@ -267,6 +273,7 @@ export interface FileRoutesByFullPath {
   '/w/$ws/campaigns': typeof WWsCampaignsRouteWithChildren
   '/w/$ws/inbox': typeof WWsInboxRoute
   '/w/$ws/leads': typeof WWsLeadsRoute
+  '/w/$ws/personalization': typeof WWsPersonalizationRoute
   '/w/$ws/reports': typeof WWsReportsRoute
   '/w/$ws/settings': typeof WWsSettingsRouteWithChildren
   '/w/$ws/status': typeof WWsStatusRoute
@@ -306,6 +313,7 @@ export interface FileRoutesByTo {
   '/w/$ws/ai': typeof WWsAiRoute
   '/w/$ws/inbox': typeof WWsInboxRoute
   '/w/$ws/leads': typeof WWsLeadsRoute
+  '/w/$ws/personalization': typeof WWsPersonalizationRoute
   '/w/$ws/reports': typeof WWsReportsRoute
   '/w/$ws/status': typeof WWsStatusRoute
   '/w/$ws': typeof WWsIndexRoute
@@ -345,6 +353,7 @@ export interface FileRoutesById {
   '/w/$ws/campaigns': typeof WWsCampaignsRouteWithChildren
   '/w/$ws/inbox': typeof WWsInboxRoute
   '/w/$ws/leads': typeof WWsLeadsRoute
+  '/w/$ws/personalization': typeof WWsPersonalizationRoute
   '/w/$ws/reports': typeof WWsReportsRoute
   '/w/$ws/settings': typeof WWsSettingsRouteWithChildren
   '/w/$ws/status': typeof WWsStatusRoute
@@ -389,6 +398,7 @@ export interface FileRouteTypes {
     | '/w/$ws/campaigns'
     | '/w/$ws/inbox'
     | '/w/$ws/leads'
+    | '/w/$ws/personalization'
     | '/w/$ws/reports'
     | '/w/$ws/settings'
     | '/w/$ws/status'
@@ -428,6 +438,7 @@ export interface FileRouteTypes {
     | '/w/$ws/ai'
     | '/w/$ws/inbox'
     | '/w/$ws/leads'
+    | '/w/$ws/personalization'
     | '/w/$ws/reports'
     | '/w/$ws/status'
     | '/w/$ws'
@@ -466,6 +477,7 @@ export interface FileRouteTypes {
     | '/w/$ws/campaigns'
     | '/w/$ws/inbox'
     | '/w/$ws/leads'
+    | '/w/$ws/personalization'
     | '/w/$ws/reports'
     | '/w/$ws/settings'
     | '/w/$ws/status'
@@ -597,6 +609,13 @@ declare module '@tanstack/react-router' {
       path: '/leads'
       fullPath: '/w/$ws/leads'
       preLoaderRoute: typeof WWsLeadsRouteImport
+      parentRoute: typeof WWsRoute
+    }
+    '/w/$ws/personalization': {
+      id: '/w/$ws/personalization'
+      path: '/personalization'
+      fullPath: '/w/$ws/personalization'
+      preLoaderRoute: typeof WWsPersonalizationRouteImport
       parentRoute: typeof WWsRoute
     }
     '/w/$ws/reports': {
@@ -905,6 +924,7 @@ interface WWsRouteChildren {
   WWsCampaignsRoute: typeof WWsCampaignsRouteWithChildren
   WWsInboxRoute: typeof WWsInboxRoute
   WWsLeadsRoute: typeof WWsLeadsRoute
+  WWsPersonalizationRoute: typeof WWsPersonalizationRoute
   WWsReportsRoute: typeof WWsReportsRoute
   WWsSettingsRoute: typeof WWsSettingsRouteWithChildren
   WWsStatusRoute: typeof WWsStatusRoute
@@ -918,6 +938,7 @@ const WWsRouteChildren: WWsRouteChildren = {
   WWsCampaignsRoute: WWsCampaignsRouteWithChildren,
   WWsInboxRoute: WWsInboxRoute,
   WWsLeadsRoute: WWsLeadsRoute,
+  WWsPersonalizationRoute: WWsPersonalizationRoute,
   WWsReportsRoute: WWsReportsRoute,
   WWsSettingsRoute: WWsSettingsRouteWithChildren,
   WWsStatusRoute: WWsStatusRoute,

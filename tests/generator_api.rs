@@ -125,12 +125,12 @@ async fn enrolling_does_not_need_a_value_for_an_ai_slot_and_the_followup_preview
 #[sqlx::test]
 async fn a_field_used_in_the_instruction_of_a_slot_can_not_be_deleted(pool: PgPool) {
     let g = G::new(pool).await;
-    g.ok(Scope::Leads, "POST", "/v1/leads/fields", Some(json!({ "key": "industry" }))).await;
+    g.ok(Scope::Leads, "POST", "/v1/leads/fields", Some(json!({ "key": "sector" }))).await;
     g.ok(Scope::Leads, "POST", "/v1/leads/fields", Some(json!({ "key": "spare" }))).await;
-    let slots = json!([{ "key": "opener", "instruction": "Write about their work in {{industry|their field}}." }]);
+    let slots = json!([{ "key": "opener", "instruction": "Write about their work in {{sector|their field}}." }]);
     let seq = g.sequence(json!([ai_step(0, "Hi", "{{ai:opener}}", slots)])).await;
     g.enroll_new(seq, "ana@acme.example").await;
-    let r = g.api(Scope::Leads, "DELETE", "/v1/leads/fields/industry", None).await;
+    let r = g.api(Scope::Leads, "DELETE", "/v1/leads/fields/sector", None).await;
     assert_eq!((r.status, err_code(&r)), (StatusCode::CONFLICT, "field_in_use"));
     assert!(r.body["error"]["message"].as_str().unwrap().contains("AI sequence"));
     assert_eq!(g.api(Scope::Leads, "DELETE", "/v1/leads/fields/spare", None).await.status, StatusCode::OK);
@@ -248,7 +248,7 @@ fn brief() -> Value {
 #[sqlx::test]
 async fn the_sequence_writer_returns_valid_steps_and_can_save_a_paused_sequence(pool: PgPool) {
     let g = G::new(pool).await;
-    g.ok(Scope::Leads, "POST", "/v1/leads/fields", Some(json!({ "key": "industry" }))).await;
+    g.ok(Scope::Leads, "POST", "/v1/leads/fields", Some(json!({ "key": "sector" }))).await;
     let r = g.gapi("POST", "/v1/generator/sequences/draft", Some(json!({ "brief": brief(), "steps": 3 }))).await;
     assert_eq!(r.status, StatusCode::OK, "{}", r.body);
     let steps = r.body["steps"].as_array().unwrap();
@@ -262,7 +262,7 @@ async fn the_sequence_writer_returns_valid_steps_and_can_save_a_paused_sequence(
     assert_eq!((r.body["input_tokens"].clone(), r.body["output_tokens"].clone()), (json!(100), json!(20)));
     // the prompt carries the brief as data, the custom fields, and the step count
     let call = &g.fake.calls()[0];
-    assert!(call.system.contains("\"steps\":3") && call.system.contains("industry") && !call.system.contains("Route planning"));
+    assert!(call.system.contains("\"steps\":3") && call.system.contains("sector") && !call.system.contains("Route planning"));
     assert!(call.user.starts_with("<brief>") && call.user.contains("Route planning software") && call.user.contains("Reply STOP to opt out."));
     assert!(call.max_output_tokens >= 2000);
     // the steps are a valid body for the followups routes
@@ -558,7 +558,8 @@ async fn migration_adds_only_new_tables_and_columns(pool: PgPool) {
     }
     // 0009 added ai_user_prompt to sequence_steps and ai_system_prompt to sequences; 0011 added variant_a_active
     assert_eq!(cols("sequence_steps").await.len(), 12);
-    assert_eq!(cols("sequences").await.len(), 12);
+    // 0014 added six columns to sequences (sender profile, prompt kind, three blocks, version)
+    assert_eq!(cols("sequences").await.len(), 18);
     // a step written before the Email Generator has no slots
     let (n,): (i64,) = sqlx::query_as("SELECT count(*) FROM generator_defaults WHERE id = 1 AND settings = '{}'::jsonb AND NOT engine_paused").fetch_one(&pool).await.unwrap();
     assert_eq!(n, 1);

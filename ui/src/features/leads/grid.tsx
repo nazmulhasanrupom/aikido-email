@@ -23,7 +23,34 @@ export type GridCol = { id: string; label: string; field?: S["LeadField"] };
 
 type LeadLike = { id: string } & Record<string, unknown>;
 
+/** Lead columns the default mail prompt uses (the field registry, `GET /v1/fields`, has the same list). */
+export const OPTIMIZED_COLS = new Set([
+  "first_name",
+  "company_name",
+  "job_title",
+  "industry",
+  "website",
+  "personalization_note",
+  "trigger_event",
+  "trigger_verified",
+]);
+
+export function OptimizedBadge() {
+  return (
+    <span
+      title="Used by the default mail prompt."
+      className="ml-1.5 rounded bg-accent-soft px-1 py-px align-middle text-[10px] font-medium"
+    >
+      Optimized
+    </span>
+  );
+}
+
 export const BUILTIN_EDITABLE = new Set([
+  "industry",
+  "personalization_note",
+  "trigger_event",
+  "trigger_verified",
   "email",
   "first_name",
   "last_name",
@@ -53,9 +80,12 @@ export function useColumns(tableId: string, base: GridCol[]) {
     ...(fields.data ?? []).map((f) => ({ id: `custom:${f.key}`, label: f.label || f.key, field: f })),
   ];
   const order = saved?.order ?? [];
+  // no saved order: the email first, then the optimized columns, then the rest
+  const rank = (c: GridCol) => (c.id === "email" ? 0 : OPTIMIZED_COLS.has(c.id) ? 1 : 2);
   const sorted = [...all].sort((a, b) => {
     const ia = order.indexOf(a.id);
     const ib = order.indexOf(b.id);
+    if (ia < 0 && ib < 0) return rank(a) - rank(b) || all.indexOf(a) - all.indexOf(b);
     return (ia < 0 ? 1e6 + all.indexOf(a) : ia) - (ib < 0 ? 1e6 + all.indexOf(b) : ib);
   });
   const hidden = new Set(saved?.hidden ?? []);
@@ -117,6 +147,7 @@ export function ColumnsMenu({ cols }: { cols: ReturnType<typeof useColumns> }) {
                 aria-label={`Show ${c.label}`}
               />
               {c.label}
+              {OPTIMIZED_COLS.has(c.id) && <OptimizedBadge />}
             </MenuItem>
             <button
               type="button"
@@ -152,6 +183,7 @@ export function cellValue(lead: Record<string, unknown>, col: GridCol): string {
     return v == null ? "" : String(v);
   }
   const v = lead[col.id];
+  if (col.id === "trigger_verified") return v ? "yes" : "no";
   return v == null ? "" : String(v);
 }
 
@@ -202,7 +234,9 @@ export function EditableCell({
     mutationFn: (v: string) => {
       const body = col.field
         ? { custom_fields: { [col.field.key]: v === "" ? null : v } }
-        : { [col.id]: v === "" && col.id !== "email" ? null : v };
+        : col.id === "trigger_verified"
+          ? { trigger_verified: ["yes", "true", "1", "y"].includes(v.trim().toLowerCase()) }
+          : { [col.id]: v === "" && col.id !== "email" ? null : v };
       return http.patch("/v1/leads/{id}", { path: { id: lead.id }, body });
     },
     onSuccess: () => {
@@ -431,7 +465,13 @@ export function ColumnHeader({ col }: { col: GridCol }) {
       await done();
     },
   });
-  if (!f) return <>{col.label}</>;
+  if (!f)
+    return (
+      <>
+        {col.label}
+        {OPTIMIZED_COLS.has(col.id) && <OptimizedBadge />}
+      </>
+    );
   const err = mode === "delete" ? del.error : save.error;
   return (
     <>

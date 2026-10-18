@@ -19,6 +19,7 @@ import { htmlToText, sanitizeHtml, textToHtml } from "@/lib/html";
 import { aiKeys, BUILTIN_VARS, variables, withFallback } from "@/lib/template";
 import { PROBLEM_WORDS } from "@/lib/words";
 import { AiPanel } from "./AiPanel";
+import { PromptKindSwitch } from "./OptimizedPanel";
 import { EmailScore } from "./EmailScore";
 import { AiPartDialog } from "./AiPartDialog";
 import { type Brief, BriefForm, EMPTY_BRIEF } from "./NewCampaign";
@@ -551,18 +552,23 @@ export function Editor({
 
         {/* editor */}
         {aiMode ? (
-          <AiPanel
+          <PromptKindSwitch
             campaign={campaign}
-            stepIndex={Math.min(sel, steps.length - 1)}
-            userPrompt={steps[Math.min(sel, steps.length - 1)]?.ai_user_prompt ?? ""}
-            system={aiSystem}
-            onSystem={setAiSystem}
-            onUser={(v) => setSteps((all) => all.map((x, i) => (i === sel ? { ...x, ai_user_prompt: v } : x)))}
-            aiReady={!!aiReady}
-            onPreset={(p) => {
-              setAiSystem(p.system);
-              setSteps((all) => all.map((x, i) => ({ ...x, ai_user_prompt: p.steps[Math.min(i, p.steps.length - 1)] ?? "" })));
-            }}
+            custom={
+              <AiPanel
+                campaign={campaign}
+                stepIndex={Math.min(sel, steps.length - 1)}
+                userPrompt={steps[Math.min(sel, steps.length - 1)]?.ai_user_prompt ?? ""}
+                system={aiSystem}
+                onSystem={setAiSystem}
+                onUser={(v) => setSteps((all) => all.map((x, i) => (i === sel ? { ...x, ai_user_prompt: v } : x)))}
+                aiReady={!!aiReady}
+                onPreset={(p) => {
+                  setAiSystem(p.system);
+                  setSteps((all) => all.map((x, i) => ({ ...x, ai_user_prompt: p.steps[Math.min(i, p.steps.length - 1)] ?? "" })));
+                }}
+              />
+            }
           />
         ) : (
         <section className="flex min-w-0 flex-col gap-3" aria-label="Email editor">

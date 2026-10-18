@@ -18,11 +18,17 @@ pub fn lead_vars(lead: &Lead) -> Map<String, Value> {
         ("linkedin_url", &lead.linkedin_url),
         ("location", &lead.location),
         ("timezone", &lead.timezone),
+        ("industry", &lead.industry),
+        ("personalization_note", &lead.personalization_note),
+        ("trigger_event", &lead.trigger_event),
     ];
     for (k, v) in text {
         if let Some(v) = v.as_deref().filter(|v| !v.trim().is_empty()) {
             out.insert(k.to_string(), Value::String(v.to_string()));
         }
+    }
+    if lead.trigger_verified {
+        out.insert("trigger_verified".to_string(), Value::String("true".into()));
     }
     if let Some(custom) = lead.custom_fields.as_object() {
         for (k, v) in custom {

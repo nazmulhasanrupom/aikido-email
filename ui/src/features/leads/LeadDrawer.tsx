@@ -18,6 +18,7 @@ import {
 import { fmtAgo, fmtDateTime, fullName } from "@/lib/format";
 import { VerifyBlock } from "@/features/reoon/parts";
 import { INTERESTS, say } from "@/lib/words";
+import { OptimizedBadge } from "./grid";
 
 type Tab = "details" | "timeline" | "emails" | "notes";
 const BUILTIN: [keyof S["Lead"], string][] = [
@@ -31,6 +32,86 @@ const BUILTIN: [keyof S["Lead"], string][] = [
   ["location", "Location"],
   ["timezone", "Time zone"],
 ];
+
+/** The 8 fields of the default mail prompt, in prompt order: [lead key, label]. */
+const OPT_FIELDS: [keyof S["Lead"], string][] = [
+  ["first_name", "First name"],
+  ["company_name", "Company"],
+  ["job_title", "Job title"],
+  ["industry", "Industry"],
+  ["website", "Website"],
+  ["personalization_note", "Personalization note"],
+  ["trigger_event", "Trigger"],
+  ["trigger_verified", "Trigger verified"],
+];
+const OPT_EDIT = new Set(["industry", "personalization_note", "trigger_event"]);
+
+/** How many of the 8 fields have a value. */
+export function optimizationScore(lead: S["Lead"]): number {
+  return OPT_FIELDS.filter(([k]) => {
+    const v = lead[k];
+    return typeof v === "boolean" ? v : typeof v === "string" && v.trim() !== "";
+  }).length;
+}
+
+/** The fields the default mail prompt uses, with a fill score. */
+function OptimizationPanel({
+  lead,
+  vals,
+  setVals,
+  verified,
+  setVerified,
+}: {
+  lead: S["Lead"];
+  vals: Record<string, string>;
+  setVals: (v: Record<string, string>) => void;
+  verified: boolean;
+  setVerified: (b: boolean) => void;
+}) {
+  const score = optimizationScore(lead);
+  const req = (k: string) => k === "first_name" || k === "company_name";
+  return (
+    <section aria-label="Optimization" className="rounded-(--radius-control) border border-border p-3 sm:col-span-2">
+      <header className="mb-2 flex items-center justify-between gap-2">
+        <h3 className="text-sm font-medium">
+          Optimization <OptimizedBadge />
+        </h3>
+        <span className="text-sm text-muted" data-testid="opt-score">
+          {score} of 8 filled
+        </span>
+      </header>
+      <ul className="mb-3 flex flex-wrap gap-1.5 text-xs">
+        {OPT_FIELDS.map(([k, label]) => {
+          const v = lead[k];
+          const filled = typeof v === "boolean" ? v : typeof v === "string" && v.trim() !== "";
+          return (
+            <li key={k}>
+              <Pill tone={filled ? "success" : req(k) ? "danger" : "neutral"}>
+                {label}
+                {filled ? "" : req(k) ? ": needed" : ""}
+              </Pill>
+            </li>
+          );
+        })}
+      </ul>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {OPT_FIELDS.filter(([k]) => OPT_EDIT.has(k)).map(([k, label]) => (
+          <Field
+            key={k}
+            label={label}
+            value={vals[k] ?? ""}
+            onChange={(e) => setVals({ ...vals, [k]: e.target.value })}
+          />
+        ))}
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={verified} onChange={(e) => setVerified(e.target.checked)} />
+          The trigger is checked by a person
+        </label>
+      </div>
+      <p className="mt-2 text-xs text-muted">First name and company are in the list below. Without them the email is held.</p>
+    </section>
+  );
+}
 
 /** Plain words for a timeline event. */
 export function eventText(e: S["LeadEvent"]): string {
@@ -195,8 +276,10 @@ function Details({ lead, fields }: { lead: S["LeadDetail"]; fields: S["ContextFi
   const locked = !!lead.active_enrollment_id;
   const [vals, setVals] = useState<Record<string, string>>({});
   const [custom, setCustom] = useState<Record<string, string>>({});
+  const [verified, setVerified] = useState(false);
   useEffect(() => {
-    setVals(Object.fromEntries(BUILTIN.map(([k]) => [k, String(lead[k] ?? "")])));
+    setVerified(!!lead.trigger_verified);
+    setVals(Object.fromEntries([...BUILTIN, ...[...OPT_EDIT].map((k) => [k, ""])].map(([k]) => [k as string, String(lead[k as keyof S["Lead"]] ?? "")])));
     setCustom(Object.fromEntries(fields.map((f) => [f.key, f.value ?? ""])));
   }, [lead, fields]);
   const save = useMutation({
@@ -205,6 +288,7 @@ function Details({ lead, fields }: { lead: S["LeadDetail"]; fields: S["ContextFi
         path: { id: lead.id },
         body: {
           ...Object.fromEntries(Object.entries(vals).map(([k, v]) => [k, v || null])),
+          trigger_verified: verified,
           custom_fields: Object.fromEntries(Object.entries(custom).filter(([, v]) => v !== "")),
         },
       }),
@@ -224,6 +308,7 @@ function Details({ lead, fields }: { lead: S["LeadDetail"]; fields: S["ContextFi
         help={locked ? "The email is locked while the lead is in a sequence." : undefined}
         readOnly
       />
+      <OptimizationPanel lead={lead} vals={vals} setVals={setVals} verified={verified} setVerified={setVerified} />
       {BUILTIN.map(([k, label]) => (
         <Field
           key={k}

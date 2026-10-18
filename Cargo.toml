@@ -57,6 +57,8 @@ hmac = "0.13.0"
 zxcvbn = "3.1.1"
 unicode-normalization = "0.1.26"
 rust-embed = { version = "8.13.0", features = ["mime-guess", "debug-embed"], optional = true }
+zip = { version = "2", default-features = false, features = ["deflate"] }
+lopdf = "0.45.0"
 
 [dev-dependencies]
 tower = { version = "0.5.3", features = ["util"] }

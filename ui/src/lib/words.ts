@@ -22,6 +22,7 @@ const WORDS: Record<string, Record<string, string>> = {
     reply_check_unavailable: "Cannot read the inbox, follow-ups wait",
     email_not_ready: "Waiting for the email to be written",
     email_review: "Waiting for you to approve the email",
+    email_held: "Email held: fix the lead, then try again",
   },
   job: {
     queued: "Queued",
@@ -45,6 +46,7 @@ const WORDS: Record<string, Record<string, string>> = {
     company_replied: "A colleague replied",
     auto_reply: "Out of office",
     manual: "Stopped by you",
+    held_skipped: "Email held and skipped",
     stalled: "Waited too long",
     unsubscribe: "Unsubscribed",
     bounce: "Bounced",
@@ -60,6 +62,7 @@ const WORDS: Record<string, Record<string, string>> = {
     campaign_archived: "Campaign archived",
     already_in_campaign: "Already in the campaign",
     verification_not_allowed: "Verification rule",
+    held_skipped: "Held and skipped",
     lead_deleted: "Lead deleted",
   },
   label: {

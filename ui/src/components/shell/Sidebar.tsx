@@ -15,6 +15,7 @@ import {
   ShieldCheck,
   Sparkles,
   Sun,
+  UserRoundCog,
   Users,
 } from "lucide-react";
 import { type ReactNode, useState } from "react";
@@ -47,6 +48,7 @@ interface NavItem {
     | "/w/$ws/leads"
     | "/w/$ws/inbox"
     | "/w/$ws/accounts"
+    | "/w/$ws/personalization"
     | "/w/$ws/reports";
   label: string;
   icon: typeof Send;
@@ -59,6 +61,7 @@ const NAV: NavItem[] = [
   { to: "/w/$ws/leads", label: "Leads", icon: Users },
   { to: "/w/$ws/inbox", label: "Inbox", icon: Inbox },
   { to: "/w/$ws/accounts", label: "Email Accounts", icon: Mail },
+  { to: "/w/$ws/personalization", label: "PERSONALIZATION", icon: UserRoundCog },
   { to: "/w/$ws/reports", label: "Reports", icon: ChartColumn },
 ];
 

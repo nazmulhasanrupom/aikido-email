@@ -57,6 +57,38 @@ fn default_answer(req: &LlmRequest) -> Result<LlmResponse, LlmError> {
             .collect();
         return Ok(response(json!({ "steps": steps }).to_string()));
     }
+    if let Some(spec) = between(&req.system, "optimized_request") {
+        let step = serde_json::from_str::<Value>(spec).ok().and_then(|v| v["step"].as_u64()).unwrap_or(1);
+        let subject = if req.system.contains("set \"subject\" to an empty string") { String::new() } else { "fake subject".to_string() };
+        return Ok(response(
+            json!({
+                "status": "OK", "subject": subject, "body": format!("Hi there, fake mail body for step {step}.\nDana"),
+                "angle_used": format!("fake angle {step}"), "used_trigger": false, "claims_check": [], "hold_reason": ""
+            })
+            .to_string(),
+        ));
+    }
+    if req.system.contains("You turn raw notes about a person") {
+        // the sender profile builder: every field gets text and cites the first source
+        let tag = req.user.split("<source tag=\"").nth(1).and_then(|s| s.split('"').next()).map(str::to_string);
+        let (mut used, mut missing) = (serde_json::Map::new(), Vec::new());
+        let mut out = json!({ "other_offers": [] });
+        for k in ["sender_first_name", "ideal_customer", "not_a_fit", "problem_solved", "offer", "outcome", "proof_or_none", "low_friction_offer"] {
+            match &tag {
+                Some(t) => {
+                    out[k] = json!(if k == "sender_first_name" { "Dana".to_string() } else { format!("Fake {k}.") });
+                    used.insert(k.to_string(), json!([t]));
+                }
+                None => {
+                    out[k] = json!(if k == "proof_or_none" { "none" } else { "" });
+                    missing.push(k);
+                }
+            }
+        }
+        out["sources_used"] = Value::Object(used);
+        out["missing"] = json!(missing);
+        return Ok(response(out.to_string()));
+    }
     if let Some(spec) = between(&req.system, "email_request") {
         let step = serde_json::from_str::<Value>(spec).ok().and_then(|v| v["step"].as_u64()).unwrap_or(1);
         let subject = if req.system.contains("set \"subject\" to an empty string") { String::new() } else { "Fake subject".to_string() };
