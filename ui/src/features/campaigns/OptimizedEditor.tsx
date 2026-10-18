@@ -26,9 +26,8 @@ export function OptimizedEditor({ campaign }: { campaign: S["CampaignDetail"] })
   const profile = useQuery(profileQuery);
   const gen = useQuery(q.genSettings);
   const providers = useQuery(q.providers);
-  const first = campaign.steps[0];
   // "" means the shipped default
-  const saved = { system: campaign.sequence.ai_system_prompt ?? "", user: first?.ai_user_prompt ?? "" };
+  const saved = { system: campaign.sequence.opt_system_prompt ?? "", user: campaign.sequence.opt_user_prompt ?? "" };
   const [system, setSystem] = useState<string | null>(null);
   const [user, setUser] = useState<string | null>(null);
   const [genOpen, setGenOpen] = useState(false);
@@ -46,21 +45,7 @@ export function OptimizedEditor({ campaign }: { campaign: S["CampaignDetail"] })
       const asSaved = (v: string, d: string | undefined) => (v.trim() === (d ?? "").trim() ? "" : v);
       const sys = asSaved(shown.system, defaults.data?.system);
       const usr = asSaved(shown.user, defaults.data?.user);
-      await http.patch("/v1/followups/sequences/{id}", { path: { id: campaign.sequence.id }, body: { ai_system_prompt: sys } });
-      await http.put("/v1/followups/sequences/{id}/steps", {
-        path: { id: campaign.sequence.id },
-        body: {
-          steps: campaign.steps.map((s, i) => ({
-            subject: i === 0 ? s.subject : "",
-            body_text: s.body_text,
-            body_html: null,
-            delay_amount: i === 0 ? 0 : s.delay_amount,
-            delay_type: s.delay_type,
-            ai_slots: [],
-            ai_user_prompt: i === 0 ? usr : "",
-          })),
-        },
-      });
+      await http.patch("/v1/followups/sequences/{id}", { path: { id: campaign.sequence.id }, body: { opt_system_prompt: sys, opt_user_prompt: usr } });
     },
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: ["campaigns", campaign.id] });

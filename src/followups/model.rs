@@ -46,7 +46,7 @@ impl EnrollmentStatus {
     }
 }
 
-pub const SEQUENCE_COLS: &str = "id, name, status, stop_on_auto_reply, auto_reply_pause_days, thread_followups, campaign_id, brief, ai_system_prompt, variant_a_active, created_at, updated_at";
+pub const SEQUENCE_COLS: &str = "id, name, status, stop_on_auto_reply, auto_reply_pause_days, thread_followups, campaign_id, brief, ai_system_prompt, variant_a_active, opt_system_prompt, opt_user_prompt, created_at, updated_at";
 
 #[derive(Clone, Debug, FromRow, Serialize, ToSchema)]
 pub struct Sequence {
@@ -66,6 +66,10 @@ pub struct Sequence {
     pub ai_system_prompt: Option<String>,
     /// Variant A is step 1 itself. `false`: it gets no new leads (another variant must be on).
     pub variant_a_active: bool,
+    /// Optimised mode: the instructions for the AI. Empty means the shipped default.
+    pub opt_system_prompt: Option<String>,
+    /// Optimised mode: the user prompt. Empty means the shipped default.
+    pub opt_user_prompt: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

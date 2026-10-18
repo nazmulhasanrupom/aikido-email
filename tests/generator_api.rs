@@ -558,7 +558,8 @@ async fn migration_adds_only_new_tables_and_columns(pool: PgPool) {
     }
     // 0009 added ai_user_prompt to sequence_steps and ai_system_prompt to sequences; 0011 added variant_a_active
     assert_eq!(cols("sequence_steps").await.len(), 12);
-    assert_eq!(cols("sequences").await.len(), 12);
+    // 0016 added the two Optimised prompts
+    assert_eq!(cols("sequences").await.len(), 14);
     // a step written before the Email Generator has no slots
     let (n,): (i64,) = sqlx::query_as("SELECT count(*) FROM generator_defaults WHERE id = 1 AND settings = '{}'::jsonb AND NOT engine_paused").fetch_one(&pool).await.unwrap();
     assert_eq!(n, 1);

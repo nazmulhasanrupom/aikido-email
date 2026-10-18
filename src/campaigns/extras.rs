@@ -175,7 +175,14 @@ async fn duplicate(State(st): State<AppState>, ApiPath(id): ApiPath<Uuid>) -> Ap
         steps,
     };
     let new_seq = insert_sequence(&mut tx, &body, now).await?;
-    sqlx::query("UPDATE sequences SET status = 'paused', ai_system_prompt = $2, variant_a_active = $3 WHERE id = $1").bind(new_seq).bind(&seq.ai_system_prompt).bind(seq.variant_a_active).execute(&mut *tx).await?;
+    sqlx::query("UPDATE sequences SET status = 'paused', ai_system_prompt = $2, variant_a_active = $3, opt_system_prompt = $4, opt_user_prompt = $5 WHERE id = $1")
+        .bind(new_seq)
+        .bind(&seq.ai_system_prompt)
+        .bind(seq.variant_a_active)
+        .bind(&seq.opt_system_prompt)
+        .bind(&seq.opt_user_prompt)
+        .execute(&mut *tx)
+        .await?;
     sqlx::query(
         "INSERT INTO step_variants (id, sequence_id, key, name, subject, body_text, body_html, ai_slots, active, position)
          SELECT gen_random_uuid(), $2, key, name, subject, body_text, body_html, ai_slots, active, position FROM step_variants WHERE sequence_id = $1",

@@ -76,10 +76,14 @@ async fn switching_to_optimised_makes_four_steps_and_the_other_modes_stay_as_the
     assert_eq!(steps.len(), 4);
     assert_eq!(steps.iter().map(|s| s["delay_amount"].as_i64().unwrap()).collect::<Vec<_>>(), [0, 3, 4, 5]);
     assert_eq!(steps[0]["body_text"], "x", "the existing step is kept");
-    // back to a template and to AI: nothing breaks
-    for m in ["template", "ai", "optimized"] {
-        a.cok("PATCH", &format!("/v1/campaigns/{}", a.camp), Some(json!({ "content_mode": m }))).await;
-    }
+    // back to a template: the steps the mode made by itself are taken away again
+    a.cok("PATCH", &format!("/v1/campaigns/{}", a.camp), Some(json!({ "content_mode": "template" }))).await;
+    let c = a.cok("GET", &format!("/v1/campaigns/{}", a.camp), None).await;
+    assert_eq!(c["steps"].as_array().unwrap().len(), 1);
+    assert_eq!(c["steps"][0]["body_text"], "x");
+    a.cok("PATCH", &format!("/v1/campaigns/{}", a.camp), Some(json!({ "content_mode": "ai" }))).await;
+    a.cok("PATCH", &format!("/v1/campaigns/{}", a.camp), Some(json!({ "content_mode": "optimized" }))).await;
+    assert_eq!(a.cok("GET", &format!("/v1/campaigns/{}", a.camp), None).await["steps"].as_array().unwrap().len(), 4);
     // more than 4 steps: refused with a plain message
     let b = a.g.ok(Scope::Campaigns, "POST", "/v1/campaigns", Some(json!({ "name": "Five", "account_ids": [a.g.account], "sequence": { "name": "S5", "steps": [
         { "delay_amount": 0, "subject": "a", "body_text": "x" }, { "delay_amount": 1, "body_text": "x" }, { "delay_amount": 1, "body_text": "x" },
@@ -132,13 +136,13 @@ async fn own_prompts_the_saved_profile_a_hand_edit_and_a_bad_format(pool: PgPool
     let lead = a.add_lead("ana@acme.example", json!({ "first_name": "Ana", "company_name": "Acme" })).await;
     // the profile fills the sender part of the user prompt
     a.pok("PUT", "/v1/personalization/profile", Some(json!({ "fields": { "sender_first_name": "Dana", "offer": "Route software", "outcome": "Faster deliveries" } }))).await;
-    // own prompts: the instructions on the sequence, the user prompt on step 1
-    a.g.ok(Scope::Followups, "PATCH", &format!("/v1/followups/sequences/{}", a.seq), Some(json!({ "ai_system_prompt": "Be very short for {{sender_first_name}}." }))).await;
-    let steps = a.cok("GET", &format!("/v1/campaigns/{}", a.camp), None).await["steps"].clone();
-    let mut put: Vec<Value> = steps.as_array().unwrap().iter().map(|s| json!({ "delay_amount": s["delay_amount"], "subject": s["subject"], "body_text": s["body_text"], "ai_user_prompt": null })).collect();
-    put[0]["ai_user_prompt"] = json!("Lead: {{first_name}} at {{company}}. I sell: {{offer}}. Ask: {{low_friction_offer|a short call}}.");
-    let r = a.g.api(Scope::Followups, "PUT", &format!("/v1/followups/sequences/{}/steps", a.seq), Some(json!({ "steps": put }))).await;
-    assert_eq!(r.status, StatusCode::OK, "{}", r.body);
+    // own prompts are kept apart from the AI mode prompts
+    a.g.ok(Scope::Followups, "PATCH", &format!("/v1/followups/sequences/{}", a.seq), Some(json!({ "ai_system_prompt": "AI mode text, not used here." }))).await;
+    let r = a.g.ok(Scope::Followups, "PATCH", &format!("/v1/followups/sequences/{}", a.seq), Some(json!({
+        "opt_system_prompt": "Be very short for {{sender_first_name}}.",
+        "opt_user_prompt": "Lead: {{first_name}} at {{company}}. I sell: {{offer}}. Ask: {{low_friction_offer|a short call}}."
+    }))).await;
+    assert_eq!(r["sequence"]["opt_system_prompt"], "Be very short for {{sender_first_name}}.");
 
     // a hand edit of follow-up 2 is kept when the set is written again
     a.generate(json!({})).await;

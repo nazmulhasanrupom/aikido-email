@@ -46,6 +46,26 @@ impl Optimized {
     }
 }
 
+/// The text of the steps the Optimised mode makes by itself. They are removed again when the mode is left.
+pub const PLACEHOLDER_SUBJECT: &str = "Written by the AI";
+pub const PLACEHOLDER_BODY: &str = "Written by the AI for each lead.";
+
+/// Leaving the Optimised mode: take away the steps it made and nobody edited, so Template and AI mode stay clean.
+/// A live campaign keeps its steps (leads may already wait on them).
+pub async fn drop_placeholder_steps(conn: &mut sqlx::PgConnection, sequence_id: uuid::Uuid, campaign_is_draft: bool) -> Result<(), sqlx::Error> {
+    if !campaign_is_draft {
+        return Ok(());
+    }
+    sqlx::query("DELETE FROM sequence_steps WHERE sequence_id = $1 AND step_number > 1 AND body_text = $2 AND body_html IS NULL").bind(sequence_id).bind(PLACEHOLDER_BODY).execute(&mut *conn).await?;
+    sqlx::query("UPDATE sequence_steps SET subject = 'Hello {{first_name|there}}', body_text = E'Hi {{first_name|there}},\n\n' WHERE sequence_id = $1 AND step_number = 1 AND subject = $2 AND body_text = $3")
+        .bind(sequence_id)
+        .bind(PLACEHOLDER_SUBJECT)
+        .bind(PLACEHOLDER_BODY)
+        .execute(&mut *conn)
+        .await?;
+    Ok(())
+}
+
 /// The Optimised mode writes exactly 4 emails. Make sure the sequence has 4 steps: missing ones are added
 /// (3, 4 and 5 days after the step before). A sequence with more than 4 steps must be cut by hand first.
 pub async fn ensure_four_steps(conn: &mut sqlx::PgConnection, sequence_id: uuid::Uuid, now: chrono::DateTime<chrono::Utc>) -> crate::error::ApiResult<()> {
@@ -57,15 +77,16 @@ pub async fn ensure_four_steps(conn: &mut sqlx::PgConnection, sequence_id: uuid:
         let delay = [0, 3, 4, 5][step as usize - 1];
         sqlx::query(
             "INSERT INTO sequence_steps (id, sequence_id, step_number, delay_amount, delay_type, subject, body_text, updated_at, ai_slots, step_hash)
-             VALUES ($1, $2, $3, $4, 'business_days', $5, 'Written by the AI for each lead.', $6, '[]', '')
+             VALUES ($1, $2, $3, $4, 'business_days', $5, $7, $6, '[]', '')
              ON CONFLICT (sequence_id, step_number) DO NOTHING",
         )
         .bind(uuid::Uuid::now_v7())
         .bind(sequence_id)
         .bind(step)
         .bind(delay)
-        .bind(if step == 1 { "Written by the AI" } else { "" })
+        .bind(if step == 1 { PLACEHOLDER_SUBJECT } else { "" })
         .bind(now)
+        .bind(PLACEHOLDER_BODY)
         .execute(&mut *conn)
         .await?;
     }

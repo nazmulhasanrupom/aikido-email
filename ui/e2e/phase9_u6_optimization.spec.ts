@@ -44,6 +44,9 @@ test("Optimised mode: three modes, plain prompts, 4 emails, save and reset", asy
   await expect(modes.getByRole("button")).toHaveText(["Template", "AI", "Optimised"]);
   await modes.getByRole("button", { name: "Optimised" }).click();
 
+  // the prompts load by themselves, and no AI-mode text leaks in
+  await expect(page.getByLabel("Instructions for the AI")).not.toHaveValue("");
+  await expect(page.getByRole("button", { name: "Reset to default" })).toHaveCount(0);
   // plain text prompts, no JSON, and the old fields are gone
   await expect(page.getByLabel("Instructions for the AI")).toHaveValue(/short cold email sequence/);
   await expect(page.getByLabel("What the AI knows about you and each lead")).toHaveValue(/Company: \{\{company_name\}\}/);
@@ -64,7 +67,10 @@ test("Optimised mode: three modes, plain prompts, 4 emails, save and reset", asy
   await page.getByRole("button", { name: "Reset to default" }).click();
   await expect(page.getByLabel("What the AI knows about you and each lead")).toHaveValue(/Company: \{\{company_name\}\}/);
 
-  // back to AI mode: the old editor is unchanged
+  // back to AI mode: the old editor is unchanged, and the 3 follow-ups the mode made are gone again
+  await page.getByRole("button", { name: "Save", exact: true }).isVisible();
   await modes.getByRole("button", { name: "AI" }).click();
   await expect(page.getByLabel("System prompt (all steps)")).toBeVisible();
+  await expect(page.getByLabel("System prompt (all steps)")).toHaveValue("");
+  await expect(page.getByRole("button", { name: /Follow-up 3|Follow up 3/ })).toHaveCount(0);
 });

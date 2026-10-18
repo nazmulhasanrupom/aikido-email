@@ -5684,6 +5684,10 @@ export interface components {
             /** Format: uuid */
             campaign_id?: string | null;
             name?: string | null;
+            /** @description Optimised mode: the instructions for the AI. An empty text goes back to the shipped default. */
+            opt_system_prompt?: string | null;
+            /** @description Optimised mode: the user prompt. An empty text goes back to the shipped default. */
+            opt_user_prompt?: string | null;
             stop_on_auto_reply?: boolean | null;
             thread_followups?: boolean | null;
         };
@@ -6309,6 +6313,10 @@ export interface components {
             /** Format: uuid */
             id: string;
             name: string;
+            /** @description Optimised mode: the instructions for the AI. Empty means the shipped default. */
+            opt_system_prompt?: string | null;
+            /** @description Optimised mode: the user prompt. Empty means the shipped default. */
+            opt_user_prompt?: string | null;
             status: components["schemas"]["SequenceStatus"];
             /** @description `false`: an auto-reply (out of office) pauses the enrollment. `true`: it stops it. */
             stop_on_auto_reply: boolean;

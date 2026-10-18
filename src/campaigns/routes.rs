@@ -433,6 +433,7 @@ async fn patch_campaign(State(st): State<AppState>, ApiPath(id): ApiPath<Uuid>, 
         return Err(bad_status("be changed", c.status));
     }
     let mut accounts: Option<Vec<Uuid>> = None;
+    let old_mode = c.content_mode.clone();
     for (k, v) in &patch {
         let bad = |what: &str| ApiError::unprocessable("invalid_setting", format!("{k} must be {what}"));
         match k.as_str() {
@@ -501,6 +502,9 @@ async fn patch_campaign(State(st): State<AppState>, ApiPath(id): ApiPath<Uuid>, 
     .await?;
     if patch.contains_key("footer") {
         super::emails::mark_stale(&mut tx, id, None).await?;
+    }
+    if patch.contains_key("content_mode") && old_mode == "optimized" && c.content_mode != "optimized" {
+        super::email_opt::drop_placeholder_steps(&mut tx, c.sequence_id, c.status == CampaignStatus::Draft).await?;
     }
     // The Optimised mode writes exactly 4 emails: the primary email and 3 follow-ups.
     if patch.contains_key("content_mode") && c.content_mode == "optimized" {

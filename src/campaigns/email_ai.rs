@@ -77,8 +77,8 @@ pub async fn load_prompts(conn: &mut PgConnection, ctx: &Ctx) -> Result<Prompts,
     }
     let optimized = if ctx.campaign.content_mode == "optimized" {
         let profile = crate::prompting::sender::current(conn).await?;
-        let own = seq.as_ref().and_then(|s| s.ai_system_prompt.clone()).filter(|p| !p.trim().is_empty());
-        let user = ctx.steps.iter().find(|s| s.step_number == 1).and_then(|s| s.ai_user_prompt.clone()).filter(|p| !p.trim().is_empty());
+        let own = seq.as_ref().and_then(|s| s.opt_system_prompt.clone()).filter(|p| !p.trim().is_empty());
+        let user = seq.as_ref().and_then(|s| s.opt_user_prompt.clone()).filter(|p| !p.trim().is_empty());
         Some(super::email_opt::Optimized { system: own, user, profile, fallback_name: sender_name.clone() })
     } else {
         None

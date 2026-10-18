@@ -370,6 +370,10 @@ pub struct PatchSequence {
     pub brief: Option<String>,
     /// AI mode: the system prompt for all steps. An empty text clears it.
     pub ai_system_prompt: Option<String>,
+    /// Optimised mode: the instructions for the AI. An empty text goes back to the shipped default.
+    pub opt_system_prompt: Option<String>,
+    /// Optimised mode: the user prompt. An empty text goes back to the shipped default.
+    pub opt_user_prompt: Option<String>,
     pub action: Option<SequenceAction>,
 }
 
@@ -399,6 +403,16 @@ async fn patch_sequence(State(st): State<AppState>, ApiPath(id): ApiPath<Uuid>, 
             return Err(ApiError::unprocessable("missing_variable", format!("ai_system_prompt uses {}, which no lead field, custom field or fallback covers.", unknown.join(", "))));
         }
     }
+    let opt = |what: &str, v: &Option<String>| -> ApiResult<Option<Option<String>>> {
+        v.as_deref()
+            .map(|t| {
+                let t = t.trim();
+                check_prompt(what, t).map(|_| (!t.is_empty()).then(|| t.to_string()))
+            })
+            .transpose()
+    };
+    let opt_system = opt("opt_system_prompt", &p.opt_system_prompt)?;
+    let opt_user = opt("opt_user_prompt", &p.opt_user_prompt)?;
     let status = p.action.map(|a| match a {
         SequenceAction::Pause => SequenceStatus::Paused,
         SequenceAction::Resume => SequenceStatus::Active,
@@ -409,7 +423,9 @@ async fn patch_sequence(State(st): State<AppState>, ApiPath(id): ApiPath<Uuid>, 
                 auto_reply_pause_days = COALESCE($4, auto_reply_pause_days), thread_followups = COALESCE($5, thread_followups),
                 status = COALESCE($6, status), updated_at = $7,
                 brief = CASE WHEN $8 THEN $9 ELSE brief END,
-                ai_system_prompt = CASE WHEN $10 THEN $11 ELSE ai_system_prompt END
+                ai_system_prompt = CASE WHEN $10 THEN $11 ELSE ai_system_prompt END,
+                opt_system_prompt = CASE WHEN $12 THEN $13 ELSE opt_system_prompt END,
+                opt_user_prompt = CASE WHEN $14 THEN $15 ELSE opt_user_prompt END
          WHERE id = $1",
     )
     .bind(id)
@@ -423,12 +439,16 @@ async fn patch_sequence(State(st): State<AppState>, ApiPath(id): ApiPath<Uuid>, 
     .bind(brief.flatten())
     .bind(system_prompt.is_some())
     .bind(system_prompt.flatten())
+    .bind(opt_system.is_some())
+    .bind(opt_system.flatten())
+    .bind(opt_user.is_some())
+    .bind(opt_user.flatten())
     .execute(&st.pool)
     .await?;
     if done.rows_affected() == 0 {
         return Err(ApiError::not_found("sequence_not_found", "No sequence with this id."));
     }
-    if p.ai_system_prompt.is_some() {
+    if p.ai_system_prompt.is_some() || p.opt_system_prompt.is_some() || p.opt_user_prompt.is_some() {
         let mut conn = st.pool.acquire().await?;
         crate::campaigns::emails::sequence_changed(&mut conn, id).await?;
     }
