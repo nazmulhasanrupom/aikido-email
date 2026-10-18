@@ -160,7 +160,7 @@ mod tests {
     fn the_prompts_are_plain_text_with_the_lead_values_and_no_empty_lines() {
         let lead = crate::prompting::fields::test_lead();
         let (system, user) = opt().prompts(&lead);
-        assert!(system.starts_with("You write a short cold email sequence for Dana:"));
+        assert!(system.starts_with("# ROLE") && system.contains("# SELF CHECK") && system.contains("# THIN INFORMATION"));
         assert!(system.contains("\"followup_3\"") && system.contains("<optimized_request>"));
         assert!(user.contains("Company: Acme \"Co\"") && user.contains("Recent event: Opened a new depot") && user.contains("Event checked by a person: yes"));
         assert!(!user.contains("Note:"), "an empty value drops its line");

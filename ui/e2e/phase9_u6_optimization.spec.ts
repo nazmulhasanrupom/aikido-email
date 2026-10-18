@@ -48,7 +48,7 @@ test("Optimised mode: three modes, plain prompts, 4 emails, save and reset", asy
   await expect(page.getByLabel("Instructions for the AI")).not.toHaveValue("");
   await expect(page.getByRole("button", { name: "Reset to default" })).toHaveCount(0);
   // plain text prompts, no JSON, and the old fields are gone
-  await expect(page.getByLabel("Instructions for the AI")).toHaveValue(/short cold email sequence/);
+  await expect(page.getByLabel("Instructions for the AI")).toHaveValue(/# ROLE/);
   await expect(page.getByLabel("What the AI knows about you and each lead")).toHaveValue(/Company: \{\{company_name\}\}/);
   await expect(page.getByText("About your offer")).toHaveCount(0);
   await expect(page.getByLabel("Footer")).toHaveCount(0);

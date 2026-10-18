@@ -92,7 +92,7 @@ export function OptimizedEditor({ campaign }: { campaign: S["CampaignDetail"] })
         <label htmlFor="opt-system" className="text-sm font-medium">
           Instructions for the AI
         </label>
-        <textarea id="opt-system" rows={12} value={shown.system} maxLength={8000} onChange={(e) => setSystem(e.target.value)} className={AREA} />
+        <textarea id="opt-system" rows={26} value={shown.system} maxLength={8000} onChange={(e) => setSystem(e.target.value)} className={AREA} />
         <Reset show={shown.system.trim() !== (defaults.data?.system ?? "").trim()} onClick={() => setSystem(defaults.data?.system ?? "")} />
       </section>
 

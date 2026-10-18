@@ -17,3 +17,4 @@ Website: {{website}}
 Note: {{personalization_note}}
 Recent event: {{trigger_event}}
 Event checked by a person: {{trigger_verified}}
+Fine to write with little personal detail: {{allow_low_personalization}}
