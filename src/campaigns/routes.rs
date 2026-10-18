@@ -33,6 +33,7 @@ pub fn router(state: AppState) -> OpenApiRouter<AppState> {
         .routes(routes!(create_campaign, list_campaigns))
         .routes(routes!(get_campaign, patch_campaign))
         .routes(routes!(add_leads, remove_leads, list_campaign_leads))
+        .routes(routes!(requeue_verification))
         .routes(routes!(launch))
         .routes(routes!(pause))
         .routes(routes!(resume))
@@ -210,6 +211,15 @@ pub(crate) async fn detail(st: &AppState, id: Uuid) -> ApiResult<CampaignDetail>
         }
         if let Some(w) = token_warning(&mut conn, &campaign, &steps).await? {
             warnings.push(w);
+        }
+        if let Some(rule) = crate::verify_reoon::gate::effective_rule(&mut conn, campaign.verification_rule.as_ref()).await? {
+            let (blocked, unverified) = crate::verify_reoon::gate::count_pending(&mut conn, id, &rule).await?;
+            if blocked > 0 {
+                warnings.push(format!("{blocked} pending leads will be skipped by the verification rule."));
+            }
+            if unverified > 0 {
+                warnings.push(format!("{unverified} pending leads are not verified."));
+            }
         }
     }
     Ok(CampaignDetail { campaign, counts, accounts, sequence, steps, variants, warnings })
@@ -450,6 +460,19 @@ async fn patch_campaign(State(st): State<AppState>, ApiPath(id): ApiPath<Uuid>, 
                     _ => return Err(bad("text up to 2000 characters, or null")),
                 }
             }
+            "verification_rule" => {
+                c.verification_rule = match v {
+                    Value::Null => None,
+                    other => {
+                        let rule: crate::verify_reoon::settings::SendRule = serde_json::from_value(other.clone()).map_err(|_| bad("null or { allowed: [status], allow_not_verified }"))?;
+                        let rule = rule.normalized();
+                        if let Some(s) = rule.locked_status() {
+                            return Err(ApiError::unprocessable("status_not_allowed", format!("The status '{s}' can not be allowed. Sending to it hurts your inbox.")));
+                        }
+                        Some(serde_json::to_value(rule).unwrap_or_default())
+                    }
+                }
+            }
             "account_ids" => {
                 let ids: Vec<Uuid> = serde_json::from_value(v.clone()).map_err(|_| bad("a list of account ids"))?;
                 let ids = dedupe(&ids);
@@ -460,7 +483,7 @@ async fn patch_campaign(State(st): State<AppState>, ApiPath(id): ApiPath<Uuid>, 
         }
     }
     sqlx::query(
-        "UPDATE campaigns SET name = $2, daily_new_leads = $3, account_pick = $4, stop_company_on_reply = $5, allow_unverified = $6, timezone = $7, updated_at = $8, content_mode = $9, auto_write = $10, footer = $11 WHERE id = $1",
+        "UPDATE campaigns SET name = $2, daily_new_leads = $3, account_pick = $4, stop_company_on_reply = $5, allow_unverified = $6, timezone = $7, updated_at = $8, content_mode = $9, auto_write = $10, footer = $11, verification_rule = $12 WHERE id = $1",
     )
     .bind(id)
     .bind(&c.name)
@@ -473,6 +496,7 @@ async fn patch_campaign(State(st): State<AppState>, ApiPath(id): ApiPath<Uuid>, 
     .bind(&c.content_mode)
     .bind(c.auto_write)
     .bind(&c.footer)
+    .bind(&c.verification_rule)
     .execute(&mut *tx)
     .await?;
     if patch.contains_key("footer") {
@@ -889,6 +913,31 @@ async fn launch(State(st): State<AppState>, ApiPath(id): ApiPath<Uuid>) -> ApiRe
     set_status(&mut tx, &c, CampaignStatus::Active, now).await?;
     tx.commit().await?;
     Ok(ApiJson(detail(&st, id).await?))
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct RequeueReply {
+    pub moved: u64,
+}
+
+/// Move leads that the Reoon rule skipped back to `pending`, when they pass the rule now.
+#[utoipa::path(post, path = "/v1/campaigns/{id}/leads/requeue-verification", tag = "campaigns",
+    params(("id" = Uuid, Path)),
+    responses((status = 200, body = RequeueReply), (status = 404, description = "No such campaign"), (status = 409, description = "The campaign is archived")),
+    security(("api_key" = ["campaigns"])),
+    description = "Scope: `campaigns`. Only leads skipped with `verification_not_allowed` whose result passes the rule of the campaign (or the workspace rule) now. Nothing moves by itself.")]
+async fn requeue_verification(State(st): State<AppState>, ApiPath(id): ApiPath<Uuid>) -> ApiResult<ApiJson<RequeueReply>> {
+    let mut tx = st.pool.begin().await?;
+    let c = lock(&mut tx, id).await?;
+    if c.status == CampaignStatus::Archived {
+        return Err(bad_status("be changed", c.status));
+    }
+    let moved = match crate::verify_reoon::gate::effective_rule(&mut tx, c.verification_rule.as_ref()).await? {
+        Some(rule) => crate::verify_reoon::gate::requeue(&mut tx, id, &rule).await?,
+        None => 0,
+    };
+    tx.commit().await?;
+    Ok(ApiJson(RequeueReply { moved }))
 }
 
 /// Pause a campaign. The feeder stops, and so does its sequence.

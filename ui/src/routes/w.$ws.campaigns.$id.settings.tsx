@@ -20,6 +20,8 @@ import {
   TD,
 } from "@/components/ui";
 import { campaignQuery } from "@/features/campaigns/hooks";
+import { reoonSettingsQuery, useReoon } from "@/features/reoon/api";
+import { RuleDialog } from "@/features/reoon/dialogs";
 import { browserTimezone, timezones } from "@/lib/format";
 import { say } from "@/lib/words";
 
@@ -76,6 +78,9 @@ function Settings() {
   });
   const [archive, setArchive] = useState(false);
   if (!c) return <Skeleton />;
+  const reoon = useReoon();
+  const wsRule = useQuery({ ...reoonSettingsQuery, enabled: reoon.installed });
+  const [ruleOpen, setRuleOpen] = useState(false);
   const done = async (what: string, run: () => Promise<unknown>) => {
     try {
       await run();
@@ -216,6 +221,37 @@ function Settings() {
           checked={unverified}
           onChange={setUnverified}
         />
+        {reoon.installed && wsRule.data && (
+          <div className="flex flex-col gap-2">
+            <Select
+              label="Verification rule"
+              value={camp.data?.verification_rule ? "custom" : "workspace"}
+              onChange={(v) =>
+                v === "workspace"
+                  ? void done("Verification rule", () => http.patch("/v1/campaigns/{id}", { path: { id }, body: { verification_rule: null } }))
+                  : setRuleOpen(true)
+              }
+              options={[
+                { value: "workspace", label: "Use the workspace rule" },
+                { value: "custom", label: "Custom for this campaign" },
+              ]}
+            />
+            {camp.data?.verification_rule && (
+              <div>
+                <Button variant="secondary" className="h-7" onClick={() => setRuleOpen(true)}>
+                  Edit the rule
+                </Button>
+              </div>
+            )}
+            <RuleDialog
+              open={ruleOpen}
+              onClose={() => setRuleOpen(false)}
+              title="Verification rule of this campaign"
+              rule={(camp.data?.verification_rule as { allowed: string[]; allow_not_verified: boolean } | null) ?? wsRule.data.settings.send_rule}
+              onSave={(r) => http.patch("/v1/campaigns/{id}", { path: { id }, body: { verification_rule: r } }).then(() => qc.invalidateQueries({ queryKey: ["campaigns"] }))}
+            />
+          </div>
+        )}
         <div>
           <Button
             onClick={() =>

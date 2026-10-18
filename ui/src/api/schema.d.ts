@@ -712,6 +712,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/campaigns/{id}/leads/requeue-verification": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Move leads that the Reoon rule skipped back to `pending`, when they pass the rule now.
+         * @description Scope: `campaigns`. Only leads skipped with `verification_not_allowed` whose result passes the rule of the campaign (or the workspace rule) now. Nothing moves by itself.
+         */
+        post: operations["requeue_verification"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/campaigns/{id}/leads/{lead_id}/emails/{step}": {
         parameters: {
             query?: never;
@@ -3176,6 +3196,26 @@ export interface paths {
         patch: operations["patch_settings"];
         trace?: never;
     };
+    "/v1/verify/reoon/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The verifier worker: paused or not, last round, open runs.
+         * @description Scope: `integrations`.
+         */
+        get: operations["get_status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -3357,7 +3397,7 @@ export interface components {
             /**
              * @description `account_disconnected`, `account_error`, `account_reconnect_needed`, `campaign_warning`,
              *     `campaign_no_healthy_account`, `generation_awaiting_review`, `provider_auth_failed`, `ai_budget_reached`,
-             *     `import_failed`, `emails_not_ready`, `jobs_stuck`, `engine_paused`.
+             *     `import_failed`, `emails_not_ready`, `jobs_stuck`, `engine_paused`, `integration_auth_failed`, `verification_out_of_credits`.
              */
             kind: string;
             /** @description A path in the web app. */
@@ -3532,6 +3572,8 @@ export interface components {
             timezone: string;
             /** Format: date-time */
             updated_at: string;
+            /** @description Reoon send rule of this campaign: `{ allowed: [status], allow_not_verified }`. `null`: use the workspace rule. */
+            verification_rule?: Record<string, never> | null;
             /** @description Why the feeder is stuck right now (for example: no healthy account). `null` when it is not. */
             warning?: string | null;
         };
@@ -5660,6 +5702,10 @@ export interface components {
              */
             unsubscribe_max_words: number;
         };
+        RequeueReply: {
+            /** Format: int64 */
+            moved: number;
+        };
         ResetBody: {
             new_password: string;
         };
@@ -6028,7 +6074,7 @@ export interface components {
          */
         Severity: "error" | "warning" | "info";
         /** @enum {string} */
-        SkipReason: "suppressed" | "unverified" | "active_elsewhere" | "no_healthy_account" | "lead_deleted" | "already_in_campaign" | "missing_variable" | "company_replied" | "campaign_archived";
+        SkipReason: "suppressed" | "unverified" | "active_elsewhere" | "no_healthy_account" | "lead_deleted" | "already_in_campaign" | "missing_variable" | "company_replied" | "campaign_archived" | "verification_not_allowed";
         /** @enum {string} */
         SpamCheck: "warn" | "fail";
         StatsReply: components["schemas"]["Tally"] & {
@@ -6297,6 +6343,23 @@ export interface components {
         };
         /** @enum {string} */
         Verification: "unknown" | "syntax_ok" | "mx_ok" | "no_mx" | "invalid";
+        VerifierStatus: {
+            installed: boolean;
+            /** @description `installed`, `auth_failed`, or null when not installed. */
+            integration_status?: string | null;
+            /** Format: date-time */
+            last_tick_at?: string | null;
+            /** Format: int64 */
+            open_runs: number;
+            paused: boolean;
+            /**
+             * Format: int64
+             * @description Emails waiting in open runs.
+             */
+            pending_items: number;
+            /** @description `false`: this server copy does not run the verify worker (`AIKIDO_LEADS_ENABLED`). */
+            worker_enabled: boolean;
+        };
         VerifyLeadRow: {
             company_name?: string | null;
             email: string;
@@ -7659,6 +7722,41 @@ export interface operations {
             };
             /** @description Bad selection */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    requeue_verification: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RequeueReply"];
+                };
+            };
+            /** @description No such campaign */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The campaign is archived */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -12090,6 +12188,25 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    get_status: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VerifierStatus"];
+                };
             };
         };
     };

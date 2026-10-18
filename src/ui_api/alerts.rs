@@ -20,7 +20,7 @@ pub struct Alert {
     pub id: String,
     /// `account_disconnected`, `account_error`, `account_reconnect_needed`, `campaign_warning`,
     /// `campaign_no_healthy_account`, `generation_awaiting_review`, `provider_auth_failed`, `ai_budget_reached`,
-    /// `import_failed`, `emails_not_ready`, `jobs_stuck`, `engine_paused`.
+    /// `import_failed`, `emails_not_ready`, `jobs_stuck`, `engine_paused`, `integration_auth_failed`, `verification_out_of_credits`.
     pub kind: String,
     pub severity: Severity,
     pub title: String,
@@ -44,6 +44,8 @@ pub const KINDS: &[&str] = &[
     "emails_not_ready",
     "jobs_stuck",
     "engine_paused",
+    "integration_auth_failed",
+    "verification_out_of_credits",
 ];
 
 const WS: &str = "/w/default";
@@ -257,6 +259,33 @@ pub async fn collect(st: &AppState) -> Result<Vec<Alert>, sqlx::Error> {
         ));
     }
 
+    // Reoon: a refused key, and runs that stopped for lack of credits
+    let refused: Vec<(DateTime<Utc>,)> = sqlx::query_as("SELECT updated_at FROM integrations WHERE app = 'reoon' AND status = 'auth_failed'").fetch_all(p).await?;
+    for (at,) in refused {
+        out.push(alert(
+            "integration_auth_failed",
+            "reoon",
+            Severity::Error,
+            "Reoon refused the key".into(),
+            "Emails are not verified until you save a working key.".into(),
+            format!("{WS}/apps/reoon"),
+            at,
+        ));
+    }
+    let broke: Option<(DateTime<Utc>,)> =
+        sqlx::query_as("SELECT max(finished_at) FROM verification_runs WHERE status = 'failed' AND error = 'out_of_credits'").fetch_optional(p).await?.filter(|r: &(Option<DateTime<Utc>>,)| r.0.is_some()).map(|r| (r.0.unwrap_or(now),));
+    if let Some((at,)) = broke {
+        out.push(alert(
+            "verification_out_of_credits",
+            "reoon",
+            Severity::Error,
+            "Reoon credits ran out".into(),
+            "Buy more credits, then click Resume on the Reoon page.".into(),
+            format!("{WS}/apps/reoon"),
+            at,
+        ));
+    }
+
     // engine switches
     for (engine, label, sql) in [
         ("sending", "Sending", "SELECT engine_paused, updated_at FROM sending_defaults WHERE id = 1"),
@@ -264,6 +293,7 @@ pub async fn collect(st: &AppState) -> Result<Vec<Alert>, sqlx::Error> {
         ("followups", "Follow-ups", "SELECT engine_paused, updated_at FROM followup_defaults WHERE id = 1"),
         ("feeder", "The campaign feeder", "SELECT feeder_paused, updated_at FROM lead_defaults WHERE id = 1"),
         ("generator", "The AI writer", "SELECT engine_paused, updated_at FROM generator_defaults WHERE id = 1"),
+        ("verifier", "The email verifier", "SELECT engine_paused, updated_at FROM verify_defaults WHERE id = 1"),
     ] {
         let (paused, at): (bool, DateTime<Utc>) = sqlx::query_as(sql).fetch_one(p).await?;
         if paused {

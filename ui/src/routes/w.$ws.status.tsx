@@ -6,6 +6,7 @@ import { messageOf } from "@/api/errors";
 import { http, type S } from "@/api/http";
 import { q } from "@/api/queries";
 import { Button, Card, ConfirmDialog, Notice, Page, PageHeader, Pill } from "@/components/ui";
+import { useReoon } from "@/features/reoon/api";
 import { useUser } from "@/features/settings/useUser";
 import { fmtAgo } from "@/lib/format";
 
@@ -56,6 +57,14 @@ const PARTS: Part[] = [
   },
 ];
 
+const VERIFIER: Part = {
+  id: "verifier",
+  title: "Email verifier",
+  base: "/v1/verify/reoon",
+  statusPath: "/v1/verify/reoon/status",
+  keeps: "Emails are not checked. Runs wait until you resume.",
+};
+
 function Status() {
   const { isAdmin } = useUser();
   const health = useQuery({
@@ -64,6 +73,7 @@ function Status() {
     refetchInterval: 15_000,
   });
   const cfg = useQuery(q.config);
+  const reoon = useReoon();
   return (
     <Page>
       <PageHeader title="Status" sub="Is everything running?" />
@@ -83,6 +93,7 @@ function Status() {
         {PARTS.map((p) => (
           <PartCard key={p.id} part={p} admin={isAdmin} />
         ))}
+        {reoon.installed && <PartCard part={VERIFIER} admin={isAdmin} />}
       </div>
     </Page>
   );
@@ -178,6 +189,12 @@ function summarise(id: string, d: Generic): string[] {
         ...((d.waiting as unknown[] | undefined)?.length
           ? [`${(d.waiting as unknown[]).length} waiting for a reason`]
           : []),
+      ];
+    case "verifier":
+      return [
+        `${(d.open_runs as number) ?? 0} open runs, ${(d.pending_items as number) ?? 0} emails waiting`,
+        `Last check ${fmtAgo(d.last_tick_at as string | undefined)}`,
+        ...(d.integration_status === "auth_failed" ? ["Reoon refused the key"] : []),
       ];
     case "generator":
       return [

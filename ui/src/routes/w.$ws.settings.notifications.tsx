@@ -22,6 +22,8 @@ export const ALERT_KINDS: [string, string][] = [
   ["import_failed", "An import failed"],
   ["jobs_stuck", "Emails have an unknown result"],
   ["engine_paused", "A part of the system is paused"],
+  ["integration_auth_failed", "Reoon refused our key"],
+  ["verification_out_of_credits", "Reoon credits ran out"],
 ];
 
 function Notifications() {

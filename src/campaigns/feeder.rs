@@ -234,6 +234,14 @@ async fn feed_one(st: &AppState, c: &Campaign, now: DateTime<Utc>) -> Result<Ste
         tx.commit().await?;
         return Ok(step);
     }
+    // 2b. Reoon send rule (only when Reoon is installed). A skip here does not use the daily limit.
+    if let Some(rule) = crate::verify_reoon::gate::effective_rule(&mut tx, c.verification_rule.as_ref()).await? {
+        if !crate::verify_reoon::gate::check(&mut tx, &rule, lead_id, &email).await? {
+            let step = skip(&mut tx, c.id, lead_id, SkipReason::VerificationNotAllowed).await?;
+            tx.commit().await?;
+            return Ok(step);
+        }
+    }
     // 3. One open enrollment per address (the follow-up setting).
     let settings = followup_repo::load_settings(&mut tx).await?;
     if settings.one_active_per_email {

@@ -29,6 +29,7 @@ pub fn router(state: AppState) -> OpenApiRouter<AppState> {
         .routes(routes!(cancel_run))
         .routes(routes!(resume_run))
         .routes(routes!(get_settings, patch_settings))
+        .routes(routes!(get_status))
         .routes(routes!(pause_engine))
         .routes(routes!(resume_engine))
         .route_layer(axum::middleware::from_fn_with_state((state, Scope::Integrations), require_scope))
@@ -448,4 +449,31 @@ async fn get_lead_result(State(st): State<AppState>, ApiPath(id): ApiPath<Uuid>)
     .fetch_optional(&st.pool)
     .await?;
     Ok(ApiJson(row.map(|r| LatestResult { status: r.status, mode: r.mode, score: r.score, safe_to_send: r.safe_to_send, flags: r.flags, checked_at: r.checked_at })))
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct VerifierStatus {
+    pub installed: bool,
+    pub paused: bool,
+    /// `false`: this server copy does not run the verify worker (`AIKIDO_LEADS_ENABLED`).
+    pub worker_enabled: bool,
+    pub last_tick_at: Option<DateTime<Utc>>,
+    pub open_runs: i64,
+    /// Emails waiting in open runs.
+    pub pending_items: i64,
+    /// `installed`, `auth_failed`, or null when not installed.
+    pub integration_status: Option<String>,
+}
+
+/// The verifier worker: paused or not, last round, open runs.
+#[utoipa::path(get, path = "/v1/verify/reoon/status", tag = "integrations",
+    responses((status = 200, body = VerifierStatus)), security(("api_key" = ["integrations"]), ("session" = [])), description = "Scope: `integrations`.")]
+async fn get_status(State(st): State<AppState>) -> ApiResult<ApiJson<VerifierStatus>> {
+    let (paused, last_tick_at): (bool, Option<DateTime<Utc>>) = sqlx::query_as("SELECT engine_paused, last_tick_at FROM verify_defaults WHERE id = 1").fetch_one(&st.pool).await?;
+    let (open_runs,): (i64,) = sqlx::query_as("SELECT count(*) FROM verification_runs WHERE status IN ('queued', 'running')").fetch_one(&st.pool).await?;
+    let (pending_items,): (i64,) = sqlx::query_as("SELECT count(*) FROM verification_items i JOIN verification_runs r ON r.id = i.run_id WHERE r.status IN ('queued', 'running') AND i.state IN ('pending', 'claimed')")
+        .fetch_one(&st.pool)
+        .await?;
+    let integration_status = store::get(&st.pool, "reoon").await?.map(|r| r.status);
+    Ok(ApiJson(VerifierStatus { installed: integration_status.is_some(), paused, worker_enabled: st.config.leads_enabled, last_tick_at, open_runs, pending_items, integration_status }))
 }

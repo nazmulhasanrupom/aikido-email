@@ -1812,3 +1812,12 @@ Scope `integrations` (key `AIKIDO_INTEGRATIONS_API_KEY`). Install, update and un
 `GET /v1/leads` and `GET /v1/campaigns/{id}/leads` take `verification_status` (comma list, `none` = not verified). Their rows have `verification_status`, `verification_score` and `verification_checked_at`. `GET /v1/verify/reoon/leads/{id}` gives the full result of one lead.
 
 The lead timeline gets the event `email_verified` (`status`, `mode`, `score`). The send rule is not used by the campaign feeder yet (phase 3).
+
+### Reoon send rule in campaigns (phase 3)
+
+- The campaign feeder checks the rule for each lead that starts a campaign, after the `unverified` check. Rule = `campaigns.verification_rule` or the workspace `send_rule`. A lead with no result passes only if `allow_not_verified`. Not allowed: the lead is `skipped` with `skip_reason: verification_not_allowed`. That skip does not use the daily limit. Without Reoon installed there is no rule. Leads already in a sequence are never stopped by it.
+- `PATCH /v1/campaigns/{id}` takes `verification_rule`: `{ allowed: [status], allow_not_verified }`, or `null` for the workspace rule. A locked status gets `422 status_not_allowed`. The campaign body has `verification_rule`.
+- `POST /v1/campaigns/{id}/leads/requeue-verification` (scope `campaigns`): moves leads skipped by the rule back to `pending` when they pass now. Answer `{ moved }`. Nothing moves by itself.
+- `GET /v1/campaigns/{id}` `warnings` has "N pending leads will be skipped by the verification rule." and "N pending leads are not verified."
+- `GET /v1/verify/reoon/status` (scope `integrations`): `installed`, `paused`, `worker_enabled`, `last_tick_at`, `open_runs`, `pending_items`, `integration_status`.
+- New alert kinds `integration_auth_failed` and `verification_out_of_credits` (both link to the Reoon page). `engine_paused` also covers the verifier.

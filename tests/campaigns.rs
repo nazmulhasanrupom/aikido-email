@@ -1574,3 +1574,65 @@ async fn reply_rate_by_variant_and_turning_a_variant_off(pool: PgPool) {
     let off = c.fapi("PUT", &format!("/v1/followups/sequences/{seq}/steps"), Some(json!({ "steps": steps, "variants": [{ "name": "B", "subject": "B subject", "body_text": "B text", "active": false }], "variant_a_active": false }))).await;
     assert_eq!(off.status, StatusCode::UNPROCESSABLE_ENTITY);
 }
+
+/// Make a Reoon result for a lead (the gate reads the table, not Reoon).
+async fn set_result(c: &C, lead: Uuid, email: &str, status: &str) {
+    sqlx::query("INSERT INTO email_verifications (id, lead_id, email, mode, status) VALUES ($1, $2, $3, 'power', $4)")
+        .bind(Uuid::now_v7())
+        .bind(lead)
+        .bind(email)
+        .bind(status)
+        .execute(&c.h.state.pool)
+        .await
+        .unwrap();
+}
+
+async fn install_reoon_row(c: &C) {
+    sqlx::query("INSERT INTO integrations (id, app, secret_ciphertext, secret_nonce, key_version) VALUES ($1, 'reoon', '\\x00', '\\x00', 1)")
+        .bind(Uuid::now_v7())
+        .execute(&c.h.state.pool)
+        .await
+        .unwrap();
+}
+
+#[sqlx::test]
+async fn the_reoon_rule_skips_without_using_the_daily_limit_and_not_installed_is_the_old_behavior(pool: PgPool) {
+    let c = C::new(pool).await;
+    let a = c.account("sender@acme-outreach.example").await;
+    // not installed: a catch-all result is ignored
+    let old = c.lead("old@catch.example").await;
+    set_result(&c, old, "old@catch.example", "catch_all").await;
+    let camp = c.campaign(&[a], json!({ "daily_new_leads": 1 })).await["id"].as_str().unwrap().to_string();
+    c.add(&camp, &[old]).await;
+    c.launch(&camp).await;
+    c.feed().await;
+    assert_eq!(c.enrollments_of(&camp).await.len(), 1, "no Reoon, no rule");
+
+    // installed: the catch-all lead is skipped and the safe lead behind it still gets the one place of the day
+    install_reoon_row(&c).await;
+    let camp2 = c.campaign(&[a], json!({ "daily_new_leads": 1 })).await["id"].as_str().unwrap().to_string();
+    let catch = c.lead("catch@catch.example").await;
+    let safe = c.lead("safe@ok.example").await;
+    set_result(&c, catch, "catch@catch.example", "catch_all").await;
+    set_result(&c, safe, "safe@ok.example", "safe").await;
+    c.add(&camp2, &[catch, safe]).await;
+    let launched = c.launch(&camp2).await;
+    assert!(launched["warnings"].as_array().unwrap().iter().any(|w| w.as_str().unwrap().starts_with("1 pending leads will be skipped")), "{launched}");
+    c.feed().await;
+    assert_eq!(c.skip_reasons(&camp2).await.get("catch@catch.example").map(String::as_str), Some("verification_not_allowed"));
+    assert_eq!(c.enrollments_of(&camp2).await.len(), 1, "the skip did not use the daily limit");
+
+    // the campaign rule beats the workspace rule; the skipped lead is moved back by hand, not by itself
+    let r = c.api("PATCH", &format!("/v1/campaigns/{camp2}"), Some(json!({ "verification_rule": { "allowed": ["safe", "catch_all"], "allow_not_verified": true } }))).await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.body);
+    assert_eq!(c.skip_reasons(&camp2).await.len(), 1);
+    let moved = c.ok("POST", &format!("/v1/campaigns/{camp2}/leads/requeue-verification"), None).await;
+    assert_eq!(moved["moved"], 1);
+    c.h.advance(Duration::days(1));
+    c.feed().await;
+    assert_eq!(c.enrollments_of(&camp2).await.len(), 2);
+
+    // a locked status is refused in the campaign rule
+    let bad = c.api("PATCH", &format!("/v1/campaigns/{camp2}"), Some(json!({ "verification_rule": { "allowed": ["spamtrap"], "allow_not_verified": true } }))).await;
+    assert_eq!((bad.status, bad.body["error"]["code"].as_str()), (StatusCode::UNPROCESSABLE_ENTITY, Some("status_not_allowed")));
+}

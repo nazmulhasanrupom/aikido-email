@@ -6,6 +6,7 @@
 //! Rule: the key is in the query string of every Reoon call. No URL, no key and no email text goes to a log.
 pub mod auto;
 pub mod client;
+pub mod gate;
 pub mod routes;
 pub mod settings;
 pub mod worker;

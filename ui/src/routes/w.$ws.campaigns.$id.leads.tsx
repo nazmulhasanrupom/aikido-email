@@ -75,16 +75,17 @@ function CampaignLeads() {
   const [state, setState] = useState<string>("");
   const [onlyMissing, setOnlyMissing] = useState(false);
   const [vstatus, setVstatus] = useState("");
+  const [byRule, setByRule] = useState(false);
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [menu, setMenu] = useState<null | "list" | "import">(null);
   const [listId, setListId] = useState("");
   const leads = useInfiniteQuery({
-    queryKey: ["campaigns", id, "leads", state, onlyMissing, vstatus],
+    queryKey: ["campaigns", id, "leads", state, onlyMissing, vstatus, byRule],
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam }) =>
       http.get<S["CampaignLeadsReply"]>("/v1/campaigns/{id}/leads", {
         path: { id },
-        query: { state, limit: 50, cursor: pageParam, verification_status: vstatus, ...(onlyMissing ? { missing: true } : {}) },
+        query: { state, limit: 50, cursor: pageParam, verification_status: vstatus, ...(byRule ? { state: "skipped", skip_reason: "verification_not_allowed" } : {}), ...(onlyMissing ? { missing: true } : {}) },
       }),
     getNextPageParam: (l) => l.next_cursor ?? undefined,
     refetchInterval: 15_000,
@@ -110,6 +111,14 @@ function CampaignLeads() {
       }),
     onSuccess: (r) => {
       toast.success(`${r.changed} approved.`);
+      refresh();
+    },
+    onError: (e) => toast.error(messageOf(e)),
+  });
+  const requeue = useMutation({
+    mutationFn: () => http.post<{ moved: number }>("/v1/campaigns/{id}/leads/requeue-verification", { path: { id } }),
+    onSuccess: (r) => {
+      toast.success(r.moved ? `${r.moved} moved back to pending.` : "No lead passes the rule yet.");
       refresh();
     },
     onError: (e) => toast.error(messageOf(e)),
@@ -172,6 +181,21 @@ function CampaignLeads() {
         >
           Missing a value used in your emails
         </button>
+        {reoon.installed && (
+          <button
+            type="button"
+            aria-pressed={byRule}
+            onClick={() => setByRule(!byRule)}
+            className={`rounded-full border px-3 py-1 text-sm ${byRule ? "border-accent bg-accent-soft" : "border-border"}`}
+          >
+            {say("skip", "verification_not_allowed")}
+          </button>
+        )}
+        {reoon.installed && byRule && (
+          <Button variant="secondary" className="h-7" busy={requeue.isPending} onClick={() => requeue.mutate()}>
+            Move back to pending
+          </Button>
+        )}
         {reoon.installed && (
           <div className="w-44">
             <Select

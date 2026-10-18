@@ -63,10 +63,12 @@ pub enum SkipReason {
     /// Someone at the same company replied (`stop_company_on_reply`).
     CompanyReplied,
     CampaignArchived,
+    /// Reoon: the result of the lead is not allowed by the send rule.
+    VerificationNotAllowed,
 }
 
 pub const CAMPAIGN_COLS: &str = "id, name, status, sequence_id, daily_new_leads, account_pick, stop_company_on_reply, allow_unverified, timezone, \
-    last_account_id, warning, launched_at, completed_at, content_mode, auto_write, footer, emails_saved_at, created_at, updated_at";
+    last_account_id, warning, launched_at, completed_at, content_mode, auto_write, footer, emails_saved_at, verification_rule, created_at, updated_at";
 
 #[derive(FromRow, Serialize, Clone, Debug, ToSchema)]
 pub struct Campaign {
@@ -97,6 +99,9 @@ pub struct Campaign {
     pub footer: Option<String>,
     /// When the emails were last saved with Save. After that, new leads get their emails at once.
     pub emails_saved_at: Option<DateTime<Utc>>,
+    /// Reoon send rule of this campaign: `{ allowed: [status], allow_not_verified }`. `null`: use the workspace rule.
+    #[schema(value_type = Option<Object>)]
+    pub verification_rule: Option<serde_json::Value>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
