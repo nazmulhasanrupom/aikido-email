@@ -334,6 +334,14 @@ Supported providers: `anthropic`, and any `openai_compatible` server (OpenAI, Op
 
 > ✅ **Tip.** Keep `review_required` on for your first campaign. Read about 20 outputs before you trust it.
 
+#### AI mode: the model writes the whole email
+
+A campaign has a **content mode**. In `template` mode you write the email once and **Save** fills it for every lead. In `ai` mode you write a **system prompt** (one per campaign) and a **user prompt** (one per step). **Generate** writes one email per lead and step and saves it as a column of that campaign (`Primary email`, `Follow up 1`, ...). What you read is what goes out. A lead edit marks the email **Out of date**; use **Regenerate** to write it again.
+
+Prompts take every lead variable (`{{first_name|there}}`, custom fields, `{{sender_name}}`) and three names that only prompts have: `{{brief}}` (the "About your offer" text), `{{previous_emails}}` (the saved earlier emails of this lead) and `{{lead_notes}}` (the last 5 notes). The server adds the output rules itself (JSON, plain text, no placeholders, a word limit). The campaign **footer** is added after the AI text. The AI never writes it.
+
+> 🔒 **Privacy in AI mode.** A prompt carries whatever variables you put in it. The guard still blocks an email address or phone number in the **output**, but if you write `{{email}}` or `{{phone}}` in a prompt, that value goes to the AI company. The editor shows a warning chip when you do.
+
 ## 🌐 Deploy to production
 
 `docker-compose.yml` runs the app and Postgres. The `Dockerfile` builds the web app and the server into one small image (non-root user, read-only filesystem, all capabilities dropped).

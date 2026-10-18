@@ -20,6 +20,8 @@ const WORDS: Record<string, Record<string, string>> = {
     gap_not_elapsed: "Waiting between emails",
     reply_check_stale: "Checking the inbox for replies first",
     reply_check_unavailable: "Cannot read the inbox, follow-ups wait",
+    email_not_ready: "Waiting for the email to be written",
+    email_review: "Waiting for you to approve the email",
   },
   job: {
     queued: "Queued",

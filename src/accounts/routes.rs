@@ -27,6 +27,7 @@ pub fn router(state: AppState) -> OpenApiRouter<AppState> {
         .routes(routes!(list_accounts))
         .routes(routes!(get_account, patch_account, delete_account))
         .routes(routes!(test_account))
+        .routes(routes!(dns_check))
         .route_layer(axum::middleware::from_fn_with_state((state, Scope::Accounts), require_scope))
 }
 
@@ -492,4 +493,24 @@ mod popup_tests {
         let failed = popup_page(false, None, Some("oauth_denied"), "The login failed");
         assert!(failed.contains("\"ok\":false") && failed.contains("\"code\":\"oauth_denied\""));
     }
+}
+
+#[derive(Deserialize, IntoParams)]
+pub struct DnsQuery {
+    /// A DKIM selector to look at first (for example `google`).
+    selector: Option<String>,
+}
+
+/// Check the sending domain of an account: SPF, DKIM, DMARC and MX.
+#[utoipa::path(get, path = "/v1/accounts/{id}/dns-check", tag = "accounts",
+    params(("id" = Uuid, Path), DnsQuery),
+    responses((status = 200, body = super::dns_check::DnsReport), (status = 404, description = "No such account")),
+    security(("api_key" = ["accounts"])),
+    description = "Scope: `accounts`. Each check is `ok`, `warn`, `fail` or `unknown`, with the DNS record to add when it is not ok. Answers are kept for one hour. \
+        DKIM keys sit at a selector the sender chose, so only common selectors and the one in `selector` are looked at.")]
+async fn dns_check(State(st): State<AppState>, ApiPath(id): ApiPath<Uuid>, ApiQuery(q): ApiQuery<DnsQuery>) -> ApiResult<ApiJson<super::dns_check::DnsReport>> {
+    let a = find(&st, id).await?;
+    let domain = a.email.rsplit('@').next().unwrap_or_default().to_string();
+    let provider = AccountView::from(&a).provider.as_str().to_string();
+    Ok(ApiJson(st.dns.check(st.mx.as_ref(), &domain, &provider, q.selector.as_deref(), st.now()).await))
 }

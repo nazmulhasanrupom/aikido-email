@@ -3,7 +3,8 @@ import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { http, type S } from "@/api/http";
 import { q } from "@/api/queries";
-import { Button, ErrorNote, Field, Modal, Notice, NumField, TextArea } from "@/components/ui";
+import { Button, ErrorNote, Field, Modal, Notice, NumField, Select, TextArea } from "@/components/ui";
+import { STARTERS } from "@/lib/starters";
 
 export const STARTER = {
   subject: "Quick question, {{first_name|there}}",
@@ -106,7 +107,8 @@ export function NewCampaign({
   const canAi =
     !!draftProvider && providers.data?.some((p) => p.id === draftProvider && p.status === "ok");
   const [name, setName] = useState("");
-  const [mode, setMode] = useState<"blank" | "ai">("blank");
+  const [mode, setMode] = useState<"blank" | "ai" | "starter">("blank");
+  const [starterId, setStarterId] = useState(STARTERS[0]?.id ?? "");
   const [brief, setBrief] = useState<Brief>(EMPTY_BRIEF);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -124,6 +126,19 @@ export function NewCampaign({
         created = await http.post<S["CampaignDetail"]>("/v1/campaigns", {
           body: { name, sequence_id: draft.sequence_id },
         });
+      } else if (mode === "starter") {
+        const st = STARTERS.find((x) => x.id === starterId) ?? STARTERS[0];
+        if (!st) throw new Error("No starter");
+        created = await http.post<S["CampaignDetail"]>("/v1/campaigns", {
+          body: { name, sequence: { name, steps: st.steps } },
+        });
+        if (st.kind === "ai") {
+          await http.patch("/v1/followups/sequences/{id}", {
+            path: { id: created.sequence_id },
+            body: { ai_system_prompt: st.system ?? "" },
+          });
+          await http.patch("/v1/campaigns/{id}", { path: { id: created.id }, body: { content_mode: "ai" } });
+        }
       } else {
         created = await http.post<S["CampaignDetail"]>("/v1/campaigns", {
           body: { name, sequence: { name, steps: [STARTER] } },
@@ -162,7 +177,7 @@ export function NewCampaign({
     >
       <div className="flex flex-col gap-4">
         <Field label="Name" value={name} onChange={(e) => setName(e.target.value)} />
-        <fieldset className="grid gap-2 sm:grid-cols-2">
+        <fieldset className="grid gap-2 sm:grid-cols-3">
           <legend className="mb-1.5 text-sm font-medium">Start with</legend>
           <label
             className={`cursor-pointer rounded-(--radius-card) border p-3 ${mode === "blank" ? "border-accent bg-accent-soft" : "border-border"}`}
@@ -195,7 +210,29 @@ export function NewCampaign({
                 : "Set up an AI model first."}
             </span>
           </label>
+          <label
+            className={`cursor-pointer rounded-(--radius-card) border p-3 ${mode === "starter" ? "border-accent bg-accent-soft" : "border-border"}`}
+          >
+            <input
+              type="radio"
+              name="start"
+              className="sr-only"
+              checked={mode === "starter"}
+              onChange={() => setMode("starter")}
+            />
+            <span className="font-medium">Starter kit</span>
+            <span className="block text-xs text-muted">Ready emails or prompts to edit.</span>
+          </label>
         </fieldset>
+        {mode === "starter" && (
+          <Select
+            label="Starter"
+            value={starterId}
+            onChange={setStarterId}
+            options={STARTERS.map((x) => ({ value: x.id, label: x.name }))}
+            help={STARTERS.find((x) => x.id === starterId)?.help}
+          />
+        )}
         {mode === "ai" && (
           <>
             <BriefForm value={brief} onChange={setBrief} />

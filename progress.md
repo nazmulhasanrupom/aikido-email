@@ -779,4 +779,17 @@ You said "build from phase 3 to the end, all at once, and do not test too much".
 - UI: Editor has variant tabs (A to E), Save button + Ctrl/Cmd+S, the "replace hand edits?" dialog and a Footer box. The campaign Leads tab has a column per email with a status chip. Clicking one opens `EmailDrawer.tsx`.
 - Tests: 667 cargo tests pass (4 new in `tests/campaigns.rs`, 2 old table-list tests updated, `docs.rs` route list updated); e2e 23 pass (`phase9_u2.spec.ts`).
 - **Deviations from the map:** (1) Variant A has no row, so it cannot be turned off. (2) Staleness is found by hashing in Rust, not by one SQL. (3) `sent` is set when the send job is made, not when the mail leaves. (4) A lead changed by a CSV import or a bulk action does not mark emails stale yet (only `PATCH /v1/leads/{id}`). (5) The AI mode switch is not in the UI yet (U3). (6) `POST .../emails/actions` is not built (U3).
-- **Not started:** U3, U4.
+- **U3 done (AI mode):** migration `0010_ai_emails.sql`. `src/campaigns/email_ai.rs` (prompts, the model call, targets, the worker tick, auto-write), routes in `src/campaigns/email_routes.rs` (generate, estimate, test, actions, run cancel), the generator tick calls the AI tick, the feeder waits for a ready Primary email, the scheduler holds a step with no email (`email_not_ready`, `email_review`), the alert `emails_not_ready` after an hour. `FakeLlm` answers email requests. UI: mode switch, `AiPanel.tsx` (prompts, Variable menu, Presets, privacy chip, Test on 1 lead, Generate), `AiTools.tsx` (dialogs and the progress bar), Approve / Write again / Clear in the email drawer, "Approve all that need review" and "Generate emails for N" on the Leads tab.
+- **U4 done:** migration `0011_variant_a.sql` (variant A can be turned off). I1 domain check (`src/accounts/dns_check.rs`, shown on the Accounts list, the account page and onboarding step 1). I2 checklist (`GET .../checklist`, `ChecklistBar.tsx`), with a "send a test email to me" action (`POST .../emails/send-test`). I3 email score (`lib/emailScore.ts`, in the Editor and the email drawer). I4 missing-values filter and inline fix on the Leads tab. I5 duplicate. I6 variant results with "Turn off the weaker one" on Reports. I7 starter kit in New campaign (`lib/starters.ts`, `lib/aiPresets.ts`). I8 inbox keys (J K I N R E) and the "Not handled" filter.
+- Tests: 682 cargo tests pass (new: 9 in `tests/lead_emails_ai.rs`, 5 more in `tests/campaigns.rs`, one in `tests/replies_routes.rs`); vitest 69; e2e 27 pass (`phase9_u3.spec.ts`, `phase9_u4.spec.ts`).
+- **Deviations and limits in U3 and U4:**
+  1. AI mode was never run against a real model. Only `FakeLlm`.
+  2. The AI word limit is fixed at 200 words (`EMAIL_MAX_WORDS`), the subject at 14 words. No setting yet.
+  3. The AI worker shares the generator settings (provider, budgets, review mode, concurrency, `lookahead_hours`).
+  4. `{{sender_name}}` in a prompt is the first account of the pool, not the account that sends.
+  5. A hand-edited email (`manual`) is never marked Out of date.
+  6. Inbox key `E` ("done") hides the reply from the "Not handled" view in this browser only (local storage). It does not change the lead.
+  7. The checklist item "domains pass" is red only when a check fails; orange (for example no DKIM at a common selector) still passes.
+  8. The DNS check was never run against real DNS in a test; the tests use a fake resolver. The real resolver code is the same one the MX check uses.
+  9. A CSV import or bulk action still does not mark emails Out of date (only `PATCH /v1/leads/{id}`).
+  10. Not built from the map: a "Presets" variant for follow-up variants and the column header menu for built-in columns.

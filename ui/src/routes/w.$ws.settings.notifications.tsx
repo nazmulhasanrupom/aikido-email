@@ -18,6 +18,7 @@ export const ALERT_KINDS: [string, string][] = [
   ["generation_awaiting_review", "AI texts wait for your review"],
   ["provider_auth_failed", "An AI model refused our key"],
   ["ai_budget_reached", "The AI token limit is reached"],
+  ["emails_not_ready", "A due email is not written or not approved"],
   ["import_failed", "An import failed"],
   ["jobs_stuck", "Emails have an unknown result"],
   ["engine_paused", "A part of the system is paused"],

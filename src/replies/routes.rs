@@ -386,6 +386,8 @@ pub struct ListMessagesQuery {
     cursor: Option<Uuid>,
     /// 1 to 500. Default 50.
     limit: Option<i64>,
+    /// `false`: only emails whose lead has no interest set yet ("not handled"). `true`: only those that have one.
+    handled: Option<bool>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -413,6 +415,7 @@ async fn list_messages(State(st): State<AppState>, ApiQuery(q): ApiQuery<ListMes
            AND ($5::uuid IS NULL OR matched_job_id = $5)
            AND ($6::timestamptz IS NULL OR received_at >= $6)
            AND ($7::uuid IS NULL OR id < $7)
+           AND ($9::bool IS NULL OR $9 = EXISTS (SELECT 1 FROM leads l WHERE l.id = inbound_messages.lead_id AND l.interest IS NOT NULL))
          ORDER BY id DESC LIMIT $8"
     ))
     .bind(q.label)
@@ -423,6 +426,7 @@ async fn list_messages(State(st): State<AppState>, ApiQuery(q): ApiQuery<ListMes
     .bind(q.since)
     .bind(q.cursor)
     .bind(limit + 1)
+    .bind(q.handled)
     .fetch_all(&st.pool)
     .await?;
     let next_cursor = if messages.len() as i64 > limit {

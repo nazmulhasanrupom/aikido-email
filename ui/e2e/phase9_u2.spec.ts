@@ -35,13 +35,13 @@ test("variants, Save, email cells and a hand edit", async ({ page }) => {
 
   await nav.getByRole("link", { name: "Leads" }).click();
   await expect(page.getByRole("columnheader", { name: /Primary email/ })).toBeVisible();
-  await expect(page.getByText("Ready").first()).toBeVisible();
+  await expect(page.locator("table").getByText("Ready", { exact: true }).first()).toBeVisible();
   // an even split: both variants show
   await expect(page.getByText(/^A: /).first()).toBeVisible();
   await expect(page.getByText(/^B: /).first()).toBeVisible();
 
   // open a cell, edit by hand
-  await page.getByText("Ready").first().click();
+  await page.locator("table").getByText("Ready", { exact: true }).first().click();
   await page.getByLabel("Body").fill("Written by hand.");
   await page.getByRole("button", { name: "Save by hand" }).click();
   await expect(page.getByText(/This email is kept/)).toBeVisible();

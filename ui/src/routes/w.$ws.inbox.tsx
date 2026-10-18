@@ -20,6 +20,7 @@ import {
   TextArea,
 } from "@/components/ui";
 import { cn } from "@/lib/cn";
+import { readStored, writeStored } from "@/lib/safe-storage";
 import { fmtAgo, fmtDateTime } from "@/lib/format";
 import { INTERESTS, LABELS, say } from "@/lib/words";
 
@@ -29,18 +30,33 @@ type Search = {
   account_id?: string;
   interest?: string;
   m?: string;
+  /** `no`: only replies whose lead has no interest set (not handled). */
+  handled?: string;
 };
 const str = (v: unknown) => (typeof v === "string" && v ? v : undefined);
 
 export const Route = createFileRoute("/w/$ws/inbox")({
   validateSearch: (s: Record<string, unknown>): Search =>
     Object.fromEntries(
-      ["label", "campaign_id", "account_id", "interest", "m"]
+      ["label", "campaign_id", "account_id", "interest", "m", "handled"]
         .map((k) => [k, str(s[k])])
         .filter(([, v]) => v),
     ),
   component: Inbox,
 });
+
+const DONE_KEY = "aikido.inbox.done";
+function readDone(): string[] {
+  try {
+    const v = JSON.parse(readStored(DONE_KEY) ?? "[]");
+    return Array.isArray(v) ? v.filter((x) => typeof x === "string").slice(-2000) : [];
+  } catch {
+    return [];
+  }
+}
+function writeDone(ids: string[]) {
+  writeStored(DONE_KEY, JSON.stringify(ids.slice(-2000)));
+}
 
 const CHIPS: [string, string][] = [
   ["reply", "Replies"],
@@ -75,7 +91,7 @@ function Inbox() {
   }, [qc]);
 
   const list = useInfiniteQuery({
-    queryKey: ["inbox", label, search.campaign_id, search.account_id],
+    queryKey: ["inbox", label, search.campaign_id, search.account_id, search.handled],
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam }) => {
       const labels =
@@ -91,6 +107,7 @@ function Inbox() {
               label: l,
               campaign_id: search.campaign_id,
               account_id: search.account_id,
+              ...(search.handled === "no" ? { handled: false } : {}),
               limit: 50,
               cursor: pageParam,
             },
@@ -106,10 +123,58 @@ function Inbox() {
     getNextPageParam: (l) => l.next_cursor ?? undefined,
     refetchInterval: 60_000,
   });
-  const msgs = list.data?.pages.flatMap((p) => p.messages) ?? [];
+  const [done, setDone] = useState<string[]>(() => readDone());
+  const all = list.data?.pages.flatMap((p) => p.messages) ?? [];
+  // "Not handled" also hides what you marked done with E
+  const msgs = search.handled === "no" ? all.filter((m) => !done.includes(m.id)) : all;
   const current = msgs.find((m) => m.id === search.m);
   const go = (p: Partial<Search>) =>
     navigate({ to: "/w/$ws/inbox", params: { ws }, search: { ...search, ...p }, replace: true });
+  const setInterest = useMutation({
+    mutationFn: (v: string) =>
+      http.patch("/v1/leads/{id}", { path: { id: current?.lead_id as string }, body: { interest: v } }),
+    onSuccess: () => {
+      toast.success("Saved.");
+      void qc.invalidateQueries({ queryKey: ["leads"] });
+      void qc.invalidateQueries({ queryKey: ["inbox"] });
+    },
+    onError: (e) => toast.error(messageOf(e)),
+  });
+
+  // Fast keys: J / K next and previous, I interested, N not interested, R reply, E done.
+  const keys = useRef<(k: string) => void>(() => {});
+  keys.current = (k) => {
+    const i = msgs.findIndex((m) => m.id === search.m);
+    const step = (d: number) => {
+      const n = msgs[Math.max(0, Math.min(msgs.length - 1, i + d))];
+      if (n) go({ m: n.id });
+    };
+    if (k === "j") step(1);
+    else if (k === "k") step(-1);
+    else if (k === "i" && current?.lead_id) setInterest.mutate("interested");
+    else if (k === "n" && current?.lead_id) setInterest.mutate("not_interested");
+    else if (k === "r") document.querySelector<HTMLTextAreaElement>('section[aria-label="Message"] textarea')?.focus();
+    else if (k === "e" && current) {
+      const next = [...done, current.id];
+      setDone(next);
+      writeDone(next);
+      step(1);
+    }
+  };
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) return;
+      const k = e.key.toLowerCase();
+      if ("jkinre".includes(k) && k.length === 1) {
+        e.preventDefault();
+        keys.current(k);
+      }
+    };
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, []);
 
   return (
     <Page wide>
@@ -131,6 +196,17 @@ function Inbox() {
             </button>
           ))}
         </div>
+        <button
+          type="button"
+          aria-pressed={search.handled === "no"}
+          onClick={() => go({ handled: search.handled === "no" ? undefined : "no", m: undefined })}
+          className={cn(
+            "h-9 rounded-full border px-3 text-sm",
+            search.handled === "no" ? "border-accent bg-accent-soft font-medium" : "border-border",
+          )}
+        >
+          Not handled
+        </button>
         <div className="w-44">
           <Select
             label="Campaign"
@@ -161,6 +237,11 @@ function Inbox() {
           icon={InboxIcon}
           text="Nothing here yet. Replies show up a few minutes after they arrive."
         />
+      )}
+      {msgs.length > 0 && (
+        <p className="mb-2 text-xs text-muted">
+          Keys: J next, K previous, I interested, N not interested, R reply, E done.
+        </p>
       )}
       {msgs.length > 0 && (
         <div className="grid min-h-[60vh] gap-4 lg:grid-cols-[360px_1fr]">

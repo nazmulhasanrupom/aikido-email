@@ -69,6 +69,9 @@ pub struct TickReport {
     pub stale: usize,
     /// The daily token budget is used up: nothing more was called.
     pub daily_budget_reached: bool,
+    /// AI mode emails (`campaigns::email_ai`): written (ready or in review), and failed.
+    pub emails_written: usize,
+    pub emails_failed: usize,
 }
 
 pub async fn tick(engine: &GeneratorEngine) -> anyhow::Result<TickReport> {
@@ -161,6 +164,15 @@ pub async fn tick(engine: &GeneratorEngine) -> anyhow::Result<TickReport> {
         if stop {
             break;
         }
+    }
+    // AI mode: the emails of the leads (UI update map v2).
+    if !report.auth_failed && !report.daily_budget_reached && !engine.cancel.is_cancelled() {
+        let e = crate::campaigns::email_ai::tick(&engine.state, &ctx.client, provider.id, &settings, width, &engine.cancel).await?;
+        report.emails_written = e.written;
+        report.emails_failed = e.failed;
+        report.claimed += e.claimed;
+        report.auth_failed |= e.auth_failed;
+        report.daily_budget_reached |= e.daily_budget_reached;
     }
     Ok(report)
 }

@@ -65,9 +65,21 @@ pub struct StepInput {
     /// The AI slots of this step. Every `{{ai:key}}` in the text needs an entry here, and every entry must be used.
     /// `{{ai:...}}` is allowed in the subject of step 1 only (a changed subject breaks the thread).
     pub ai_slots: Option<Vec<AiSlot>>,
+    /// AI mode: what to write in this email. Up to 8000 characters. Variables: `{{name}}`, `{{brief}}`, `{{previous_emails}}`, `{{lead_notes}}`.
+    pub ai_user_prompt: Option<String>,
+}
+
+/// A prompt: up to 8000 characters, and the `{{ }}` parts must parse.
+pub(crate) fn check_prompt(what: &str, text: &str) -> ApiResult<()> {
+    if text.chars().count() > 8000 {
+        return Err(ApiError::unprocessable("invalid_prompt", format!("{what} must be up to 8000 characters.")));
+    }
+    crate::followups::template::Template::parse(text).map_err(|e| ApiError::unprocessable("invalid_prompt", format!("{what}: {}", e.message)))?;
+    Ok(())
 }
 
 pub(crate) struct ValidStep {
+    ai_user_prompt: Option<String>,
     number: i32,
     delay_amount: i32,
     delay_type: DelayType,
@@ -134,7 +146,12 @@ pub(crate) fn validate_steps(inputs: &[StepInput]) -> ApiResult<Vec<ValidStep>> 
         let body_text = s.body_text.clone().filter(|t| !t.trim().is_empty());
         let body_html = s.body_html.clone().filter(|t| !t.trim().is_empty());
         let step_hash = crate::generator::hash::step_hash(&subject, body_text.as_deref(), body_html.as_deref(), &ai_slots);
+        let ai_user_prompt = s.ai_user_prompt.clone().map(|p| p.trim().to_string()).filter(|p| !p.is_empty());
+        if let Some(p) = &ai_user_prompt {
+            check_prompt(&format!("Step {n}: ai_user_prompt"), p)?;
+        }
         out.push(ValidStep {
+            ai_user_prompt,
             number: n,
             delay_amount,
             delay_type: s.delay_type.unwrap_or_default(),
@@ -217,11 +234,11 @@ async fn sequence_detail(st: &AppState, id: Uuid) -> ApiResult<SequenceDetail> {
 pub(crate) async fn write_steps(conn: &mut sqlx::PgConnection, sequence_id: Uuid, steps: &[ValidStep], now: DateTime<Utc>) -> Result<(), sqlx::Error> {
     for s in steps {
         sqlx::query(
-            "INSERT INTO sequence_steps (id, sequence_id, step_number, delay_amount, delay_type, subject, body_text, body_html, updated_at, ai_slots, step_hash)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            "INSERT INTO sequence_steps (id, sequence_id, step_number, delay_amount, delay_type, subject, body_text, body_html, updated_at, ai_slots, step_hash, ai_user_prompt)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
              ON CONFLICT (sequence_id, step_number) DO UPDATE SET delay_amount = EXCLUDED.delay_amount,
                 delay_type = EXCLUDED.delay_type, subject = EXCLUDED.subject, body_text = EXCLUDED.body_text,
-                body_html = EXCLUDED.body_html, updated_at = EXCLUDED.updated_at, ai_slots = EXCLUDED.ai_slots, step_hash = EXCLUDED.step_hash",
+                body_html = EXCLUDED.body_html, updated_at = EXCLUDED.updated_at, ai_slots = EXCLUDED.ai_slots, step_hash = EXCLUDED.step_hash, ai_user_prompt = EXCLUDED.ai_user_prompt",
         )
         .bind(Uuid::now_v7())
         .bind(sequence_id)
@@ -234,6 +251,7 @@ pub(crate) async fn write_steps(conn: &mut sqlx::PgConnection, sequence_id: Uuid
         .bind(now)
         .bind(serde_json::to_value(&s.ai_slots).unwrap_or_default())
         .bind(&s.step_hash)
+        .bind(&s.ai_user_prompt)
         .execute(&mut *conn)
         .await?;
     }
@@ -350,6 +368,8 @@ pub struct PatchSequence {
     pub campaign_id: Option<Uuid>,
     /// For the Email Generator. An empty text clears it.
     pub brief: Option<String>,
+    /// AI mode: the system prompt for all steps. An empty text clears it.
+    pub ai_system_prompt: Option<String>,
     pub action: Option<SequenceAction>,
 }
 
@@ -366,6 +386,19 @@ async fn patch_sequence(State(st): State<AppState>, ApiPath(id): ApiPath<Uuid>, 
     let name = p.name.as_deref().map(check_name).transpose()?;
     let days = p.auto_reply_pause_days.map(check_pause_days).transpose()?;
     let brief = p.brief.as_deref().map(check_brief).transpose()?;
+    let system_prompt = p.ai_system_prompt.as_deref().map(|t| {
+        let t = t.trim();
+        check_prompt("ai_system_prompt", t).map(|_| (!t.is_empty()).then(|| t.to_string()))
+    });
+    let system_prompt = system_prompt.transpose()?;
+    if let Some(Some(text)) = &system_prompt {
+        let mut conn = st.pool.acquire().await?;
+        let defs = crate::leads::fields::FieldDefs::load(&mut conn).await?;
+        let unknown = crate::campaigns::email_ai::unknown_names(text, &defs);
+        if !unknown.is_empty() {
+            return Err(ApiError::unprocessable("missing_variable", format!("ai_system_prompt uses {}, which no lead field, custom field or fallback covers.", unknown.join(", "))));
+        }
+    }
     let status = p.action.map(|a| match a {
         SequenceAction::Pause => SequenceStatus::Paused,
         SequenceAction::Resume => SequenceStatus::Active,
@@ -375,7 +408,8 @@ async fn patch_sequence(State(st): State<AppState>, ApiPath(id): ApiPath<Uuid>, 
         "UPDATE sequences SET name = COALESCE($2, name), stop_on_auto_reply = COALESCE($3, stop_on_auto_reply),
                 auto_reply_pause_days = COALESCE($4, auto_reply_pause_days), thread_followups = COALESCE($5, thread_followups),
                 status = COALESCE($6, status), updated_at = $7,
-                brief = CASE WHEN $8 THEN $9 ELSE brief END
+                brief = CASE WHEN $8 THEN $9 ELSE brief END,
+                ai_system_prompt = CASE WHEN $10 THEN $11 ELSE ai_system_prompt END
          WHERE id = $1",
     )
     .bind(id)
@@ -387,10 +421,16 @@ async fn patch_sequence(State(st): State<AppState>, ApiPath(id): ApiPath<Uuid>, 
     .bind(st.now())
     .bind(brief.is_some())
     .bind(brief.flatten())
+    .bind(system_prompt.is_some())
+    .bind(system_prompt.flatten())
     .execute(&st.pool)
     .await?;
     if done.rows_affected() == 0 {
         return Err(ApiError::not_found("sequence_not_found", "No sequence with this id."));
+    }
+    if p.ai_system_prompt.is_some() {
+        let mut conn = st.pool.acquire().await?;
+        crate::campaigns::emails::sequence_changed(&mut conn, id).await?;
     }
     Ok(ApiJson(sequence_detail(&st, id).await?))
 }
@@ -401,6 +441,8 @@ pub struct PutSteps {
     pub steps: Vec<StepInput>,
     /// Variants of step 1, up to 4 (keys `B` to `E` in the order given). Leave out to keep the saved ones; `[]` removes them.
     pub variants: Option<Vec<VariantInput>>,
+    /// `false`: variant A gets no new leads. At least one variant must stay on. Leave out to keep it.
+    pub variant_a_active: Option<bool>,
 }
 
 #[derive(Deserialize, ToSchema, Clone, Debug)]
@@ -469,8 +511,32 @@ async fn put_steps(State(st): State<AppState>, ApiPath(id): ApiPath<Uuid>, ApiJs
             }
         }
     }
+    {
+        let defs = crate::leads::fields::FieldDefs::load(&mut tx).await?;
+        for s in &steps {
+            if let Some(p) = &s.ai_user_prompt {
+                let unknown = crate::campaigns::email_ai::unknown_names(p, &defs);
+                if !unknown.is_empty() {
+                    return Err(ApiError::unprocessable(
+                        "missing_variable",
+                        format!("Step {}: the prompt uses {}, which no lead field, custom field or fallback covers.", s.number, unknown.join(", ")),
+                    ));
+                }
+            }
+        }
+    }
     write_steps(&mut tx, id, &steps, now).await?;
     sqlx::query("DELETE FROM sequence_steps WHERE sequence_id = $1 AND step_number > $2").bind(id).bind(steps.len() as i32).execute(&mut *tx).await?;
+    if let Some(a) = body.variant_a_active {
+        let others_on = match &body.variants {
+            Some(v) => v.iter().any(|x| x.active.unwrap_or(true)),
+            None => sqlx::query_as::<_, (bool,)>("SELECT EXISTS (SELECT 1 FROM step_variants WHERE sequence_id = $1 AND active)").bind(id).fetch_one(&mut *tx).await?.0,
+        };
+        if !a && !others_on {
+            return Err(invalid_steps("At least one variant must stay on."));
+        }
+        sqlx::query("UPDATE sequences SET variant_a_active = $2 WHERE id = $1").bind(id).bind(a).execute(&mut *tx).await?;
+    }
     if let Some(variants) = &body.variants {
         if variants.len() > 4 {
             return Err(invalid_steps("Step 1 can have up to 5 variants: A and 4 more."));
@@ -486,6 +552,7 @@ async fn put_steps(State(st): State<AppState>, ApiPath(id): ApiPath<Uuid>, ApiJs
                 body_text: v.body_text.clone(),
                 body_html: v.body_html.clone(),
                 ai_slots: v.ai_slots.clone(),
+                ai_user_prompt: None,
             }])
             .map_err(|e| ApiError::unprocessable("invalid_steps", format!("Variant {key}: {}", e.message)))?;
             let c = &checked[0];

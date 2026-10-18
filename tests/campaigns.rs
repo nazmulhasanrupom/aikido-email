@@ -1372,20 +1372,205 @@ async fn new_leads_get_their_emails_after_the_first_save_and_a_template_change_m
 }
 
 #[sqlx::test]
-async fn ai_mode_holds_a_step_without_an_email(pool: PgPool) {
+async fn ai_mode_enrolls_only_leads_with_a_ready_primary_email_and_holds_a_step_without_one(pool: PgPool) {
     let c = C::new(pool).await;
     let a = c.account("a@x.test").await;
     let camp = id(&c.campaign(&[a], json!({})).await);
-    c.add(&camp, &c.many_leads(1, "acme.com").await).await;
+    let leads = c.many_leads(1, "acme.com").await;
+    c.add(&camp, &leads).await;
     c.ok("PATCH", &format!("/v1/campaigns/{camp}"), Some(json!({ "content_mode": "ai" }))).await;
     let r = c.api("POST", &format!("/v1/campaigns/{camp}/emails/render"), Some(json!({}))).await;
     assert_eq!(r.status, StatusCode::UNPROCESSABLE_ENTITY);
     c.launch(&camp).await;
+    // no primary email: the lead stays pending
     for _ in 0..3 {
         c.round(Duration::minutes(10)).await;
     }
+    assert_eq!(c.count_leads(&camp, "pending").await, 1);
+    // an enrolled lead whose step has no email is held
+    sqlx::query("INSERT INTO lead_emails (id, campaign_id, lead_id, step_number, source, status) VALUES (gen_random_uuid(), $1, $2, 1, 'manual', 'ready')")
+        .bind(camp.parse::<Uuid>().unwrap())
+        .bind(leads[0])
+        .execute(&c.h.state.pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE lead_emails SET subject = 'Hi', body_text = 'Hello'").execute(&c.h.state.pool).await.unwrap();
+    for _ in 0..40 {
+        c.round(Duration::hours(4)).await;
+    }
     let (jobs,): (i64,) = sqlx::query_as("SELECT count(*) FROM send_jobs").fetch_one(&c.h.state.pool).await.unwrap();
-    assert_eq!(jobs, 0);
+    assert_eq!(jobs, 1, "the primary email was sent; the follow up has no email");
     let (reason,): (Option<String>,) = sqlx::query_as("SELECT wait_reason FROM enrollments LIMIT 1").fetch_one(&c.h.state.pool).await.unwrap();
     assert_eq!(reason.as_deref(), Some("email_not_ready"));
+}
+
+// ---------- UI update map v2: helpers that make cold email easy (U4) ----------
+
+#[sqlx::test]
+async fn the_domain_check_shows_green_orange_and_red_and_keeps_answers_for_an_hour(pool: PgPool) {
+    use aikido_email::accounts::dns_check::{DnsChecker, fake::FakeTxt};
+    let mut c = C::new(pool).await;
+    let txt = FakeTxt::new();
+    c.h.state.dns = Arc::new(DnsChecker::new(txt.clone()));
+    let a = c.account("sales@acme-outreach.test").await;
+    let get = |sel: &str| format!("/v1/accounts/{a}/dns-check{sel}");
+    let acc = |uri: String| {
+        let st = c.h.state.clone();
+        let key = c.keys[&Scope::Accounts].clone();
+        async move { call(&st, "GET", &uri, Some(&key), None).await }
+    };
+
+    // nothing published: SPF and DMARC are red, DKIM orange, MX green (the fake resolver has an MX)
+    let r = acc(get("")).await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.body);
+    assert_eq!(r.body["spf"]["status"], "fail");
+    assert!(r.body["spf"]["fix"].as_str().unwrap().contains("v=spf1"));
+    assert_eq!(r.body["dkim"]["status"], "warn");
+    assert_eq!(r.body["dmarc"]["status"], "fail");
+    assert_eq!(r.body["mx"]["status"], "ok");
+    assert_eq!(r.body["overall"], "fail");
+
+    // publish the records: the old answer is kept for an hour
+    txt.set("acme-outreach.test", &["v=spf1 include:_spf.google.com ~all"]);
+    txt.set("_dmarc.acme-outreach.test", &["v=DMARC1; p=none"]);
+    txt.set("google._domainkey.acme-outreach.test", &["v=DKIM1; k=rsa; p=ABC"]);
+    assert_eq!(acc(get("")).await.body["overall"], "fail", "cached");
+    c.h.advance(Duration::minutes(61));
+    let r = acc(get("")).await;
+    assert_eq!((r.body["spf"]["status"].as_str(), r.body["dkim"]["status"].as_str(), r.body["dmarc"]["status"].as_str()), (Some("ok"), Some("ok"), Some("ok")));
+    assert_eq!(r.body["dkim"]["selector"], "google");
+    assert_eq!(r.body["overall"], "ok");
+
+    // a typed selector that has no key is red; a record that allows every server is orange
+    txt.set("acme-outreach.test", &["v=spf1 +all"]);
+    let r = acc(get("?selector=nope")).await;
+    assert_eq!(r.body["dkim"]["status"], "ok", "another selector still has a key");
+    assert_eq!(r.body["spf"]["status"], "warn");
+    txt.set("acme-outreach.test", &["v=spf1 ~all", "v=spf1 -all"]);
+    c.h.advance(Duration::minutes(61));
+    assert_eq!(acc(get("")).await.body["spf"]["status"], "fail", "two SPF records");
+}
+
+#[sqlx::test]
+async fn a_lead_missing_a_value_the_emails_need_is_found_and_listed(pool: PgPool) {
+    let c = C::new(pool).await;
+    let a = c.account("a@x.test").await;
+    let body = json!({ "name": "C", "account_ids": [a], "sequence": { "name": "S", "steps": [{ "subject": "Hi {{first_name|there}}", "body_text": "About {{company_name}} and {{pain}}" }] } });
+    c.leads("POST", "/v1/leads/fields", Some(json!({ "key": "pain" }))).await;
+    let camp = id(&c.ok("POST", "/v1/campaigns", Some(body)).await);
+    let full = c.leads("POST", "/v1/leads", Some(json!({ "email": "full@x.com", "company_name": "X", "custom_fields": { "pain": "slow" } }))).await;
+    let no_company = c.leads("POST", "/v1/leads", Some(json!({ "email": "nc@x.com", "custom_fields": { "pain": "slow" } }))).await;
+    let no_pain = c.leads("POST", "/v1/leads", Some(json!({ "email": "np@x.com", "company_name": "Y" }))).await;
+    c.add(&camp, &[full["id"].as_str().unwrap().parse().unwrap(), no_company["id"].as_str().unwrap().parse().unwrap(), no_pain["id"].as_str().unwrap().parse().unwrap()]).await;
+    let all = c.ok("GET", &format!("/v1/campaigns/{camp}/leads"), None).await;
+    assert_eq!(all["leads"].as_array().unwrap().len(), 3);
+    let only = c.ok("GET", &format!("/v1/campaigns/{camp}/leads?missing=true"), None).await;
+    let rows = only["leads"].as_array().unwrap();
+    assert_eq!(rows.len(), 2);
+    let mut missing: Vec<(String, Vec<String>)> = rows.iter().map(|r| (r["email"].as_str().unwrap().to_string(), r["missing"].as_array().unwrap().iter().map(|m| m.as_str().unwrap().to_string()).collect())).collect();
+    missing.sort();
+    assert_eq!(missing, vec![("nc@x.com".to_string(), vec!["company_name".to_string()]), ("np@x.com".to_string(), vec!["pain".to_string()])]);
+    // the checklist counts them
+    let list = c.ok("GET", &format!("/v1/campaigns/{camp}/checklist"), None).await;
+    let values = list["items"].as_array().unwrap().iter().find(|i| i["key"] == "values").unwrap();
+    assert_eq!(values["ok"], false);
+    // a fallback on the field covers the lead
+    c.leads("PATCH", "/v1/leads/fields/pain", Some(json!({ "fallback": "something" }))).await;
+    assert_eq!(c.ok("GET", &format!("/v1/campaigns/{camp}/leads?missing=true"), None).await["leads"].as_array().unwrap().len(), 1);
+}
+
+#[sqlx::test]
+async fn the_checklist_counts_what_is_ready_and_a_test_email_ticks_the_last_item(pool: PgPool) {
+    use aikido_email::accounts::dns_check::{DnsChecker, fake::FakeTxt};
+    let mut c = C::new(pool).await;
+    let txt = FakeTxt::new();
+    c.h.state.dns = Arc::new(DnsChecker::new(txt.clone()));
+    let a = c.account("sales@acme-outreach.test").await;
+    let camp = id(&c.campaign(&[a], json!({})).await);
+    let list = c.ok("GET", &format!("/v1/campaigns/{camp}/checklist"), None).await;
+    assert_eq!(list["total"], 6);
+    let ok = |l: &Value, k: &str| l["items"].as_array().unwrap().iter().find(|i| i["key"] == k).unwrap()["ok"].as_bool().unwrap();
+    assert!(ok(&list, "accounts") && !ok(&list, "domains") && !ok(&list, "leads") && !ok(&list, "emails") && ok(&list, "values") && !ok(&list, "test"));
+    txt.set("acme-outreach.test", &["v=spf1 ~all"]);
+    txt.set("_dmarc.acme-outreach.test", &["v=DMARC1; p=none"]);
+    c.h.advance(Duration::minutes(61));
+    let leads = c.many_leads(2, "acme.com").await;
+    c.add(&camp, &leads).await;
+    let list = c.ok("GET", &format!("/v1/campaigns/{camp}/checklist"), None).await;
+    assert!(ok(&list, "domains") && ok(&list, "leads") && !ok(&list, "emails"));
+    // Save writes the emails of day 1
+    c.save(&camp, None).await;
+    assert!(ok(&c.ok("GET", &format!("/v1/campaigns/{camp}/checklist"), None).await, "emails"));
+    // a test email goes out through the engine and ticks the last item
+    let t = c.ok("POST", &format!("/v1/campaigns/{camp}/emails/send-test"), Some(json!({ "to": "me@example.com" }))).await;
+    assert!(t["job_id"].is_string());
+    assert!(!ok(&c.ok("GET", &format!("/v1/campaigns/{camp}/checklist"), None).await, "test"), "queued is not sent");
+    for _ in 0..30 {
+        c.h.tick().await;
+        c.h.advance(Duration::minutes(10));
+    }
+    let list = c.ok("GET", &format!("/v1/campaigns/{camp}/checklist"), None).await;
+    assert!(ok(&list, "test"), "{list}");
+    assert_eq!(list["ready"], 6);
+    let (subject, count): (String, i64) = sqlx::query_as("SELECT subject, (SELECT count(*) FROM send_jobs WHERE campaign_id IS NOT NULL) FROM send_jobs WHERE to_email = 'me@example.com'").fetch_one(&c.h.state.pool).await.unwrap();
+    assert!(subject.starts_with("[Test] Hello "));
+    assert_eq!(count, 0, "a test job is not counted in the campaign");
+}
+
+#[sqlx::test]
+async fn duplicate_copies_the_sequence_prompts_variants_and_settings_but_no_leads(pool: PgPool) {
+    let c = C::new(pool).await;
+    let a = c.account("a@x.test").await;
+    let camp_v = c.campaign(&[a], json!({ "daily_new_leads": 7, "stop_company_on_reply": true })).await;
+    let camp = id(&camp_v);
+    c.variants_on(&camp_v, json!([{ "name": "Short", "subject": "B subject", "body_text": "B text" }])).await;
+    c.ok("PATCH", &format!("/v1/campaigns/{camp}"), Some(json!({ "footer": "Bye", "content_mode": "ai" }))).await;
+    c.add(&camp, &c.many_leads(2, "acme.com").await).await;
+    let copy = c.ok("POST", &format!("/v1/campaigns/{camp}/duplicate"), None).await;
+    assert_ne!(copy["id"], camp_v["id"]);
+    assert_eq!(copy["name"], "Q4 outreach (copy)");
+    assert_eq!(copy["status"], "draft");
+    assert_eq!((copy["daily_new_leads"].as_i64(), copy["stop_company_on_reply"].as_bool()), (Some(7), Some(true)));
+    assert_eq!((copy["footer"].as_str(), copy["content_mode"].as_str()), (Some("Bye"), Some("ai")));
+    assert_eq!(copy["steps"].as_array().unwrap().len(), 2);
+    assert_eq!(copy["variants"][0]["subject"], "B subject");
+    assert_eq!(copy["accounts"].as_array().unwrap().len(), 1);
+    assert_eq!(copy["counts"]["pending"], 0);
+    assert_ne!(copy["sequence_id"], camp_v["sequence_id"]);
+    assert_eq!(c.count_leads(copy["id"].as_str().unwrap(), "pending").await, 0);
+}
+
+#[sqlx::test]
+async fn reply_rate_by_variant_and_turning_a_variant_off(pool: PgPool) {
+    let c = C::new(pool).await;
+    let a = c.account("a@x.test").await;
+    let camp_v = c.campaign(&[a], json!({})).await;
+    let camp = id(&camp_v);
+    c.variants_on(&camp_v, json!([{ "name": "B", "subject": "B subject", "body_text": "B text" }])).await;
+    let leads = c.many_leads(4, "acme.com").await;
+    c.add(&camp, &leads).await;
+    c.save(&camp, None).await;
+    c.launch(&camp).await;
+    for _ in 0..12 {
+        c.round(Duration::minutes(10)).await;
+    }
+    // one lead of variant B replied
+    sqlx::query("UPDATE send_jobs SET replied_at = now() WHERE id = (SELECT job_id FROM lead_emails WHERE variant_key = 'B' AND step_number = 1 LIMIT 1)").execute(&c.h.state.pool).await.unwrap();
+    let s = c.ok("GET", &format!("/v1/campaigns/{camp}/stats"), None).await;
+    let by: Vec<(String, i64, i64)> = s["by_variant"].as_array().unwrap().iter().map(|v| (v["variant_key"].as_str().unwrap().into(), v["sent"].as_i64().unwrap(), v["replied"].as_i64().unwrap())).collect();
+    assert_eq!(by, vec![("A".to_string(), 2, 0), ("B".to_string(), 2, 1)]);
+    assert_eq!(s["by_variant"][1]["reply_rate"], 0.5);
+
+    // turn A off: new leads all get B. At least one variant must stay on.
+    let seq = camp_v["sequence_id"].as_str().unwrap();
+    let steps = json!(camp_v["steps"].as_array().unwrap().iter().map(|s| json!({ "delay_amount": s["delay_amount"], "subject": s["subject"], "body_text": s["body_text"] })).collect::<Vec<_>>());
+    let r = c.fapi("PUT", &format!("/v1/followups/sequences/{seq}/steps"), Some(json!({ "steps": steps, "variant_a_active": false }))).await;
+    assert!(r.status.is_success(), "{}", r.body);
+    let late = c.many_leads(2, "beta.com").await;
+    c.add(&camp, &late).await;
+    c.save(&camp, None).await;
+    let (n,): (i64,) = sqlx::query_as("SELECT count(*) FROM lead_emails WHERE step_number = 1 AND variant_key = 'A' AND lead_id = ANY($1)").bind(&late).fetch_one(&c.h.state.pool).await.unwrap();
+    assert_eq!(n, 0);
+    let off = c.fapi("PUT", &format!("/v1/followups/sequences/{seq}/steps"), Some(json!({ "steps": steps, "variants": [{ "name": "B", "subject": "B subject", "body_text": "B text", "active": false }], "variant_a_active": false }))).await;
+    assert_eq!(off.status, StatusCode::UNPROCESSABLE_ENTITY);
 }

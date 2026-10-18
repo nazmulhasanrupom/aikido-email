@@ -132,6 +132,26 @@ export interface paths {
         patch: operations["patch_account"];
         trace?: never;
     };
+    "/v1/accounts/{id}/dns-check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Check the sending domain of an account: SPF, DKIM, DMARC and MX.
+         * @description Scope: `accounts`. Each check is `ok`, `warn`, `fail` or `unknown`, with the DNS record to add when it is not ok. Answers are kept for one hour. DKIM keys sit at a selector the sender chose, so only common selectors and the one in `selector` are looked at.
+         */
+        get: operations["dns_check"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/accounts/{id}/test": {
         parameters: {
             query?: never;
@@ -424,6 +444,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/campaigns/{id}/checklist": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The checklist of a campaign. It blocks nothing; it shows what is left.
+         * @description Scope: `campaigns`. Six items: accounts healthy, domains pass (no red SPF, DKIM, DMARC or MX), leads added, emails written for day 1, no missing values, test email sent.
+         */
+        get: operations["checklist"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/campaigns/{id}/duplicate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Copy a campaign: the sequence, the prompts, the variants and the settings. No leads and no emails.
+         * @description Scope: `campaigns`. The copy is a `draft` named "<name> (copy)". It keeps the account pool, the settings, the footer, the content mode, the steps, the AI prompts and the variants.
+         */
+        post: operations["duplicate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/campaigns/{id}/email-runs": {
         parameters: {
             query?: never;
@@ -484,6 +544,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/campaigns/{id}/emails/actions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve, reject, regenerate or clear saved emails.
+         * @description Scope: `campaigns`. Pick emails by `ids` or by `filter: { step, status }`. Sent emails never change. `approve`: `review` to `ready`. `reject` and `regenerate`: the model writes the email again (the old text stays until the new one is saved). `clear`: the email is deleted.
+         */
+        post: operations["actions"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/campaigns/{id}/emails/estimate": {
         parameters: {
             query?: never;
@@ -494,10 +574,30 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * What Save would do. Writes nothing.
-         * @description Scope: `campaigns`. Template mode: `emails` is how many emails Save would write, `edited_by_hand` how many hand edits exist (Save with `all` would replace them). Tokens and cost are 0.
+         * What Save (template mode) or Generate (AI mode) would do. Writes nothing.
+         * @description Scope: `campaigns`. Same body as generate (`steps`, `leads`, `overwrite`; only `overwrite` counts in template mode). Template mode: tokens and cost are 0. AI mode: a rough count, 4 characters per token, about 220 output tokens per email.
          */
         post: operations["estimate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/campaigns/{id}/emails/generate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Generate: the model writes the emails.
+         * @description Scope: `campaigns`. AI mode. Starts a run and answers at once; the generator worker writes the emails (status `writing`, then `ready`, or `review` when review is on). `steps`: step numbers (default all). `leads`: `{ count }`, `{ lead_ids }` or `{ filter: { step, status } }` (default all). `overwrite`: `skip` (default), `keep_edited`, `all`. The primary email of a lead is written before its follow ups in the same run. Sent emails never change.
+         */
+        post: operations["generate"];
         delete?: never;
         options?: never;
         head?: never;
@@ -518,6 +618,46 @@ export interface paths {
          * @description Scope: `campaigns`. Template mode. Variants of step 1 are split evenly in the order the leads were added. Steps with an AI part are left to the Email Generator. Sent emails never change. After the first Save, leads added later get their emails at once.
          */
         post: operations["render"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/campaigns/{id}/emails/send-test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send the email of one lead to yourself, from the first healthy account of the pool.
+         * @description Scope: `campaigns`. The job is `manual` and is not counted in the campaign numbers. The subject starts with "[Test] ". It goes out through the normal sending engine (window, gap, cap).
+         */
+        post: operations["send_test"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/campaigns/{id}/emails/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Try the prompts (or the template) on one lead. Saves nothing.
+         * @description Scope: `campaigns`. AI mode calls the model once (and once more to repair) and saves only an `llm_calls` row (purpose `lead_email_test`). Template mode renders the template with the lead values. The sender tokens `{{sender_name}}` stay as they are.
+         */
+        post: operations["test_email"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2869,6 +3009,11 @@ export interface components {
             /** @description For `add_tags` and `remove_tags`. */
             tags?: string[] | null;
         };
+        ActionFilter: {
+            status?: string | null;
+            /** Format: int32 */
+            step?: number | null;
+        };
         ActionReply: {
             /**
              * Format: int64
@@ -3148,6 +3293,8 @@ export interface components {
             last_name?: string | null;
             /** Format: uuid */
             lead_id: string;
+            /** @description The values this lead lacks for the emails of the campaign (names). Empty when it has them all. */
+            missing: string[];
             /**
              * Format: date-time
              * @description When the next step is due.
@@ -3192,6 +3339,33 @@ export interface components {
         ChangePassword: {
             current_password: string;
             new_password: string;
+        };
+        Check: {
+            /** @description The DNS record to add: `TXT`, the host name, and the value. */
+            fix?: string | null;
+            /** @description What we found. */
+            found?: string | null;
+            /** @description DKIM: the selector where the key was found. */
+            selector?: string | null;
+            /** @description `ok` (green), `warn` (orange), `fail` (red) or `unknown` (the DNS did not answer). */
+            status: string;
+            summary: string;
+        };
+        Checklist: {
+            items: components["schemas"]["ChecklistItem"][];
+            /** Format: int64 */
+            ready: number;
+            /** Format: int64 */
+            total: number;
+        };
+        ChecklistItem: {
+            detail: string;
+            /** @description Where the fix is: `settings`, `leads`, `editor`. */
+            fix: string;
+            /** @description `accounts`, `domains`, `leads`, `emails`, `values` or `test`. */
+            key: string;
+            label: string;
+            ok: boolean;
         };
         ClassifyBody: {
             /**
@@ -3467,6 +3641,17 @@ export interface components {
         DeletedTemplate: {
             deleted: boolean;
         };
+        DnsReport: {
+            /** Format: date-time */
+            checked_at: string;
+            dkim: components["schemas"]["Check"];
+            dmarc: components["schemas"]["Check"];
+            domain: string;
+            mx: components["schemas"]["Check"];
+            /** @description The worst of the four: `ok`, `warn`, `fail` or `unknown`. */
+            overall: string;
+            spf: components["schemas"]["Check"];
+        };
         DraftBrief: {
             /** @description Who you write to. */
             audience?: string | null;
@@ -3551,6 +3736,20 @@ export interface components {
             tokens: number;
             /** Format: int32 */
             total: number;
+        };
+        EmailTestReply: {
+            body: string;
+            /** @description `template` or `ai`. */
+            mode: string;
+            subject: string;
+            /** @description AI mode: the filled prompts (the system prompt has the fixed rules at the end). */
+            system?: string | null;
+            /** Format: int64 */
+            tokens_in: number;
+            /** Format: int64 */
+            tokens_out: number;
+            user?: string | null;
+            warnings: string[];
         };
         EnginePauseReply: {
             paused: boolean;
@@ -3658,9 +3857,27 @@ export interface components {
              */
             stopped_enrollments: number;
         };
-        Estimate: components["schemas"]["Plan"] & {
-            /** Format: double */
+        Estimate: {
+            cost_known: boolean;
+            /**
+             * Format: double
+             * @description From `prices` in the generator settings. `0` when the model has no price (`cost_known` is `false`).
+             */
             cost_usd: number;
+            /**
+             * Format: int64
+             * @description Emails edited by hand that would be replaced (`overwrite: all`).
+             */
+            edited_by_hand: number;
+            /**
+             * Format: int64
+             * @description How many emails would be written.
+             */
+            emails: number;
+            /** @description AI mode: some chosen follow ups are written before their primary email, so `{{previous_emails}}` is empty for them. */
+            follow_ups_without_primary: boolean;
+            /** @description Template mode: steps with an AI part. Save leaves them to the Email Generator. */
+            skipped_ai_steps: number[];
             /** Format: int64 */
             tokens: number;
         };
@@ -3770,6 +3987,12 @@ export interface components {
              * @description Follow-ups that have waited in the send queue longer than `max_wait_days`: the next tick fails them.
              */
             waiting_too_long: number;
+        };
+        GenerateBody: {
+            leads?: components["schemas"]["LeadScope"] | null;
+            overwrite?: components["schemas"]["Overwrite"] | null;
+            /** @description Step numbers (1 = Primary email). Default: all steps. */
+            steps?: number[] | null;
         };
         Generation: {
             /** Format: int32 */
@@ -4363,6 +4586,16 @@ export interface components {
             /** Format: date-time */
             updated_at: string;
         };
+        LeadScope: {
+            /**
+             * Format: int64
+             * @description The first N leads (in the order they were added) that still need one of the steps.
+             */
+            count?: number | null;
+            filter?: components["schemas"]["ScopeFilter"] | null;
+            /** @description These leads. */
+            lead_ids?: string[] | null;
+        };
         LeadSelection: {
             filter?: components["schemas"]["LeadFilter"] | null;
             /** @description Pick leads by id (up to 10000). Give one of `lead_ids`, `list_id`, `filter`. */
@@ -4785,6 +5018,8 @@ export interface components {
         };
         PatchSequence: {
             action?: components["schemas"]["SequenceAction"] | null;
+            /** @description AI mode: the system prompt for all steps. An empty text clears it. */
+            ai_system_prompt?: string | null;
             /** Format: int32 */
             auto_reply_pause_days?: number | null;
             /** @description For the Email Generator. An empty text clears it. */
@@ -4815,20 +5050,6 @@ export interface components {
         };
         PausedReply: {
             paused: boolean;
-        };
-        Plan: {
-            /**
-             * Format: int64
-             * @description Emails edited by hand that `overwrite: all` would replace.
-             */
-            edited_by_hand: number;
-            /**
-             * Format: int64
-             * @description Emails that would be written (or are written).
-             */
-            emails: number;
-            /** @description Steps with an AI part. Save leaves them to the generator. */
-            skipped_ai_steps: number[];
         };
         PoolAccount: {
             email: string;
@@ -4915,6 +5136,8 @@ export interface components {
         PutSteps: {
             /** @description The whole list of steps (1 to 10). The order gives the step numbers. */
             steps: components["schemas"]["StepInput"][];
+            /** @description `false`: variant A gets no new leads. At least one variant must stay on. Leave out to keep it. */
+            variant_a_active?: boolean | null;
             /** @description Variants of step 1, up to 4 (keys `B` to `E` in the order given). Leave out to keep the saved ones; `[]` removes them. */
             variants?: components["schemas"]["VariantInput"][] | null;
         };
@@ -5128,6 +5351,29 @@ export interface components {
          * @enum {string}
          */
         Scope: "admin" | "accounts" | "sending" | "replies" | "followups" | "leads" | "campaigns" | "generator";
+        ScopeFilter: {
+            status?: string | null;
+            /** Format: int32 */
+            step?: number | null;
+        };
+        SendTestBody: {
+            /**
+             * Format: uuid
+             * @description The lead whose email is shown. Default: the first lead of the campaign.
+             */
+            lead_id?: string | null;
+            /**
+             * Format: int32
+             * @description 1 = Primary email (default).
+             */
+            step?: number | null;
+            /** @description Where to send it: your own address. */
+            to: string;
+        };
+        SendTestReply: {
+            /** Format: uuid */
+            job_id: string;
+        };
         SendingSettings: {
             /**
              * Format: int32
@@ -5270,6 +5516,8 @@ export interface components {
             window_start_jitter_mins: number;
         };
         Sequence: {
+            /** @description AI mode: the system prompt for all steps of the campaign. Up to 8000 characters. */
+            ai_system_prompt?: string | null;
             /**
              * Format: int32
              * @description How many business days an auto-reply pauses the enrollment. 1 to 30.
@@ -5291,6 +5539,8 @@ export interface components {
             thread_followups: boolean;
             /** Format: date-time */
             updated_at: string;
+            /** @description Variant A is step 1 itself. `false`: it gets no new leads (another variant must be on). */
+            variant_a_active: boolean;
         };
         /** @enum {string} */
         SequenceAction: "pause" | "resume" | "archive";
@@ -5309,6 +5559,8 @@ export interface components {
         SequenceStep: {
             /** @description The AI slots of the step: `[{key, instruction, max_words, allow_links, fallback}]`. See `{{ai:key}}`. */
             ai_slots: components["schemas"]["AiSlot"][];
+            /** @description AI mode: the user prompt of this step. Up to 8000 characters. */
+            ai_user_prompt?: string | null;
             body_html?: string | null;
             body_text?: string | null;
             /**
@@ -5392,6 +5644,8 @@ export interface components {
             auto_replied: number;
             by_account: components["schemas"]["AccountStats"][];
             by_step: components["schemas"]["StepStats"][];
+            /** @description The first email by variant (only when the campaign has more than one variant in use). */
+            by_variant: components["schemas"]["VariantStats"][];
             /**
              * Format: int64
              * @description Spam complaints.
@@ -5445,6 +5699,8 @@ export interface components {
              *     `{{ai:...}}` is allowed in the subject of step 1 only (a changed subject breaks the thread).
              */
             ai_slots?: components["schemas"]["AiSlot"][] | null;
+            /** @description AI mode: what to write in this email. Up to 8000 characters. Variables: `{{name}}`, `{{brief}}`, `{{previous_emails}}`, `{{lead_notes}}`. */
+            ai_user_prompt?: string | null;
             body_html?: string | null;
             /** @description Give `body_text`, `body_html`, or both. */
             body_text?: string | null;
@@ -5533,6 +5789,15 @@ export interface components {
         TemplatesReply: {
             templates: components["schemas"]["TemplateView"][];
         };
+        TestBody: {
+            /** Format: uuid */
+            lead_id: string;
+            /**
+             * Format: int32
+             * @description 1 = Primary email.
+             */
+            step: number;
+        };
         TestReply: {
             detail: string;
             ok: boolean;
@@ -5615,6 +5880,19 @@ export interface components {
             /** @description A short name for the tab. Default: the key. */
             name?: string | null;
             subject: string;
+        };
+        VariantStats: {
+            /** Format: int64 */
+            replied: number;
+            /**
+             * Format: double
+             * @description `replied` divided by `sent`.
+             */
+            reply_rate: number;
+            /** Format: int64 */
+            sent: number;
+            /** @description `A` to `E`. */
+            variant_key: string;
         };
         /** @enum {string} */
         Verification: "unknown" | "syntax_ok" | "mx_ok" | "no_mx" | "invalid";
@@ -5848,6 +6126,36 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["AccountView"];
                 };
+            };
+        };
+    };
+    dns_check: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                /** @description A DKIM selector to look at first (for example `google`). */
+                selector: string | null;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DnsReport"];
+                };
+            };
+            /** @description No such account */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -6353,6 +6661,62 @@ export interface operations {
             };
         };
     };
+    checklist: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Checklist"];
+                };
+            };
+            /** @description No such campaign */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    duplicate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CampaignDetail"];
+                };
+            };
+            /** @description No such campaign */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     list_runs: {
         parameters: {
             query?: never;
@@ -6446,6 +6810,45 @@ export interface operations {
             };
         };
     };
+    actions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ActionBody"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActionReply"];
+                };
+            };
+            /** @description No such campaign */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unknown action, or no ids and no filter */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     estimate: {
         parameters: {
             query?: never;
@@ -6457,7 +6860,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["RenderBody"];
+                "application/json": components["schemas"]["GenerateBody"];
             };
         };
         responses: {
@@ -6471,6 +6874,45 @@ export interface operations {
             };
             /** @description No such campaign */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    generate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GenerateBody"];
+            };
+        };
+        responses: {
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailRun"];
+                };
+            };
+            /** @description No such campaign */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description wrong_mode (template mode), generator_not_ready (no working AI model), missing_prompt (a step has no user prompt) */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -6509,6 +6951,84 @@ export interface operations {
                 content?: never;
             };
             /** @description wrong_mode: the campaign is in AI mode */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    send_test: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SendTestBody"];
+            };
+        };
+        responses: {
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SendTestReply"];
+                };
+            };
+            /** @description No such campaign, lead or step */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description no_healthy_account, email_not_ready (AI mode, nothing written), missing_variable or an address that is not valid */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    test_email: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TestBody"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailTestReply"];
+                };
+            };
+            /** @description No such campaign, lead or step */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description generator_not_ready, missing_prompt, missing_variable or generation_failed */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -6573,6 +7093,8 @@ export interface operations {
                 cursor: string | null;
                 /** @description 1 to 500. Default 50. */
                 limit: number | null;
+                /** @description `true`: only leads that lack a value one of the emails needs (a variable with no fallback). */
+                missing: boolean | null;
             };
             cookie?: never;
         };

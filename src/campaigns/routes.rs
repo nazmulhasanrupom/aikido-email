@@ -42,6 +42,7 @@ pub fn router(state: AppState) -> OpenApiRouter<AppState> {
         .routes(routes!(feeder_resume))
         .routes(routes!(feeder_status))
         .merge(super::email_routes::routes())
+        .merge(super::extras::routes())
         .route_layer(axum::middleware::from_fn_with_state((state, Scope::Campaigns), require_scope))
 }
 
@@ -185,7 +186,7 @@ pub struct CampaignDetail {
     pub warnings: Vec<String>,
 }
 
-async fn detail(st: &AppState, id: Uuid) -> ApiResult<CampaignDetail> {
+pub(crate) async fn detail(st: &AppState, id: Uuid) -> ApiResult<CampaignDetail> {
     let mut conn = st.pool.acquire().await?;
     let campaign = get(&mut conn, id).await?.ok_or_else(not_found)?;
     let sequence = followup_repo::get_sequence(&mut conn, campaign.sequence_id).await?.ok_or_else(ApiError::internal)?;
@@ -625,6 +626,8 @@ pub struct CampaignLeadsQuery {
     cursor: Option<Uuid>,
     /// 1 to 500. Default 50.
     limit: Option<i64>,
+    /// `true`: only leads that lack a value one of the emails needs (a variable with no fallback).
+    missing: Option<bool>,
 }
 
 #[derive(Serialize, ToSchema, sqlx::FromRow)]
@@ -657,6 +660,9 @@ pub struct CampaignLeadRow {
     /// The saved emails of this lead in this campaign, one per step that has one.
     #[sqlx(skip)]
     pub emails: Vec<EmailCell>,
+    /// The values this lead lacks for the emails of the campaign (names). Empty when it has them all.
+    #[sqlx(skip)]
+    pub missing: Vec<String>,
 }
 
 #[derive(Serialize, ToSchema, sqlx::FromRow)]
@@ -699,7 +705,11 @@ async fn list_campaign_leads(State(st): State<AppState>, ApiPath(id): ApiPath<Uu
                 .ok_or_else(|| ApiError::bad_request("invalid_cursor", "The cursor lead is not in this campaign (any more). Start again without a cursor."))?,
         ),
     };
-    let mut leads: Vec<CampaignLeadRow> = sqlx::query_as(
+    let ctx = super::emails::load_ctx(&mut conn, id).await?.ok_or_else(not_found)?;
+    let prompts = if ctx.campaign.content_mode == "ai" { Some(super::email_ai::load_prompts(&mut conn, &ctx).await?) } else { None };
+    let needs = super::emails::required_names(&ctx, prompts.as_ref());
+    let missing_cond = if q.missing == Some(true) { super::emails::missing_sql(&needs, &ctx.defs) } else { "true".to_string() };
+    let mut leads: Vec<CampaignLeadRow> = sqlx::query_as(&format!(
         "SELECT cl.lead_id, l.email, l.first_name, l.last_name, l.company_name, l.custom_fields, cl.state, cl.skip_reason, cl.enrollment_id,
                 e.status AS enrollment_status, cl.added_at, cl.enrolled_at, l.interest, l.contact_state,
                 CASE WHEN e.id IS NULL THEN NULL ELSE LEAST(e.next_step, GREATEST(steps.n, 1)::int) END AS current_step,
@@ -720,8 +730,9 @@ async fn list_campaign_leads(State(st): State<AppState>, ApiPath(id): ApiPath<Uu
            CROSS JOIN (SELECT count(*)::bigint AS n FROM sequence_steps WHERE sequence_id = (SELECT sequence_id FROM campaigns WHERE id = $1)) steps
           WHERE cl.campaign_id = $1 AND ($2::campaign_lead_state IS NULL OR cl.state = $2) AND ($3::campaign_skip_reason IS NULL OR cl.skip_reason = $3)
             AND ($4::timestamptz IS NULL OR (cl.added_at, cl.lead_id) > ($4, $5))
+            AND ({missing_cond})
           ORDER BY cl.added_at, cl.lead_id LIMIT $6",
-    )
+    ))
     .bind(id)
     .bind(q.state)
     .bind(q.skip_reason)
@@ -749,8 +760,12 @@ async fn list_campaign_leads(State(st): State<AppState>, ApiPath(id): ApiPath<Uu
     for c in cells {
         by_lead.entry(c.lead_id).or_default().push(c);
     }
+    let lead_rows = if needs.is_empty() { Default::default() } else { super::emails::load_leads(&mut conn, &ids).await? };
     for l in &mut leads {
         l.emails = by_lead.remove(&l.lead_id).unwrap_or_default();
+        if let Some(lead) = lead_rows.get(&l.lead_id) {
+            l.missing = super::emails::missing_for(lead, &needs, &ctx.defs);
+        }
     }
     Ok(ApiJson(CampaignLeadsReply { leads, next_cursor }))
 }
@@ -959,6 +974,18 @@ pub struct StatsReply {
     pub reply_rate: f64,
     pub by_step: Vec<StepStats>,
     pub by_account: Vec<AccountStats>,
+    /// The first email by variant (only when the campaign has more than one variant in use).
+    pub by_variant: Vec<VariantStats>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct VariantStats {
+    /// `A` to `E`.
+    pub variant_key: String,
+    pub sent: i64,
+    pub replied: i64,
+    /// `replied` divided by `sent`.
+    pub reply_rate: f64,
 }
 
 /// Numbers of a campaign: sent, replied, bounced, unsubscribed, the reply rate, by step and by account.
@@ -1015,6 +1042,23 @@ async fn stats(State(st): State<AppState>, ApiPath(id): ApiPath<Uuid>) -> ApiRes
         add(by_step.entry(step.unwrap_or(1)).or_default(), label, *n);
         add(by_account.entry(*account).or_default(), label, *n);
     }
+    let variant_rows: Vec<(String, i64, i64)> = sqlx::query_as(
+        "SELECT le.variant_key, count(*), count(sj.replied_at)
+           FROM lead_emails le JOIN send_jobs sj ON sj.id = le.job_id
+          WHERE le.campaign_id = $1 AND le.step_number = 1 AND le.variant_key IS NOT NULL AND sj.status = 'sent'
+          GROUP BY 1 ORDER BY 1",
+    )
+    .bind(id)
+    .fetch_all(&mut *conn)
+    .await?;
+    let by_variant: Vec<VariantStats> = if variant_rows.len() > 1 {
+        variant_rows
+            .into_iter()
+            .map(|(variant_key, sent, replied)| VariantStats { variant_key, sent, replied, reply_rate: if sent > 0 { (replied as f64 / sent as f64 * 10_000.0).round() / 10_000.0 } else { 0.0 } })
+            .collect()
+    } else {
+        vec![]
+    };
     let total = Tally { sent: sent_total, replied: label_total("reply"), bounced: label_total("bounce_hard"), unsubscribed: label_total("unsubscribe") };
     let reply_rate = if contacted > 0 { (total.replied as f64 / contacted as f64 * 10_000.0).round() / 10_000.0 } else { 0.0 };
     Ok(ApiJson(StatsReply {
@@ -1025,6 +1069,7 @@ async fn stats(State(st): State<AppState>, ApiPath(id): ApiPath<Uuid>) -> ApiRes
         reply_rate,
         by_step: by_step.into_iter().map(|(step_number, tally)| StepStats { step_number, tally }).collect(),
         by_account: by_account.into_iter().map(|(account_id, tally)| AccountStats { account_id, email: email_of(account_id), tally }).collect(),
+        by_variant,
     }))
 }
 

@@ -95,6 +95,9 @@ async fn messages_filters_paging_and_detail(pool: PgPool) {
     let only = r.get("/v1/replies/messages?label=auto_reply").await;
     assert_eq!(only.body["messages"].as_array().unwrap().len(), 2);
     assert_eq!(r.get(&format!("/v1/replies/messages?lead_id={lead}")).await.body["messages"].as_array().unwrap().len(), 3);
+    // "not handled": no lead with an interest set (the lead row is not there, so none is handled)
+    assert_eq!(r.get("/v1/replies/messages?handled=false").await.body["messages"].as_array().unwrap().len(), 3);
+    assert_eq!(r.get("/v1/replies/messages?handled=true").await.body["messages"].as_array().unwrap().len(), 0);
     assert_eq!(r.get(&format!("/v1/replies/messages?campaign_id={}", uuid::Uuid::now_v7())).await.body["messages"].as_array().unwrap().len(), 0);
     assert_eq!(r.get(&format!("/v1/replies/messages?job_id={job}")).await.body["messages"].as_array().unwrap().len(), 3);
     assert_eq!(r.get(&format!("/v1/replies/messages?account_id={a}&label=reply")).await.body["messages"].as_array().unwrap().len(), 1);

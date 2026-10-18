@@ -195,9 +195,13 @@ async fn feed_one(st: &AppState, c: &Campaign, now: DateTime<Utc>) -> Result<Ste
         "SELECT cl.lead_id, l.email, l.contact_state, l.verification
            FROM campaign_leads cl JOIN leads l ON l.id = cl.lead_id
           WHERE cl.campaign_id = $1 AND cl.state = 'pending'
+            -- AI mode: a lead is enrolled only when its Primary email is ready. The others wait and use no room.
+            AND ($2 = false OR EXISTS (SELECT 1 FROM lead_emails le WHERE le.campaign_id = cl.campaign_id AND le.lead_id = cl.lead_id
+                                          AND le.step_number = 1 AND le.status IN ('ready', 'stale')))
           ORDER BY cl.added_at, cl.lead_id LIMIT 1 FOR UPDATE OF cl SKIP LOCKED",
     )
     .bind(c.id)
+    .bind(c.content_mode == "ai")
     .fetch_optional(&mut *tx)
     .await?;
     let Some((lead_id, email, state, verification)) = row else { return Ok(Step::Empty) };

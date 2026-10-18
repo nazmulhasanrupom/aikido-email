@@ -1759,3 +1759,32 @@ Rules:
 - **Send time.** The scheduler uses the saved email. Template mode with no saved email renders and saves it. AI mode holds the step with `wait_reason: email_not_ready` (or `email_review`).
 - **After the first Save**, leads added to the campaign get their emails at once (template mode).
 - The email becomes `sent` when the send job is made, and keeps `job_id`.
+
+## 23. AI mode and helpers (`campaigns`, `accounts`, `replies`): UI update map v2, U3 and U4
+
+**AI mode.** `PATCH /v1/campaigns/{id}` with `content_mode: "ai"`. Prompts: `ai_system_prompt` on `PATCH /v1/followups/sequences/{id}` (up to 8000 characters) and `ai_user_prompt` on each step of `PUT .../steps`. A prompt that uses a name no lead field, custom field or fallback covers is refused (`422 missing_variable`). Prompt-only names: `brief`, `previous_emails`, `lead_notes`.
+
+| Route | What it does |
+| --- | --- |
+| `POST /v1/campaigns/{id}/emails/generate` | Body `{ steps?, leads?: { count } or { lead_ids } or { filter: { step, status } }, overwrite? }`. `202` with a run. The generator worker writes the emails (`writing`, then `ready`, or `review` when review is on). `422 wrong_mode`, `generator_not_ready`, `missing_prompt`. The primary email of a lead is written before its follow ups in the same run. |
+| `POST /v1/campaigns/{id}/emails/estimate` | Same body. In AI mode: `emails`, `tokens`, `cost_usd` (`cost_known` is false when the model has no price), `follow_ups_without_primary`. |
+| `POST /v1/campaigns/{id}/emails/test` | `{ lead_id, step }`. The filled prompts and the result. Saves only an `llm_calls` row (purpose `lead_email_test`). |
+| `POST /v1/campaigns/{id}/emails/actions` | `{ action: approve / reject / regenerate / clear, ids? or filter?: { step, status } }`. |
+| `POST /v1/campaigns/{id}/email-runs/{run}/cancel` | Stops a run. Rows that wait go back to `ready` (they have text) or `none`. |
+
+- **Auto-write (D5).** With `auto_write` on, the generator worker writes the next step of an open enrollment when it is due within `lookahead_hours`. A due step with no email waits (`wait_reason: email_not_ready`, or `email_review`). After one hour the bell shows the alert `emails_not_ready`.
+- **Feeder.** In AI mode a lead is enrolled only when its Primary email is `ready` (or `stale`). The others stay `pending` and use no daily room.
+- **Sender in prompts.** `{{sender_name}}` in a prompt is the first account of the pool. The footer keeps the tokens until send time.
+
+**Helpers.**
+
+| Route | What it does |
+| --- | --- |
+| `GET /v1/accounts/{id}/dns-check?selector=` | SPF, DKIM, DMARC and MX of the sending domain, each `ok`, `warn`, `fail` or `unknown`, with the record to add. Kept for 1 hour. Only common DKIM selectors and the one in `selector` are looked at. |
+| `GET /v1/campaigns/{id}/checklist` | Six items: accounts, domains, leads, emails for day 1, missing values, test email. `ready` of `total`. |
+| `POST /v1/campaigns/{id}/emails/send-test` | `{ to, lead_id?, step? }`. A manual job from the first healthy account; the subject starts with `[Test] `. Not counted in the campaign numbers. |
+| `GET /v1/campaigns/{id}/leads?missing=true` | Only leads that lack a value the emails need. Each row has `missing: [names]`. |
+| `POST /v1/campaigns/{id}/duplicate` | A draft copy: sequence, prompts, variants, settings, account pool. No leads, no emails. |
+| `GET /v1/campaigns/{id}/stats` | Also `by_variant` (first email: sent, replied, reply rate) when more than one variant has sends. |
+| `PUT .../steps` | Also `variant_a_active` (turn off variant A; one variant must stay on). |
+| `GET /v1/replies/messages?handled=false` | Only emails whose lead has no interest set. |

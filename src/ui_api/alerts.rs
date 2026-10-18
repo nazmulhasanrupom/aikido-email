@@ -20,7 +20,7 @@ pub struct Alert {
     pub id: String,
     /// `account_disconnected`, `account_error`, `account_reconnect_needed`, `campaign_warning`,
     /// `campaign_no_healthy_account`, `generation_awaiting_review`, `provider_auth_failed`, `ai_budget_reached`,
-    /// `import_failed`, `jobs_stuck`, `engine_paused`.
+    /// `import_failed`, `emails_not_ready`, `jobs_stuck`, `engine_paused`.
     pub kind: String,
     pub severity: Severity,
     pub title: String,
@@ -41,6 +41,7 @@ pub const KINDS: &[&str] = &[
     "provider_auth_failed",
     "ai_budget_reached",
     "import_failed",
+    "emails_not_ready",
     "jobs_stuck",
     "engine_paused",
 ];
@@ -199,6 +200,28 @@ pub async fn collect(st: &AppState) -> Result<Vec<Alert>, sqlx::Error> {
                 now,
             ));
         }
+    }
+
+    // AI mode: a step is due but its email is not written (or waits for approval) for over an hour
+    let rows: Vec<(uuid::Uuid, String, i64, DateTime<Utc>)> = sqlx::query_as(
+        "SELECT c.id, c.name, count(*), min(e.wait_since)
+           FROM enrollments e JOIN campaigns c ON c.sequence_id = e.sequence_id
+          WHERE e.status = 'active' AND e.wait_reason IN ('email_not_ready', 'email_review') AND e.wait_since < $1 - interval '1 hour'
+          GROUP BY c.id, c.name",
+    )
+    .bind(now)
+    .fetch_all(p)
+    .await?;
+    for (id, name, n, since) in rows {
+        out.push(alert(
+            "emails_not_ready",
+            &id.to_string(),
+            Severity::Warning,
+            format!("{n} {} in {name} {}", if n == 1 { "email" } else { "emails" }, if n == 1 { "is not ready" } else { "are not ready" }),
+            "The step is due, but its email is not written or not approved. The lead waits.".into(),
+            format!("{WS}/campaigns/{id}/leads"),
+            since,
+        ));
     }
 
     // imports and stuck jobs

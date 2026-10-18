@@ -3,6 +3,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { http, type S } from "@/api/http";
 import { Card, ErrorNote, Head, Skeleton, Table, TD } from "@/components/ui";
 import { statsQuery } from "@/features/campaigns/hooks";
+import { VariantResults } from "@/features/campaigns/VariantResults";
 import { DailyChart } from "@/features/reports/DailyChart";
 import { RangePicker, StatCard, useRange } from "@/features/reports/parts";
 import { fmtInt, fmtPct } from "@/lib/format";
@@ -45,6 +46,7 @@ function CampaignReports() {
       <Card>
         <DailyChart range={range} extra={{ campaign_id: id }} keys={["sent", "replied"]} />
       </Card>
+      <VariantResults campaignId={id} stats={s} />
       <div className="grid gap-5 lg:grid-cols-2">
         <section>
           <h2 className="mb-2 font-semibold">By step</h2>

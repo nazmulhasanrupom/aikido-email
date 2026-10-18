@@ -9,6 +9,7 @@ import { type GenProvider, q } from "@/api/queries";
 import { Logo } from "@/components/Logo";
 import { Button, Card, Check2, ErrorNote, Notice, NumField, Pill, Skeleton } from "@/components/ui";
 import { AddAccount } from "@/features/accounts/AddAccount";
+import { DomainCheck } from "@/features/accounts/DomainCheck";
 import { ProviderForm } from "@/features/integrations/ProviderForm";
 import { ImportFlow } from "@/features/leads/ImportFlow";
 import { DaysAndHours } from "@/features/settings/SendingForm";
@@ -167,6 +168,7 @@ function EmailStep({ facts, next }: { facts: S["OnboardingFacts"]; next: () => v
               {a.can_read ? "Reading replies" : "Cannot read replies"}
             </Pill>
           </div>
+          <DomainCheck accountId={a.id} compact />
           {!a.can_read && (
             <p className="text-sm text-warning">
               We can send, but we cannot see replies. Follow-ups will wait (

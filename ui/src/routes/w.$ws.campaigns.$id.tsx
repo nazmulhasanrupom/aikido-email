@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createFileRoute, Link, Outlet } from "@tanstack/react-router";
+import { createFileRoute, Link, Outlet, useNavigate } from "@tanstack/react-router";
 import { MoreHorizontal } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -16,6 +16,7 @@ import {
   Pill,
   Skeleton,
 } from "@/components/ui";
+import { ChecklistBar } from "@/features/campaigns/ChecklistBar";
 import { campaignQuery, tone } from "@/features/campaigns/hooks";
 import { LaunchDialog } from "@/features/campaigns/Launch";
 import { say } from "@/lib/words";
@@ -25,6 +26,7 @@ export const Route = createFileRoute("/w/$ws/campaigns/$id")({ component: Campai
 function CampaignLayout() {
   const { ws, id } = Route.useParams();
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const res = useQuery(campaignQuery(id));
   const [name, setName] = useState("");
   const [launch, setLaunch] = useState(false);
@@ -36,6 +38,15 @@ function CampaignLayout() {
     mutationFn: (what: "pause" | "resume") =>
       http.post(`/v1/campaigns/{id}/${what}`, { path: { id } }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["campaigns"] }),
+    onError: (e) => toast.error(messageOf(e)),
+  });
+  const copy = useMutation({
+    mutationFn: () => http.post<{ id: string }>("/v1/campaigns/{id}/duplicate", { path: { id } }),
+    onSuccess: async (r) => {
+      await qc.invalidateQueries({ queryKey: ["campaigns"] });
+      toast.success("Copied. The copy is a draft with no leads.");
+      await navigate({ to: "/w/$ws/campaigns/$id/editor", params: { ws, id: r.id } });
+    },
     onError: (e) => toast.error(messageOf(e)),
   });
   const rename = useMutation({
@@ -95,6 +106,7 @@ function CampaignLayout() {
               <MoreHorizontal size={18} />
             </MenuTrigger>
             <MenuContent align="end">
+              <MenuItem onSelect={() => copy.mutate()}>Duplicate</MenuItem>
               <MenuItem onSelect={() => setArchive(true)}>Archive</MenuItem>
             </MenuContent>
           </MenuRoot>
@@ -105,6 +117,7 @@ function CampaignLayout() {
           <Notice tone="warning">{c.warning}</Notice>
         </div>
       )}
+      {(c.status === "draft" || c.status === "active" || c.status === "paused") && <ChecklistBar campaignId={id} ws={ws} />}
       <LinkTabs
         label="Campaign pages"
         items={[

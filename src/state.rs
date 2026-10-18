@@ -23,6 +23,8 @@ pub struct AppState {
     pub llm: Arc<dyn LlmFactory>,
     /// Hashes and checks the passwords of web users.
     pub passwords: Arc<Passwords>,
+    /// Looks up SPF, DKIM and DMARC for the domain check. Tests replace the resolver inside it.
+    pub dns: Arc<crate::accounts::dns_check::DnsChecker>,
 }
 
 pub type Clock = Arc<dyn Fn() -> DateTime<Utc> + Send + Sync>;
@@ -39,6 +41,7 @@ impl AppState {
             clock: Arc::new(Utc::now),
             mx: Arc::new(SystemResolver::default()),
             llm: Arc::new(RealLlmFactory::default()),
+            dns: Arc::new(crate::accounts::dns_check::DnsChecker::default()),
         }
     }
 

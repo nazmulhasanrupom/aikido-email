@@ -76,6 +76,8 @@ pub struct Ctx {
     pub steps: Vec<SequenceStep>,
     pub variants: Vec<StepVariant>,
     pub defs: FieldDefs,
+    /// Variant A (step 1 itself) takes new leads.
+    pub variant_a_active: bool,
     footer: Option<Template>,
 }
 
@@ -89,13 +91,20 @@ pub async fn load_ctx(conn: &mut PgConnection, campaign_id: Uuid) -> Result<Opti
         .await?;
     let defs = FieldDefs::load(conn).await?;
     let footer = campaign.footer.as_deref().filter(|f| !f.trim().is_empty()).and_then(|f| Template::parse(f).ok());
-    Ok(Some(Ctx { campaign, steps, variants, defs, footer }))
+    let (variant_a_active,): (bool,) = sqlx::query_as("SELECT variant_a_active FROM sequences WHERE id = $1").bind(campaign.sequence_id).fetch_one(&mut *conn).await?;
+    Ok(Some(Ctx { campaign, steps, variants, defs, variant_a_active, footer }))
 }
 
 /// The keys that get new leads: `A` plus the active variants, in order.
 pub fn active_variants(ctx: &Ctx) -> Vec<String> {
-    let mut keys = vec!["A".to_string()];
+    let mut keys: Vec<String> = Vec::new();
+    if ctx.variant_a_active {
+        keys.push("A".to_string());
+    }
     keys.extend(ctx.variants.iter().filter(|v| v.active).map(|v| v.key.clone()));
+    if keys.is_empty() {
+        keys.push("A".to_string());
+    }
     keys
 }
 
@@ -109,16 +118,15 @@ struct Source<'a> {
     subject: &'a str,
     body_text: Option<&'a str>,
     body_html: Option<&'a str>,
-    ai_slots: &'a Value,
 }
 
 fn source<'a>(ctx: &'a Ctx, step: &'a SequenceStep, variant: &str) -> Source<'a> {
     if step.step_number == 1 && variant != "A" {
         if let Some(v) = ctx.variants.iter().find(|v| v.key == variant) {
-            return Source { subject: &v.subject, body_text: v.body_text.as_deref(), body_html: v.body_html.as_deref(), ai_slots: &v.ai_slots };
+            return Source { subject: &v.subject, body_text: v.body_text.as_deref(), body_html: v.body_html.as_deref() };
         }
     }
-    Source { subject: &step.subject, body_text: step.body_text.as_deref(), body_html: step.body_html.as_deref(), ai_slots: &step.ai_slots }
+    Source { subject: &step.subject, body_text: step.body_text.as_deref(), body_html: step.body_html.as_deref() }
 }
 
 /// A step whose text has an AI part is not saved by Save: the Email Generator writes it when the step is due.
@@ -144,7 +152,7 @@ pub fn fill_sender(text: &str, name: &str, email: &str, html: bool) -> String {
     text.replace("{{sender_name}}", &n).replace("{{sender_email}}", &e)
 }
 
-fn lead_vars(ctx: &Ctx, lead: &Lead) -> Result<Vars, String> {
+pub(crate) fn lead_vars(ctx: &Ctx, lead: &Lead) -> Result<Vars, String> {
     let live = crate::leads::vars::render_variables(&json!({}), Some(lead), &ctx.defs);
     build_vars(&live, &lead.email, "{{sender_name}}", "{{sender_email}}")
 }
@@ -244,20 +252,20 @@ pub struct Plan {
     pub skipped_ai_steps: Vec<i32>,
 }
 
-type Existing = HashMap<(Uuid, i32), (String, bool, Option<String>)>;
+pub(crate) type Existing = HashMap<(Uuid, i32), (String, bool, Option<String>)>;
 
-async fn existing(conn: &mut PgConnection, campaign_id: Uuid) -> Result<Existing, sqlx::Error> {
+pub(crate) async fn existing(conn: &mut PgConnection, campaign_id: Uuid) -> Result<Existing, sqlx::Error> {
     let rows: Vec<(Uuid, i32, String, bool, Option<String>)> =
         sqlx::query_as("SELECT lead_id, step_number, status, edited_by_hand, variant_key FROM lead_emails WHERE campaign_id = $1").bind(campaign_id).fetch_all(conn).await?;
     Ok(rows.into_iter().map(|(l, s, st, ed, v)| ((l, s), (st, ed, v))).collect())
 }
 
 /// What happens to an email that exists: `true` = write it again.
-fn rewrite(existing: Option<&(String, bool, Option<String>)>, overwrite: Overwrite) -> bool {
+pub(crate) fn rewrite(existing: Option<&(String, bool, Option<String>)>, overwrite: Overwrite) -> bool {
     match existing {
         None => true,
         Some((status, edited, _)) => {
-            if status == "sent" {
+            if status == "sent" || (status == "writing" && overwrite != Overwrite::All) {
                 return false;
             }
             match overwrite {
@@ -337,7 +345,7 @@ async fn save(conn: &mut PgConnection, ctx: &Ctx, lead: &Lead, step: &SequenceSt
     Ok(ok)
 }
 
-async fn load_leads(conn: &mut PgConnection, ids: &[Uuid]) -> Result<HashMap<Uuid, Lead>, sqlx::Error> {
+pub(crate) async fn load_leads(conn: &mut PgConnection, ids: &[Uuid]) -> Result<HashMap<Uuid, Lead>, sqlx::Error> {
     let rows: Vec<Lead> = sqlx::query_as(&format!("SELECT {LEAD_COLS} FROM leads WHERE id = ANY($1)")).bind(ids).fetch_all(conn).await?;
     Ok(rows.into_iter().map(|l| (l.id, l)).collect())
 }
@@ -386,12 +394,13 @@ pub async fn write(conn: &mut PgConnection, ctx: &Ctx, overwrite: Overwrite, onl
 pub async fn mark_stale(conn: &mut PgConnection, campaign_id: Uuid, lead_id: Option<Uuid>) -> Result<u64, sqlx::Error> {
     let Some(ctx) = load_ctx(conn, campaign_id).await? else { return Ok(0) };
     let rows: Vec<LeadEmail> = sqlx::query_as(&format!(
-        "SELECT {EMAIL_COLS} FROM lead_emails WHERE campaign_id = $1 AND source = 'template' AND status IN ('ready', 'review') AND ($2::uuid IS NULL OR lead_id = $2)"
+        "SELECT {EMAIL_COLS} FROM lead_emails WHERE campaign_id = $1 AND source IN ('template', 'ai') AND status IN ('ready', 'review') AND ($2::uuid IS NULL OR lead_id = $2)"
     ))
     .bind(campaign_id)
     .bind(lead_id)
     .fetch_all(&mut *conn)
     .await?;
+    let prompts = if rows.iter().any(|r| r.source == "ai") { Some(super::email_ai::load_prompts(conn, &ctx).await?) } else { None };
     let mut n = 0;
     for chunk in rows.chunks(500) {
         let ids: Vec<Uuid> = chunk.iter().map(|r| r.lead_id).collect();
@@ -399,7 +408,10 @@ pub async fn mark_stale(conn: &mut PgConnection, campaign_id: Uuid, lead_id: Opt
         for r in chunk {
             let (Some(lead), Some(step)) = (leads.get(&r.lead_id), ctx.steps.iter().find(|s| s.step_number == r.step_number)) else { continue };
             let variant = r.variant_key.as_deref().unwrap_or("A");
-            let now_hash = build(&ctx, lead, step, variant).ok().map(|b| b.hash);
+            let now_hash = match (r.source.as_str(), &prompts) {
+                ("ai", Some(p)) => super::email_ai::prompt_hash(&ctx, p, lead, r.step_number),
+                _ => build(&ctx, lead, step, variant).ok().map(|b| b.hash),
+            };
             if now_hash != r.input_hash {
                 sqlx::query("UPDATE lead_emails SET status = 'stale', updated_at = now() WHERE id = $1 AND status IN ('ready', 'review')").bind(r.id).execute(&mut *conn).await?;
                 n += 1;
@@ -501,4 +513,69 @@ pub async fn mark_sent(conn: &mut PgConnection, campaign_id: Uuid, lead_id: Uuid
         .execute(conn)
         .await?;
     Ok(())
+}
+
+// ---------- values the emails need (I4 and I2) ----------
+
+/// Every name the emails of a campaign use without a fallback, except the built-in and prompt-only names.
+pub fn required_names(ctx: &Ctx, prompts: Option<&super::email_ai::Prompts>) -> Vec<String> {
+    use crate::followups::template::BUILTINS;
+    let mut names: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    let mut step_texts: Vec<(String, Option<String>, Option<String>)> = ctx.steps.iter().map(|s| (s.subject.clone(), s.body_text.clone(), s.body_html.clone())).collect();
+    step_texts.extend(ctx.variants.iter().map(|v| (v.subject.clone(), v.body_text.clone(), v.body_html.clone())));
+    if ctx.campaign.content_mode != "ai" {
+        for (sub, text, html) in &step_texts {
+            if let Ok(t) = StepTemplates::parse(sub, text.as_deref(), html.as_deref()) {
+                names.extend(t.required());
+            }
+        }
+    }
+    if let Some(f) = ctx.campaign.footer.as_deref() {
+        if let Ok(t) = Template::parse(f) {
+            names.extend(t.required().into_iter().map(String::from));
+        }
+    }
+    if let (Some(p), "ai") = (prompts, ctx.campaign.content_mode.as_str()) {
+        for text in p.system.iter().chain(p.users.values()) {
+            if let Ok(t) = Template::parse(text) {
+                names.extend(t.required().into_iter().map(String::from));
+            }
+        }
+    }
+    names.into_iter().filter(|n| !BUILTINS.contains(&n.as_str()) && !super::email_ai::PROMPT_VARS.contains(&n.as_str())).collect()
+}
+
+/// The names this lead has no value for (and no fallback covers).
+pub fn missing_for(lead: &Lead, names: &[String], defs: &FieldDefs) -> Vec<String> {
+    let have = crate::leads::vars::lead_vars(lead);
+    names
+        .iter()
+        .filter(|n| {
+            have.get(n.as_str()).is_none_or(|v| v.as_str().is_none_or(|s| s.trim().is_empty()))
+                && defs.by_key.get(n.as_str()).and_then(|d| d.fallback.as_deref()).is_none_or(|f| f.trim().is_empty())
+        })
+        .cloned()
+        .collect()
+}
+
+/// A SQL condition on `l` (the `leads` table) that is true when the lead lacks a value for one of the names.
+/// Names are checked here: a built-in text column from a fixed list, or a custom field key of letters, digits and `_`.
+pub fn missing_sql(names: &[String], defs: &FieldDefs) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    for n in names {
+        if crate::leads::model::TEXT_FIELDS.contains(&n.as_str()) {
+            parts.push(format!("btrim(COALESCE(l.{n}, '')) = ''"));
+        } else if let Some(d) = defs.by_key.get(n.as_str()) {
+            if d.fallback.as_deref().is_some_and(|f| !f.trim().is_empty()) {
+                continue;
+            }
+            if n.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_') {
+                parts.push(format!("btrim(COALESCE(l.custom_fields ->> '{n}', '')) = ''"));
+            }
+        } else {
+            // no such field: no lead has a value
+            parts.push("true".into());
+        }
+    }
+    if parts.is_empty() { "false".into() } else { parts.join(" OR ") }
 }

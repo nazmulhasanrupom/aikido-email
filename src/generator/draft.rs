@@ -345,6 +345,7 @@ fn steps_from_json(text: &str, wanted: u32, delay_days: Option<i32>) -> Result<V
             body_text: Some(body_text.to_string()),
             body_html: None,
             ai_slots: Some(ai_slots),
+            ai_user_prompt: None,
         });
     }
     Ok(out)

@@ -18,6 +18,8 @@ import { cn } from "@/lib/cn";
 import { htmlToText, sanitizeHtml, textToHtml } from "@/lib/html";
 import { aiKeys, BUILTIN_VARS, variables, withFallback } from "@/lib/template";
 import { PROBLEM_WORDS } from "@/lib/words";
+import { AiPanel } from "./AiPanel";
+import { EmailScore } from "./EmailScore";
 import { AiPartDialog } from "./AiPartDialog";
 import { type Brief, BriefForm, EMPTY_BRIEF } from "./NewCampaign";
 import { PreviewDrawer } from "./PreviewDrawer";
@@ -32,6 +34,8 @@ interface Draft {
   delay_amount: number;
   delay_type: DelayType;
   ai_slots: S["AiSlot"][];
+  /** AI mode: the user prompt of this step. */
+  ai_user_prompt: string;
   /** Variants only. */
   name?: string;
   active?: boolean;
@@ -47,6 +51,7 @@ const fromStep = (s: S["SequenceStep"]): Draft => ({
   delay_amount: s.delay_amount,
   delay_type: s.delay_type,
   ai_slots: s.ai_slots,
+  ai_user_prompt: s.ai_user_prompt ?? "",
 });
 const fromVariant = (v: S["StepVariant"]): Draft => ({
   id: uid(),
@@ -57,6 +62,7 @@ const fromVariant = (v: S["StepVariant"]): Draft => ({
   delay_amount: 0,
   delay_type: "business_days",
   ai_slots: v.ai_slots,
+  ai_user_prompt: "",
   name: v.name,
   active: v.active,
 });
@@ -69,6 +75,7 @@ const fromInput = (s: S["StepInput"]): Draft => ({
   delay_amount: s.delay_amount ?? 3,
   delay_type: s.delay_type ?? "business_days",
   ai_slots: s.ai_slots ?? [],
+  ai_user_prompt: s.ai_user_prompt ?? "",
 });
 
 const LEAD_VARS = [
@@ -102,6 +109,10 @@ export function Editor({
   const [saveDialog, setSaveDialog] = useState<null | { edited: number }>(null);
   const [saving, setSaving] = useState(false);
   const [footer, setFooter] = useState(campaign.footer ?? "");
+  const [aiSystem, setAiSystem] = useState(campaign.sequence.ai_system_prompt ?? "");
+  const savedSystem = useRef(campaign.sequence.ai_system_prompt ?? "");
+  const [modeAsk, setModeAsk] = useState<null | "template" | "ai">(null);
+  const aiMode = campaign.content_mode === "ai";
   const [sel, setSel] = useState(0);
   const [save, setSave] = useState<"saved" | "dirty" | "saving" | "error">("saved");
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -133,10 +144,15 @@ export function Editor({
       delay_amount: i === 0 ? 0 : d.delay_amount,
       delay_type: d.delay_type,
       ai_slots: d.ai_slots,
+      ai_user_prompt: d.ai_user_prompt,
     };
   };
   /** Save the template (the steps and the variants of step 1). */
   const persist = useCallback(async () => {
+    if (aiSystem !== savedSystem.current) {
+      await http.patch("/v1/followups/sequences/{id}", { path: { id: seq.id }, body: { ai_system_prompt: aiSystem } });
+      savedSystem.current = aiSystem;
+    }
     await http.put(`/v1/followups/sequences/{id}/steps`, {
       path: { id: seq.id },
       body: {
@@ -148,7 +164,7 @@ export function Editor({
       },
     });
     void qc.invalidateQueries({ queryKey: ["campaigns", campaign.id] });
-  }, [steps, variants, thread]);
+  }, [steps, variants, thread, aiSystem]);
 
   // Autosave 1.5 s after the last change.
   useEffect(() => {
@@ -165,11 +181,26 @@ export function Editor({
         setSaveError(null);
       } catch (e) {
         setSave("error");
-        setSaveError(e instanceof ApiProblem ? (PROBLEM_WORDS[e.code] ?? e.message) : messageOf(e));
+        setSaveError(
+          e instanceof ApiProblem
+            ? e.code === "missing_variable"
+              ? e.message
+              : (PROBLEM_WORDS[e.code] ?? e.message)
+            : messageOf(e),
+        );
       }
     }, 1500);
     return () => clearTimeout(t);
-  }, [steps, variants]);
+  }, [steps, variants, aiSystem]);
+
+  async function changeMode(m: "template" | "ai") {
+    try {
+      await http.patch("/v1/campaigns/{id}", { path: { id: campaign.id }, body: { content_mode: m } });
+      await qc.invalidateQueries({ queryKey: ["campaigns", campaign.id] });
+    } catch (e) {
+      toast.error(messageOf(e));
+    }
+  }
 
   /** Save: the template, then the emails of every lead. */
   async function saveEmails(overwrite?: "keep_edited" | "all") {
@@ -177,6 +208,10 @@ export function Editor({
     try {
       await persist();
       setSave("saved");
+      if (aiMode) {
+        toast.success("Prompts saved. Use Generate to write the emails.");
+        return;
+      }
       const body = { overwrite: overwrite ?? "keep_edited" };
       if (!overwrite) {
         const est = await http.post<S["Estimate"]>("/v1/campaigns/{id}/emails/estimate", {
@@ -281,6 +316,7 @@ export function Editor({
         delay_amount: 3,
         delay_type: "business_days",
         ai_slots: [],
+        ai_user_prompt: "",
       },
     ]);
     setSel(steps.length);
@@ -325,6 +361,45 @@ export function Editor({
           This campaign is live. Changes apply to emails not written yet. Sent emails do not change.
         </Notice>
       )}
+      <div className="flex items-center gap-3">
+        <div role="group" aria-label="How the emails are written" className="flex rounded-(--radius-control) border border-border p-0.5 text-sm">
+          {(["template", "ai"] as const).map((m) => (
+            <button
+              key={m}
+              type="button"
+              aria-pressed={campaign.content_mode === m}
+              onClick={() => {
+                if (campaign.content_mode === m) return;
+                if (live) setModeAsk(m);
+                else void changeMode(m);
+              }}
+              className={cn("rounded px-3 py-1", campaign.content_mode === m && "bg-accent-soft font-medium")}
+            >
+              {m === "template" ? "Template" : "AI"}
+            </button>
+          ))}
+        </div>
+        <p className="text-xs text-muted">
+          {aiMode
+            ? "The AI writes each email from your prompts. Generate saves them per lead."
+            : "You write the email once. Save fills it for every lead."}
+        </p>
+        <div className="ml-auto flex items-center gap-3">
+              <span className="text-xs text-muted" role="status" aria-live="polite">
+                {save === "saving"
+                  ? "Saving..."
+                  : save === "dirty"
+                    ? "Not saved yet"
+                    : save === "error"
+                      ? "Not saved"
+                      : "Saved"}
+              </span>
+              <Button onClick={() => void saveEmails()} busy={saving} title="Ctrl/Cmd + S">
+                Save
+              </Button>
+        </div>
+      </div>
+      {save === "error" && saveError && <Notice tone="danger">{saveError}</Notice>}
       <div className="grid gap-5 lg:grid-cols-[280px_1fr]">
         {/* steps rail */}
         <aside className="flex flex-col gap-1" aria-label="Steps">
@@ -475,22 +550,25 @@ export function Editor({
         </aside>
 
         {/* editor */}
+        {aiMode ? (
+          <AiPanel
+            campaign={campaign}
+            stepIndex={Math.min(sel, steps.length - 1)}
+            userPrompt={steps[Math.min(sel, steps.length - 1)]?.ai_user_prompt ?? ""}
+            system={aiSystem}
+            onSystem={setAiSystem}
+            onUser={(v) => setSteps((all) => all.map((x, i) => (i === sel ? { ...x, ai_user_prompt: v } : x)))}
+            aiReady={!!aiReady}
+            onPreset={(p) => {
+              setAiSystem(p.system);
+              setSteps((all) => all.map((x, i) => ({ ...x, ai_user_prompt: p.steps[Math.min(i, p.steps.length - 1)] ?? "" })));
+            }}
+          />
+        ) : (
         <section className="flex min-w-0 flex-col gap-3" aria-label="Email editor">
           <div className="flex items-center justify-between">
             <h2 className="font-semibold">{sel === 0 ? "Email 1" : `Follow-up ${sel}`}</h2>
             <div className="flex items-center gap-3">
-              <span className="text-xs text-muted" role="status" aria-live="polite">
-                {save === "saving"
-                  ? "Saving..."
-                  : save === "dirty"
-                    ? "Not saved yet"
-                    : save === "error"
-                      ? "Not saved"
-                      : "Saved"}
-              </span>
-              <Button onClick={() => void saveEmails()} busy={saving} title="Ctrl/Cmd + S">
-                Save
-              </Button>
               <div
                 role="group"
                 aria-label="Body type"
@@ -517,7 +595,6 @@ export function Editor({
               </div>
             </div>
           </div>
-          {save === "error" && saveError && <Notice tone="danger">{saveError}</Notice>}
           {sel === 0 && (
             <div className="flex flex-wrap items-center gap-2" role="tablist" aria-label="Variants of the first email">
               {["A", ...variants.map((_, i) => ["B", "C", "D", "E"][i] as string)].map((k, idx) => {
@@ -662,6 +739,7 @@ export function Editor({
             />
           )}
           {parseError && <Notice tone="danger">{parseError}</Notice>}
+          <EmailScore text={cur.html ? htmlToText(sanitizeHtml(cur.body_html ?? "")) : cur.body_text} />
 
           <div className="flex flex-wrap items-center gap-2">
             <MenuRoot>
@@ -752,8 +830,18 @@ export function Editor({
             </div>
           )}
         </section>
+        )}
       </div>
 
+      <ConfirmDialog
+        open={modeAsk !== null}
+        onClose={() => setModeAsk(null)}
+        title="Change how the emails are written?"
+        text="This campaign is live. Only emails that are not sent yet change. Sent emails stay as they are."
+        danger={false}
+        confirmLabel="Change"
+        onConfirm={() => modeAsk && changeMode(modeAsk)}
+      />
       <AiPartDialog
         open={!!aiDialog}
         onClose={() => setAiDialog(null)}

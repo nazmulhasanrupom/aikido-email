@@ -5,6 +5,7 @@ import { ApiProblem, messageOf } from "@/api/errors";
 import { http, type S } from "@/api/http";
 import { Button, ErrorNote, Field, Modal, Pill, Skeleton, TextArea } from "@/components/ui";
 import { fmtDateTime } from "@/lib/format";
+import { EmailScore } from "./EmailScore";
 
 export const EMAIL_STATUS: Record<string, { word: string; tone: "neutral" | "success" | "warning" | "danger" | "accent" }> = {
   none: { word: "Not written", tone: "neutral" },
@@ -71,6 +72,16 @@ export function EmailDrawer({
     },
     onError: (err) => toast.error(messageOf(err)),
   });
+  const act = useMutation({
+    mutationFn: (action: "approve" | "regenerate" | "clear") =>
+      http.post<S["ActionReply"]>("/v1/campaigns/{id}/emails/actions", { path: { id: campaignId }, body: { action, ids: [e?.id ?? ""] } }),
+    onSuccess: (_r, action) => {
+      toast.success(action === "approve" ? "Approved." : action === "clear" ? "Cleared." : "Writing it again.");
+      void qc.invalidateQueries({ queryKey: ["campaigns", campaignId] });
+      if (action === "clear") onClose();
+    },
+    onError: (err) => toast.error(messageOf(err)),
+  });
   const words = bodyText.trim() ? bodyText.trim().split(/\s+/).length : 0;
   return (
     <Modal
@@ -83,6 +94,21 @@ export function EmailDrawer({
           <Button variant="secondary" onClick={onClose}>
             Close
           </Button>
+          {e && !sent && e.status === "review" && (
+            <Button variant="secondary" busy={act.isPending} onClick={() => act.mutate("approve")}>
+              Approve
+            </Button>
+          )}
+          {e && !sent && e.source === "ai" && (
+            <Button variant="secondary" busy={act.isPending} onClick={() => act.mutate("regenerate")}>
+              Write again
+            </Button>
+          )}
+          {e && !sent && (
+            <Button variant="ghost" busy={act.isPending} onClick={() => act.mutate("clear")}>
+              Clear
+            </Button>
+          )}
           {!sent && (
             <Button busy={save.isPending} onClick={() => save.mutate()}>
               Save by hand
@@ -114,6 +140,7 @@ export function EmailDrawer({
           ) : (
             <p className="text-sm text-muted">Sent in the same thread (Re: + the first subject).</p>
           )}
+          <EmailScore text={bodyText} />
           <TextArea
             label="Body"
             rows={14}

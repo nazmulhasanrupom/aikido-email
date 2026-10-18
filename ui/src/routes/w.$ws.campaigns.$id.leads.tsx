@@ -20,6 +20,7 @@ import {
   TD,
 } from "@/components/ui";
 import { campaignQuery } from "@/features/campaigns/hooks";
+import { GenerateDialog, RunProgress } from "@/features/campaigns/AiTools";
 import { EmailDrawer, StatusChip, stepName } from "@/features/campaigns/EmailDrawer";
 import { ImportModal } from "@/features/leads/ImportModal";
 import { AddColumn, ColumnHeader, ColumnsMenu, EditableCell, type GridCol, useColumns } from "@/features/leads/grid";
@@ -40,8 +41,13 @@ const BASE_COLS: GridCol[] = [
 
 const STATES = ["pending", "enrolled", "skipped"] as const;
 
-function followText(r: S["CampaignLeadRow"]): string {
-  if (r.state === "pending") return "Waiting to start";
+function followText(r: S["CampaignLeadRow"], ai: boolean): string {
+  if (r.state === "pending") {
+    const primary = r.emails.find((e) => e.step_number === 1);
+    return ai && !(primary && (primary.status === "ready" || primary.status === "stale"))
+      ? "Waiting for email"
+      : "Waiting to start";
+  }
   if (r.state === "skipped") return say("skip", r.skip_reason);
   if (r.enrollment_status === "stopped" || r.enrollment_status === "failed") return "Stopped";
   if (r.enrollment_status === "finished") return "Finished";
@@ -61,18 +67,20 @@ function CampaignLeads() {
     label: stepName(st.step_number),
   }));
   const cols = useColumns("campaign_leads", [...BASE_COLS, ...stepCols]);
+  const [genOpen, setGenOpen] = useState(false);
   const [openEmail, setOpenEmail] = useState<null | { lead: string; email: string; step: number }>(null);
   const [state, setState] = useState<string>("");
+  const [onlyMissing, setOnlyMissing] = useState(false);
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [menu, setMenu] = useState<null | "list" | "import">(null);
   const [listId, setListId] = useState("");
   const leads = useInfiniteQuery({
-    queryKey: ["campaigns", id, "leads", state],
+    queryKey: ["campaigns", id, "leads", state, onlyMissing],
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam }) =>
       http.get<S["CampaignLeadsReply"]>("/v1/campaigns/{id}/leads", {
         path: { id },
-        query: { state, limit: 50, cursor: pageParam },
+        query: { state, limit: 50, cursor: pageParam, ...(onlyMissing ? { missing: true } : {}) },
       }),
     getNextPageParam: (l) => l.next_cursor ?? undefined,
     refetchInterval: 15_000,
@@ -88,9 +96,23 @@ function CampaignLeads() {
     onSuccess: refresh,
     onError: (e) => toast.error(messageOf(e)),
   });
+  const pendingPicked = rows.filter((r) => picked.has(r.lead_id) && r.state === "pending").map((r) => r.lead_id);
+  const needReview = rows.some((r) => r.emails.some((e) => e.status === "review"));
+  const approveAll = useMutation({
+    mutationFn: () =>
+      http.post<S["ActionReply"]>("/v1/campaigns/{id}/emails/actions", {
+        path: { id },
+        body: { action: "approve", filter: { status: "review" } },
+      }),
+    onSuccess: (r) => {
+      toast.success(`${r.changed} approved.`);
+      refresh();
+    },
+    onError: (e) => toast.error(messageOf(e)),
+  });
   const remove = useMutation({
     mutationFn: () =>
-      http.del("/v1/campaigns/{id}/leads", { path: { id }, body: { lead_ids: [...picked] } }),
+      http.del("/v1/campaigns/{id}/leads", { path: { id }, body: { lead_ids: pendingPicked } }),
     onSuccess: () => {
       setPicked(new Set());
       refresh();
@@ -138,10 +160,28 @@ function CampaignLeads() {
             {say("campaignLead", s)} {counts ? counts[s] : ""}
           </button>
         ))}
+        <button
+          type="button"
+          aria-pressed={onlyMissing}
+          onClick={() => setOnlyMissing(!onlyMissing)}
+          className={`rounded-full border px-3 py-1 text-sm ${onlyMissing ? "border-accent bg-accent-soft" : "border-border"}`}
+        >
+          Missing a value used in your emails
+        </button>
         <div className="ml-auto flex gap-2">
-          {picked.size > 0 && (
+          {pendingPicked.length > 0 && (
             <Button variant="secondary" busy={remove.isPending} onClick={() => remove.mutate()}>
-              Remove {picked.size} pending
+              Remove {pendingPicked.length} pending
+            </Button>
+          )}
+          {needReview && (
+            <Button variant="secondary" busy={approveAll.isPending} onClick={() => approveAll.mutate()}>
+              Approve all that need review
+            </Button>
+          )}
+          {camp.data?.content_mode === "ai" && (
+            <Button variant="secondary" onClick={() => setGenOpen(true)}>
+              Generate emails{picked.size > 0 ? ` for ${picked.size}` : ""}
             </Button>
           )}
           <ColumnsMenu cols={cols} />
@@ -160,6 +200,7 @@ function CampaignLeads() {
           </a>
         </div>
       </div>
+      <RunProgress campaignId={id} />
       {leads.isPending && <Skeleton />}
       {leads.isError && <ErrorNote error={leads.error} />}
       {leads.data && rows.length === 0 && (
@@ -171,6 +212,7 @@ function CampaignLeads() {
             cols={[
               "",
               ...cols.visible.map((c) => <ColumnHeader key={c.id} col={c} />),
+              ...(onlyMissing ? ["Fill in"] : []),
               <AddColumn key="add" />,
             ]}
           />
@@ -178,18 +220,16 @@ function CampaignLeads() {
             {rows.map((r) => (
               <tr key={r.lead_id} className="border-t border-border">
                 <td className={TD}>
-                  {r.state === "pending" && (
-                    <input
-                      type="checkbox"
-                      aria-label={`Select ${r.email}`}
-                      checked={picked.has(r.lead_id)}
-                      onChange={(e) => {
-                        const n = new Set(picked);
-                        e.target.checked ? n.add(r.lead_id) : n.delete(r.lead_id);
-                        setPicked(n);
-                      }}
-                    />
-                  )}
+                  <input
+                    type="checkbox"
+                    aria-label={`Select ${r.email}`}
+                    checked={picked.has(r.lead_id)}
+                    onChange={(e) => {
+                      const n = new Set(picked);
+                      e.target.checked ? n.add(r.lead_id) : n.delete(r.lead_id);
+                      setPicked(n);
+                    }}
+                  />
                 </td>
                 {cols.visible.map((c) => (
                   <td key={c.id} className={TD}>
@@ -203,7 +243,7 @@ function CampaignLeads() {
                     ) : c.id === "state" ? (
                       <Pill>{say("campaignLead", r.state)}</Pill>
                     ) : c.id === "follow" ? (
-                      followText(r)
+                      followText(r, camp.data?.content_mode === "ai")
                     ) : c.id === "interest" ? (
                       r.interest ? (
                         <Pill tone="accent">{say("interest", r.interest)}</Pill>
@@ -235,6 +275,21 @@ function CampaignLeads() {
                     )}
                   </td>
                 ))}
+                {onlyMissing && (
+                  <td className={TD}>
+                    <div className="flex flex-col gap-1">
+                      {r.missing.map((name) => {
+                        const known = cols.all.find((c) => c.id === name || c.id === `custom:${name}`);
+                        return (
+                          <div key={name} className="flex items-center gap-2">
+                            <span className="w-28 truncate text-xs text-muted">{name}</span>
+                            <EditableCell lead={{ ...r, id: r.lead_id }} col={known ?? { id: name, label: name }} inCampaign />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </td>
+                )}
                 <td className={TD}>
                   {r.enrollment_id && (
                     <MenuRoot>
@@ -322,6 +377,9 @@ function CampaignLeads() {
         }}
         campaignId={id}
       />
+      {camp.data && (
+        <GenerateDialog open={genOpen} onClose={() => setGenOpen(false)} campaign={camp.data} selected={[...picked]} />
+      )}
       <EmailDrawer
         campaignId={id}
         leadId={openEmail?.lead ?? null}

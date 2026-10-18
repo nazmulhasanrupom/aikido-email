@@ -57,6 +57,11 @@ fn default_answer(req: &LlmRequest) -> Result<LlmResponse, LlmError> {
             .collect();
         return Ok(response(json!({ "steps": steps }).to_string()));
     }
+    if let Some(spec) = between(&req.system, "email_request") {
+        let step = serde_json::from_str::<Value>(spec).ok().and_then(|v| v["step"].as_u64()).unwrap_or(1);
+        let subject = if req.system.contains("set \"subject\" to an empty string") { String::new() } else { "Fake subject".to_string() };
+        return Ok(response(json!({ "subject": subject, "body": format!("Fake email body for step {step}.") }).to_string()));
+    }
     let keys: Vec<String> = between(&req.system, "slots")
         .and_then(|s| serde_json::from_str::<Vec<Value>>(s).ok())
         .map(|v| v.iter().filter_map(|s| s["key"].as_str().map(String::from)).collect())

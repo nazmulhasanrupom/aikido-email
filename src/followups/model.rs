@@ -46,7 +46,7 @@ impl EnrollmentStatus {
     }
 }
 
-pub const SEQUENCE_COLS: &str = "id, name, status, stop_on_auto_reply, auto_reply_pause_days, thread_followups, campaign_id, brief, created_at, updated_at";
+pub const SEQUENCE_COLS: &str = "id, name, status, stop_on_auto_reply, auto_reply_pause_days, thread_followups, campaign_id, brief, ai_system_prompt, variant_a_active, created_at, updated_at";
 
 #[derive(Clone, Debug, FromRow, Serialize, ToSchema)]
 pub struct Sequence {
@@ -62,11 +62,15 @@ pub struct Sequence {
     pub campaign_id: Option<Uuid>,
     /// What the Email Generator knows about the sender: product, offer, audience. Used in the prompt of the AI slots.
     pub brief: Option<String>,
+    /// AI mode: the system prompt for all steps of the campaign. Up to 8000 characters.
+    pub ai_system_prompt: Option<String>,
+    /// Variant A is step 1 itself. `false`: it gets no new leads (another variant must be on).
+    pub variant_a_active: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
 
-pub const STEP_COLS: &str = "id, sequence_id, step_number, delay_amount, delay_type, subject, body_text, body_html, ai_slots, updated_at";
+pub const STEP_COLS: &str = "id, sequence_id, step_number, delay_amount, delay_type, subject, body_text, body_html, ai_slots, ai_user_prompt, updated_at";
 
 #[derive(Clone, Debug, FromRow, Serialize, ToSchema)]
 pub struct SequenceStep {
@@ -84,6 +88,8 @@ pub struct SequenceStep {
     /// The AI slots of the step: `[{key, instruction, max_words, allow_links, fallback}]`. See `{{ai:key}}`.
     #[schema(value_type = Vec<crate::generator::slots::AiSlot>)]
     pub ai_slots: Value,
+    /// AI mode: the user prompt of this step. Up to 8000 characters.
+    pub ai_user_prompt: Option<String>,
     pub updated_at: DateTime<Utc>,
 }
 
