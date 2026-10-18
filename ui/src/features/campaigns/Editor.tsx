@@ -1,7 +1,36 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  ArrowDown,
+  ArrowUp,
+  Brush,
+  Check,
+  Code,
+  Copy,
+  Eye,
+  Image,
+  Link,
+  Monitor,
+  Plus,
+  Power,
+  Rocket,
+  Smartphone,
+  Sparkles,
+  Stamp,
+  Trash2,
+  Type,
+  UserRound,
+  Zap,
+} from "lucide-react";
+import {
+  type ButtonHTMLAttributes,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { toast } from "sonner";
-import { ArrowDown, ArrowUp, Braces, Plus, Sparkles, Trash2 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiProblem, messageOf } from "@/api/errors";
 import { http, type S } from "@/api/http";
 import { q } from "@/api/queries";
@@ -19,9 +48,9 @@ import { htmlToText, sanitizeHtml, textToHtml } from "@/lib/html";
 import { aiKeys, BUILTIN_VARS, variables, withFallback } from "@/lib/template";
 import { PROBLEM_WORDS } from "@/lib/words";
 import { AiPanel } from "./AiPanel";
-import { ModeSwitch } from "./ModeSwitch";
-import { EmailScore } from "./EmailScore";
 import { AiPartDialog } from "./AiPartDialog";
+import { EmailScore } from "./EmailScore";
+import { ModeSwitch } from "./ModeSwitch";
 import { type Brief, BriefForm, EMPTY_BRIEF } from "./NewCampaign";
 import { PreviewDrawer } from "./PreviewDrawer";
 
@@ -123,6 +152,8 @@ export function Editor({
   const [toText, setToText] = useState(false);
   const [brief, setBrief] = useState(seq.brief ?? "");
   const area = useRef<HTMLTextAreaElement>(null);
+  const subjectRef = useRef<HTMLInputElement>(null);
+  const [device, setDevice] = useState<"desktop" | "mobile">("desktop");
   const cursor = useRef<number | null>(null);
   const first = useRef(true);
   const onVariant = sel === 0 && vsel >= 0 && !!variants[vsel];
@@ -150,7 +181,10 @@ export function Editor({
   /** Save the template (the steps and the variants of step 1). */
   const persist = useCallback(async () => {
     if (aiSystem !== savedSystem.current) {
-      await http.patch("/v1/followups/sequences/{id}", { path: { id: seq.id }, body: { ai_system_prompt: aiSystem } });
+      await http.patch("/v1/followups/sequences/{id}", {
+        path: { id: seq.id },
+        body: { ai_system_prompt: aiSystem },
+      });
       savedSystem.current = aiSystem;
     }
     await http.put(`/v1/followups/sequences/{id}/steps`, {
@@ -254,7 +288,12 @@ export function Editor({
     const key = ["B", "C", "D", "E"][variants.length];
     setVariants([
       ...variants,
-      { ...base, id: uid(), name: copy ? `${copy.name || "Copy"} copy` : (key ?? ""), active: true },
+      {
+        ...base,
+        id: uid(),
+        name: copy ? `${copy.name || "Copy"} copy` : (key ?? ""),
+        active: true,
+      },
     ]);
     setVsel(variants.length);
   }
@@ -274,6 +313,37 @@ export function Editor({
       area.current?.focus();
       area.current?.setSelectionRange(cursor.current ?? 0, cursor.current ?? 0);
     });
+  }
+  /** Put text into the subject where the cursor was (or at the end). */
+  function insertSubject(text: string) {
+    if (!cur) return;
+    const el = subjectRef.current;
+    const at = el?.selectionStart ?? cur.subject.length;
+    patch({ subject: cur.subject.slice(0, at) + text + cur.subject.slice(at) });
+    requestAnimationFrame(() => {
+      el?.focus();
+      el?.setSelectionRange(at + text.length, at + text.length);
+    });
+  }
+  function addLink() {
+    const u = window.prompt("Link address (https://...)")?.trim();
+    if (!u) return;
+    if (cur?.html) wrap(`<a href="${u.replace(/"/g, "")}">`, "</a>");
+    else insert(u);
+  }
+  function addImage() {
+    const u = window.prompt("Picture address (https://...)")?.trim();
+    if (!u) return;
+    if (!/^https:\/\//i.test(u)) {
+      toast.error("Use a picture address that starts with https://");
+      return;
+    }
+    insert(`<img src="${u.replace(/"/g, "")}" alt="">`);
+  }
+  function setHtml(on: boolean) {
+    if (!cur || cur.html === on) return;
+    if (on) patch({ html: true, body_html: textToHtml(cur.body_text) });
+    else setToText(true);
   }
   function wrap(open: string, close: string) {
     const el = area.current;
@@ -345,8 +415,11 @@ export function Editor({
   const showSubject = sel === 0 || !thread;
   const live = campaign.status === "active" || campaign.status === "paused";
 
+  const stepName = sel === 0 ? "Email 1" : `Follow-up ${sel}`;
+  const variantKeys = ["A", ...variants.map((_, i) => ["B", "C", "D", "E"][i] as string)];
+
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-4">
       {live && (
         <Notice tone="info">
           This campaign is live. Changes apply to emails not written yet. Sent emails do not change.
@@ -355,39 +428,41 @@ export function Editor({
       <div className="flex items-center gap-3">
         <ModeSwitch campaign={campaign} />
         <div className="ml-auto flex items-center gap-3">
-              <span className="text-xs text-muted" role="status" aria-live="polite">
-                {save === "saving"
-                  ? "Saving..."
-                  : save === "dirty"
-                    ? "Not saved yet"
-                    : save === "error"
-                      ? "Not saved"
-                      : "Saved"}
-              </span>
-              <Button onClick={() => void saveEmails()} busy={saving} title="Ctrl/Cmd + S">
-                Save
-              </Button>
+          <span
+            className="flex items-center gap-1.5 text-xs text-muted"
+            role="status"
+            aria-live="polite"
+          >
+            <span
+              aria-hidden="true"
+              className={cn(
+                "size-1.5 rounded-full transition-colors duration-300",
+                save === "saved" && "bg-success",
+                save === "error" && "bg-danger",
+                (save === "dirty" || save === "saving") && "animate-pulse bg-warning",
+              )}
+            />
+            {save === "saving"
+              ? "Saving..."
+              : save === "dirty"
+                ? "Not saved yet"
+                : save === "error"
+                  ? "Not saved"
+                  : "Saved"}
+          </span>
+          <Button onClick={() => void saveEmails()} busy={saving} title="Ctrl/Cmd + S">
+            Save
+          </Button>
         </div>
       </div>
       {save === "error" && saveError && <Notice tone="danger">{saveError}</Notice>}
-      <div className="grid gap-5 lg:grid-cols-[280px_1fr]">
+      <div className="grid gap-6 lg:grid-cols-[232px_1fr]">
         {/* steps rail */}
         <aside className="flex flex-col gap-1" aria-label="Steps">
-          <div className="mb-1 flex justify-end">
-            <Button
-              variant="ghost"
-              className="h-7"
-              disabled={!aiReady}
-              title={aiReady ? undefined : "Set up an AI model first"}
-              onClick={() => setWriteAi(true)}
-            >
-              <Sparkles size={14} /> Write with AI
-            </Button>
-          </div>
           {steps.map((s, i) => (
-            <div key={s.id}>
+            <div key={s.id} className="animate-rise-in" style={{ animationDelay: `${i * 40}ms` }}>
               {i > 0 && (
-                <div className="my-1 flex items-center gap-2 pl-3 text-xs text-muted">
+                <div className="my-1.5 flex items-center gap-1.5 border-l border-dashed border-border py-1 pl-3 text-xs text-muted">
                   wait
                   <input
                     aria-label={`Days to wait before follow-up ${i}`}
@@ -402,7 +477,7 @@ export function Editor({
                         ),
                       )
                     }
-                    className="h-7 w-14 rounded border border-border bg-surface-2 px-1.5 text-text"
+                    className="h-7 w-12 rounded border border-border bg-surface-2 px-1.5 text-text"
                   />
                   <select
                     aria-label={`Kind of days before follow-up ${i}`}
@@ -423,8 +498,10 @@ export function Editor({
               )}
               <div
                 className={cn(
-                  "flex items-center gap-1 rounded-(--radius-control) border px-2 py-1.5",
-                  i === sel ? "border-accent bg-accent-soft" : "border-border",
+                  "group flex items-center gap-1 rounded-(--radius-card) border px-2.5 py-2 transition-[background-color,border-color,box-shadow] duration-200",
+                  i === sel
+                    ? "border-accent/70 bg-accent-soft shadow-(--shadow-card)"
+                    : "border-border bg-surface hover:border-text/20",
                 )}
               >
                 <button
@@ -433,89 +510,108 @@ export function Editor({
                     setSel(i);
                     cursor.current = null;
                   }}
-                  className="flex-1 truncate text-left text-sm"
+                  className="min-w-0 flex-1 truncate text-left text-sm"
                   aria-current={i === sel}
                 >
                   <span className="font-medium">{i === 0 ? "Email 1" : `Follow-up ${i}`}</span>
                   <span className="block truncate text-xs text-muted">
-                    {(i === 0 || !thread ? s.subject : "") || body(s).slice(0, 40)}
+                    {(i === 0 || !thread ? s.subject : "") || body(s).slice(0, 40) || "Empty"}
                   </span>
                 </button>
-                {i > 0 && (
-                  <>
+                <span className="flex opacity-0 transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100">
+                  {i > 0 && (
+                    <>
+                      <button
+                        type="button"
+                        aria-label={`Move step ${i + 1} up`}
+                        className="rounded p-1 text-muted hover:bg-surface-2 hover:text-text disabled:opacity-30"
+                        onClick={() => move(i, -1)}
+                        disabled={i < 2}
+                      >
+                        <ArrowUp size={13} />
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`Move step ${i + 1} down`}
+                        className="rounded p-1 text-muted hover:bg-surface-2 hover:text-text disabled:opacity-30"
+                        onClick={() => move(i, 1)}
+                        disabled={i === steps.length - 1}
+                      >
+                        <ArrowDown size={13} />
+                      </button>
+                    </>
+                  )}
+                  {steps.length > 1 && (
                     <button
                       type="button"
-                      aria-label={`Move step ${i + 1} up`}
-                      className="rounded p-1 text-muted hover:bg-surface-2"
-                      onClick={() => move(i, -1)}
-                      disabled={i < 2}
+                      aria-label={`Delete step ${i + 1}`}
+                      className="rounded p-1 text-muted hover:bg-danger/15 hover:text-danger"
+                      onClick={() => setDel(i)}
                     >
-                      <ArrowUp size={13} />
+                      <Trash2 size={13} />
                     </button>
-                    <button
-                      type="button"
-                      aria-label={`Move step ${i + 1} down`}
-                      className="rounded p-1 text-muted hover:bg-surface-2"
-                      onClick={() => move(i, 1)}
-                      disabled={i === steps.length - 1}
-                    >
-                      <ArrowDown size={13} />
-                    </button>
-                  </>
-                )}
-                {steps.length > 1 && (
-                  <button
-                    type="button"
-                    aria-label={`Delete step ${i + 1}`}
-                    className="rounded p-1 text-muted hover:bg-surface-2"
-                    onClick={() => setDel(i)}
-                  >
-                    <Trash2 size={13} />
-                  </button>
-                )}
+                  )}
+                </span>
               </div>
             </div>
           ))}
           <Button
-            variant="secondary"
-            className="mt-2"
+            variant="ghost"
+            className="mt-1 justify-start border border-dashed border-border text-muted hover:text-text"
             onClick={addStep}
             disabled={steps.length >= 10}
           >
             <Plus size={14} /> Add follow-up
           </Button>
-          <div className="mt-4">
-            <TextArea
-              label="About your offer"
-              maxLength={4000}
-              value={brief}
-              onChange={(e) => setBrief(e.target.value)}
-              onBlur={() =>
-                brief !== (seq.brief ?? "") &&
-                http
-                  .patch("/v1/followups/sequences/{id}", { path: { id: seq.id }, body: { brief } })
-                  .catch(() => {})
-              }
-              help="The AI reads this when it writes AI parts."
-            />
-          </div>
-          <div className="mt-4">
-            <TextArea
-              label="Footer"
-              maxLength={2000}
-              rows={3}
-              value={footer}
-              placeholder={"{{sender_name}}"}
-              onChange={(e) => setFooter(e.target.value)}
-              onBlur={() =>
-                footer !== (campaign.footer ?? "") &&
-                http
-                  .patch("/v1/campaigns/{id}", { path: { id: campaign.id }, body: { footer } })
-                  .then(() => qc.invalidateQueries({ queryKey: ["campaigns", campaign.id] }))
-                  .catch((e) => toast.error(messageOf(e)))
-              }
-              help="Added under every email: a signature or an opt-out line. Save writes it into the emails."
-            />
+          {aiMode && (
+            <Button
+              variant="ghost"
+              className="justify-start"
+              disabled={!aiReady}
+              title={aiReady ? undefined : "Set up an AI model first"}
+              onClick={() => setWriteAi(true)}
+            >
+              <Sparkles size={14} /> Write with AI
+            </Button>
+          )}
+          <div className="mt-5 flex flex-col gap-2 border-t border-border pt-4">
+            <Fold title="About your offer" hint="The AI reads this when it writes AI parts.">
+              <TextArea
+                label="About your offer"
+                maxLength={4000}
+                value={brief}
+                onChange={(e) => setBrief(e.target.value)}
+                onBlur={() =>
+                  brief !== (seq.brief ?? "") &&
+                  http
+                    .patch("/v1/followups/sequences/{id}", {
+                      path: { id: seq.id },
+                      body: { brief },
+                    })
+                    .catch(() => {})
+                }
+              />
+            </Fold>
+            <Fold
+              title="Footer"
+              hint="Added under every email: a signature or an opt-out line. Save writes it into the emails."
+            >
+              <TextArea
+                label="Footer"
+                maxLength={2000}
+                rows={3}
+                value={footer}
+                placeholder={"{{sender_name}}"}
+                onChange={(e) => setFooter(e.target.value)}
+                onBlur={() =>
+                  footer !== (campaign.footer ?? "") &&
+                  http
+                    .patch("/v1/campaigns/{id}", { path: { id: campaign.id }, body: { footer } })
+                    .then(() => qc.invalidateQueries({ queryKey: ["campaigns", campaign.id] }))
+                    .catch((e) => toast.error(messageOf(e)))
+                }
+              />
+            </Fold>
           </div>
         </aside>
 
@@ -527,282 +623,371 @@ export function Editor({
             userPrompt={steps[Math.min(sel, steps.length - 1)]?.ai_user_prompt ?? ""}
             system={aiSystem}
             onSystem={setAiSystem}
-            onUser={(v) => setSteps((all) => all.map((x, i) => (i === sel ? { ...x, ai_user_prompt: v } : x)))}
+            onUser={(v) =>
+              setSteps((all) => all.map((x, i) => (i === sel ? { ...x, ai_user_prompt: v } : x)))
+            }
             aiReady={!!aiReady}
             onPreset={(p) => {
               setAiSystem(p.system);
-              setSteps((all) => all.map((x, i) => ({ ...x, ai_user_prompt: p.steps[Math.min(i, p.steps.length - 1)] ?? "" })));
+              setSteps((all) =>
+                all.map((x, i) => ({
+                  ...x,
+                  ai_user_prompt: p.steps[Math.min(i, p.steps.length - 1)] ?? "",
+                })),
+              );
             }}
           />
         ) : (
-        <section className="flex min-w-0 flex-col gap-3" aria-label="Email editor">
-          <div className="flex items-center justify-between">
-            <h2 className="font-semibold">{sel === 0 ? "Email 1" : `Follow-up ${sel}`}</h2>
-            <div className="flex items-center gap-3">
-              <div
-                role="group"
-                aria-label="Body type"
-                className="flex rounded-(--radius-control) border border-border p-0.5 text-sm"
-              >
-                {(["Text", "HTML"] as const).map((m) => (
-                  <button
-                    key={m}
-                    type="button"
-                    aria-pressed={cur.html === (m === "HTML")}
-                    onClick={() => {
-                      if (cur.html === (m === "HTML")) return;
-                      if (m === "HTML") patch({ html: true, body_html: textToHtml(cur.body_text) });
-                      else setToText(true);
+          <div className="grid min-w-0 gap-6 xl:grid-cols-[minmax(0,1fr)_216px]">
+            <section
+              key={`${sel}:${vsel}`}
+              className="animate-rise-in flex min-w-0 flex-col gap-3"
+              aria-label={`Editor: ${stepName}`}
+            >
+              {/* subject */}
+              {showSubject ? (
+                <div className="flex h-12 items-center gap-2 rounded-(--radius-card) border border-border bg-surface pl-2 pr-1.5 shadow-(--shadow-card) focus-within:border-accent/70">
+                  <label
+                    htmlFor="email-subject"
+                    className="flex shrink-0 items-center gap-1 rounded-md bg-accent-soft px-2 py-1 text-xs font-medium"
+                  >
+                    <Zap size={12} className="text-accent" aria-hidden="true" /> Subject
+                  </label>
+                  <input
+                    id="email-subject"
+                    ref={subjectRef}
+                    value={cur.subject}
+                    onChange={(e) => patch({ subject: e.target.value })}
+                    placeholder="Quick question, {{first_name|there}}"
+                    className="h-full min-w-0 flex-1 bg-transparent text-sm outline-none focus-visible:shadow-none"
+                  />
+                  <VarMenu fields={fields.data} onPick={insertSubject}>
+                    <Tool
+                      label="Add a variable to the subject"
+                      className="size-8 border-0 shadow-none"
+                    >
+                      <Zap size={15} />
+                    </Tool>
+                  </VarMenu>
+                </div>
+              ) : (
+                <div className="flex h-12 items-center rounded-(--radius-card) border border-dashed border-border px-4 text-sm text-muted">
+                  Sent as a reply in the same thread (Re: + the first subject).
+                </div>
+              )}
+
+              {/* body */}
+              <div className="overflow-hidden rounded-(--radius-card) border border-border bg-surface shadow-(--shadow-card) transition-[border-color] duration-200 focus-within:border-accent/70">
+                <div
+                  className={cn(
+                    "mx-auto transition-[max-width] duration-300 ease-(--ease-out-soft)",
+                    device === "mobile" ? "max-w-[390px]" : "max-w-full",
+                  )}
+                >
+                  <textarea
+                    ref={area}
+                    aria-label="Body"
+                    value={body(cur)}
+                    rows={16}
+                    spellCheck
+                    placeholder="Write your email..."
+                    onChange={(e) => setBody(e.target.value)}
+                    onSelect={(e) => {
+                      cursor.current = (e.target as HTMLTextAreaElement).selectionStart;
+                    }}
+                    onBlur={(e) => {
+                      cursor.current = e.target.selectionStart;
                     }}
                     className={cn(
-                      "rounded px-2.5 py-0.5",
-                      cur.html === (m === "HTML") && "bg-accent-soft font-medium",
+                      "block min-h-[380px] w-full resize-y border-0 bg-transparent px-6 py-5 leading-relaxed outline-none focus-visible:shadow-none",
+                      cur.html && "font-mono text-[13px]",
+                      device === "mobile" && "border-x border-dashed border-border",
                     )}
-                  >
-                    {m}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-          {sel === 0 && (
-            <div className="flex flex-wrap items-center gap-2" role="tablist" aria-label="Variants of the first email">
-              {["A", ...variants.map((_, i) => ["B", "C", "D", "E"][i] as string)].map((k, idx) => {
-                const v = idx === 0 ? null : variants[idx - 1];
-                return (
-                  <button
-                    key={k}
-                    type="button"
-                    role="tab"
-                    aria-selected={vsel === idx - 1}
-                    onClick={() => setVsel(idx - 1)}
-                    className={cn(
-                      "rounded-full border px-3 py-1 text-sm",
-                      vsel === idx - 1 ? "border-accent bg-accent-soft font-medium" : "border-border",
-                      v && v.active === false && "opacity-60",
-                    )}
-                  >
-                    {k}
-                    {v?.name && v.name !== k ? ` ${v.name}` : ""}
-                    {v && v.active === false ? " (off)" : ""}
-                  </button>
-                );
-              })}
-              {variants.length < 4 && (
-                <button
-                  type="button"
-                  aria-label="Add a variant"
-                  className="rounded-full border border-dashed border-border px-3 py-1 text-sm"
-                  onClick={() => addVariant()}
-                >
-                  +
-                </button>
-              )}
-            </div>
-          )}
-          {onVariant && (
-            <div className="flex flex-wrap items-end gap-2">
-              <div className="w-48">
-                <Field
-                  label="Variant name"
-                  value={cur.name ?? ""}
-                  maxLength={40}
-                  onChange={(e) => patch({ name: e.target.value })}
-                />
-              </div>
-              <Button variant="secondary" onClick={() => addVariant(cur)} disabled={variants.length >= 4}>
-                Duplicate
-              </Button>
-              <Button variant="secondary" onClick={() => patch({ active: !(cur.active ?? true) })}>
-                {cur.active === false ? "Turn on" : "Turn off"}
-              </Button>
-              <Button variant="secondary" onClick={removeVariant}>
-                Delete
-              </Button>
-              <p className="text-xs text-muted">
-                {cur.active === false ? "Off: gets no new leads." : "Leads are split evenly between the variants."}
-              </p>
-            </div>
-          )}
-          {showSubject ? (
-            <Field
-              label="Subject"
-              value={cur.subject}
-              onChange={(e) => patch({ subject: e.target.value })}
-              placeholder="Quick question, {{first_name|there}}"
-            />
-          ) : (
-            <p className="text-sm text-muted">
-              Sent as a reply in the same thread (Re: + the first subject).
-            </p>
-          )}
-          {cur.html && (
-            <div className="flex gap-1" role="toolbar" aria-label="Format">
-              <Button
-                variant="secondary"
-                className="h-7 font-bold"
-                onClick={() => wrap("<b>", "</b>")}
-                aria-label="Bold"
-              >
-                B
-              </Button>
-              <Button
-                variant="secondary"
-                className="h-7 italic"
-                onClick={() => wrap("<i>", "</i>")}
-                aria-label="Italic"
-              >
-                I
-              </Button>
-              <Button
-                variant="secondary"
-                className="h-7"
-                onClick={() => {
-                  const u = window.prompt("Link address (https://...)");
-                  if (u) wrap(`<a href="${u.replace(/"/g, "")}">`, "</a>");
-                }}
-              >
-                Link
-              </Button>
-              <Button
-                variant="secondary"
-                className="h-7"
-                onClick={() => wrap("<ul><li>", "</li></ul>")}
-              >
-                List
-              </Button>
-              <Button
-                variant="secondary"
-                className="h-7"
-                onClick={() => wrap("<ol><li>", "</li></ol>")}
-              >
-                Numbered
-              </Button>
-            </div>
-          )}
-          <label className="flex flex-col gap-1.5 text-sm">
-            <span className="font-medium">Body</span>
-            <textarea
-              ref={area}
-              value={body(cur)}
-              rows={14}
-              spellCheck
-              onChange={(e) => setBody(e.target.value)}
-              onSelect={(e) => {
-                cursor.current = (e.target as HTMLTextAreaElement).selectionStart;
-              }}
-              onBlur={(e) => {
-                cursor.current = e.target.selectionStart;
-              }}
-              className={cn(
-                "w-full rounded-(--radius-control) border border-border bg-surface-2 p-3 leading-relaxed",
-                cur.html && "font-mono text-[13px]",
-              )}
-            />
-          </label>
-          {cur.html && (
-            <iframe
-              title="How the email looks"
-              sandbox=""
-              srcDoc={sanitizeHtml(cur.body_html ?? "")}
-              className="h-40 w-full rounded border border-border bg-white"
-            />
-          )}
-          {parseError && <Notice tone="danger">{parseError}</Notice>}
-          <EmailScore text={cur.html ? htmlToText(sanitizeHtml(cur.body_html ?? "")) : cur.body_text} />
-
-          <div className="flex flex-wrap items-center gap-2">
-            <MenuRoot>
-              <MenuTrigger className="inline-flex h-9 items-center gap-2 rounded-(--radius-control) border border-border bg-surface px-3 text-sm font-medium hover:bg-surface-2">
-                <Braces size={14} /> Variable
-              </MenuTrigger>
-              <MenuContent align="start" className="max-h-80 overflow-auto">
-                <MenuLabel>Lead</MenuLabel>
-                {LEAD_VARS.map((v) => (
-                  <MenuItem key={v} onSelect={() => insert(`{{${v}}}`)}>
-                    {v}
-                  </MenuItem>
-                ))}
-                {(fields.data?.length ?? 0) > 0 && (
-                  <>
-                    <MenuSeparator />
-                    <MenuLabel>Custom fields</MenuLabel>
-                    {fields.data?.map((f) => (
-                      <MenuItem key={f.key} onSelect={() => insert(`{{${f.key}}}`)}>
-                        {f.label || f.key}
-                      </MenuItem>
-                    ))}
-                  </>
+                  />
+                </div>
+                {cur.html && (
+                  <div className="border-t border-border bg-surface-2 p-3">
+                    <p className="mb-2 text-xs font-medium text-muted">How the email looks</p>
+                    <iframe
+                      title="How the email looks"
+                      sandbox=""
+                      srcDoc={sanitizeHtml(cur.body_html ?? "")}
+                      className={cn(
+                        "mx-auto h-48 w-full rounded border border-border bg-white transition-[max-width] duration-300",
+                        device === "mobile" ? "max-w-[390px]" : "max-w-full",
+                      )}
+                    />
+                  </div>
                 )}
-                <MenuSeparator />
-                <MenuLabel>Sender</MenuLabel>
-                <MenuItem onSelect={() => insert("{{sender_name}}")}>sender_name</MenuItem>
-                <MenuItem onSelect={() => insert("{{sender_email}}")}>sender_email</MenuItem>
-                <MenuSeparator />
-                <MenuLabel>Recipient</MenuLabel>
-                <MenuItem onSelect={() => insert("{{email}}")}>email</MenuItem>
-                <MenuItem onSelect={() => insert("{{unsubscribe}}")}>unsubscribe link</MenuItem>
-              </MenuContent>
-            </MenuRoot>
-            <Button
-              variant="secondary"
-              className="text-ai"
-              disabled={!aiReady}
-              title={aiReady ? undefined : "Set up AI first"}
-              onClick={() => setAiDialog({ slot: null })}
-            >
-              <Sparkles size={14} /> {aiReady ? "AI part" : "Set up AI first"}
-            </Button>
-            <Button variant="secondary" onClick={() => setPreview(true)}>
-              Preview
-            </Button>
-          </div>
+              </div>
 
-          {(vars.length > 0 || keys.length > 0) && (
-            <div className="flex flex-wrap gap-1.5" aria-label="Variables in this email">
-              {vars.map((v, i) => (
-                <VarChip
-                  key={`${v.raw}-${i}`}
-                  name={v.name}
-                  fallback={
-                    v.raw.includes("|") ? v.raw.slice(v.raw.indexOf("|") + 1, -2).trim() : ""
-                  }
-                  unknown={!known.has(v.name)}
-                  onFallback={(fb) =>
-                    setSteps((all) =>
-                      all.map((s, k) =>
-                        k === sel
-                          ? {
-                              ...s,
-                              subject: withFallback(s.subject, v.raw, fb),
-                              body_text: withFallback(s.body_text, v.raw, fb),
-                              body_html: s.body_html ? withFallback(s.body_html, v.raw, fb) : null,
-                            }
-                          : s,
-                      ),
-                    )
-                  }
-                />
-              ))}
-              {keys.map((k) => (
-                <button
-                  key={k}
-                  type="button"
-                  onClick={() =>
-                    setAiDialog({
-                      slot: cur.ai_slots.find((s) => s.key === k) ?? { key: k, instruction: "" },
-                    })
-                  }
-                  className="inline-flex items-center gap-1 rounded-full bg-ai/15 px-2.5 py-0.5 text-xs font-medium text-ai"
+              {parseError && <Notice tone="danger">{parseError}</Notice>}
+              <EmailScore
+                text={cur.html ? htmlToText(sanitizeHtml(cur.body_html ?? "")) : cur.body_text}
+              />
+
+              {(vars.length > 0 || keys.length > 0) && (
+                <div className="flex flex-wrap gap-1.5" aria-label="Variables in this email">
+                  {vars.map((v, i) => (
+                    <VarChip
+                      key={`${v.raw}-${i}`}
+                      name={v.name}
+                      fallback={
+                        v.raw.includes("|") ? v.raw.slice(v.raw.indexOf("|") + 1, -2).trim() : ""
+                      }
+                      unknown={!known.has(v.name)}
+                      onFallback={(fb) =>
+                        setSteps((all) =>
+                          all.map((s, k) =>
+                            k === sel
+                              ? {
+                                  ...s,
+                                  subject: withFallback(s.subject, v.raw, fb),
+                                  body_text: withFallback(s.body_text, v.raw, fb),
+                                  body_html: s.body_html
+                                    ? withFallback(s.body_html, v.raw, fb)
+                                    : null,
+                                }
+                              : s,
+                          ),
+                        )
+                      }
+                    />
+                  ))}
+                  {keys.map((k) => (
+                    <button
+                      key={k}
+                      type="button"
+                      onClick={() =>
+                        setAiDialog({
+                          slot: cur.ai_slots.find((s) => s.key === k) ?? {
+                            key: k,
+                            instruction: "",
+                          },
+                        })
+                      }
+                      className="inline-flex items-center gap-1 rounded-full bg-ai/15 px-2.5 py-0.5 text-xs font-medium text-ai"
+                    >
+                      <Sparkles size={11} /> AI: {k}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              <div className="flex justify-center pt-2">
+                <Tool
+                  label="Add follow-up"
+                  onClick={addStep}
+                  disabled={steps.length >= 10}
+                  className="rounded-full hover:rotate-90"
                 >
-                  <Sparkles size={11} /> AI: {k}
+                  <Plus size={16} />
+                </Tool>
+              </div>
+            </section>
+
+            {/* variants of the first email */}
+            {sel === 0 ? (
+              <aside aria-label="Variants of the first email" className="flex flex-col gap-2">
+                <button
+                  type="button"
+                  onClick={() => addVariant()}
+                  disabled={variants.length >= 4}
+                  className="flex h-12 items-center gap-2 rounded-(--radius-card) border border-border bg-surface px-4 text-sm font-medium shadow-(--shadow-card) hover:border-text/20 hover:bg-surface-2 disabled:opacity-50"
+                >
+                  <Plus size={15} aria-hidden="true" /> Add variant
                 </button>
-              ))}
-            </div>
-          )}
-        </section>
+                {variantKeys.map((k, idx) => {
+                  const v = idx === 0 ? null : variants[idx - 1];
+                  const on = vsel === idx - 1;
+                  return (
+                    <div key={k} className="animate-rise-in relative">
+                      {on && (
+                        <span
+                          aria-hidden="true"
+                          className="absolute top-6 -left-6 hidden w-6 border-t-2 border-dotted border-accent xl:block"
+                        />
+                      )}
+                      <div
+                        className={cn(
+                          "rounded-(--radius-card) border bg-surface transition-[border-color,box-shadow,background-color] duration-200",
+                          on
+                            ? "border-accent shadow-(--shadow-pop)"
+                            : "border-border shadow-(--shadow-card) hover:border-text/20",
+                          v && v.active === false && "opacity-60",
+                        )}
+                      >
+                        <button
+                          type="button"
+                          aria-pressed={on}
+                          onClick={() => setVsel(idx - 1)}
+                          className="flex h-12 w-full items-center gap-2 px-4 text-left text-sm font-medium"
+                        >
+                          <span className="min-w-0 flex-1 truncate">
+                            Edit variant {k}
+                            {v?.name && v.name !== k ? (
+                              <span className="font-normal text-muted"> · {v.name}</span>
+                            ) : null}
+                          </span>
+                          {v && v.active === false && <Pill>Off</Pill>}
+                          {on && (
+                            <Check size={16} className="shrink-0 text-accent" aria-hidden="true" />
+                          )}
+                        </button>
+                        {on && v && (
+                          <div className="animate-fade-in flex flex-col gap-2 border-t border-border px-3 py-3">
+                            <Field
+                              label="Variant name"
+                              value={v.name ?? ""}
+                              maxLength={40}
+                              onChange={(e) => patch({ name: e.target.value })}
+                            />
+                            <div className="flex gap-1">
+                              <Tool
+                                label="Duplicate"
+                                className="size-8"
+                                onClick={() => addVariant(v)}
+                                disabled={variants.length >= 4}
+                              >
+                                <Copy size={14} />
+                              </Tool>
+                              <Tool
+                                label={v.active === false ? "Turn on" : "Turn off"}
+                                className="size-8"
+                                onClick={() => patch({ active: !(v.active ?? true) })}
+                              >
+                                <Power size={14} />
+                              </Tool>
+                              <Tool
+                                label="Delete"
+                                className="size-8 hover:bg-danger/15 hover:text-danger"
+                                onClick={removeVariant}
+                              >
+                                <Trash2 size={14} />
+                              </Tool>
+                            </div>
+                            <p className="text-xs text-muted">
+                              {v.active === false
+                                ? "Off: gets no new leads."
+                                : "Leads are split evenly between the variants."}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </aside>
+            ) : (
+              <aside className="hidden xl:block">
+                <p className="rounded-(--radius-card) border border-dashed border-border p-4 text-xs text-muted">
+                  A/B variants are for Email 1 only.
+                </p>
+              </aside>
+            )}
+          </div>
         )}
       </div>
+
+      {/* tool bar */}
+      {!aiMode && (
+        <div
+          role="toolbar"
+          aria-label="Email tools"
+          className="sticky bottom-0 z-20 -mx-6 -mb-6 mt-4 flex flex-wrap items-center justify-center gap-2 border-t border-border bg-bg/85 px-6 py-3 backdrop-blur-md"
+        >
+          <MenuRoot>
+            <MenuTrigger asChild disabled={!cur.html}>
+              <Tool label={cur.html ? "Format text" : "Switch to HTML to format text"}>
+                <Type size={16} />
+              </Tool>
+            </MenuTrigger>
+            <MenuContent side="top" align="start">
+              <MenuItem onSelect={() => wrap("<b>", "</b>")}>
+                <b>Bold</b>
+              </MenuItem>
+              <MenuItem onSelect={() => wrap("<i>", "</i>")}>
+                <i>Italic</i>
+              </MenuItem>
+              <MenuItem onSelect={() => wrap("<ul><li>", "</li></ul>")}>List</MenuItem>
+              <MenuItem onSelect={() => wrap("<ol><li>", "</li></ol>")}>Numbered list</MenuItem>
+            </MenuContent>
+          </MenuRoot>
+          <VarMenu fields={fields.data} onPick={insert} side="top">
+            <Tool label="Add a variable">
+              <Zap size={16} />
+            </Tool>
+          </VarMenu>
+          <Tool label="Add a link" onClick={addLink}>
+            <Link size={16} />
+          </Tool>
+          <Tool
+            label={cur.html ? "Add a picture" : "Switch to HTML to add a picture"}
+            onClick={addImage}
+            disabled={!cur.html}
+          >
+            <Image size={16} />
+          </Tool>
+          <Tool
+            label={aiReady ? "Add an AI part" : "Set up AI first"}
+            onClick={() => setAiDialog({ slot: null })}
+            disabled={!aiReady}
+            className="text-ai"
+          >
+            <Rocket size={16} />
+          </Tool>
+          <MenuRoot>
+            <MenuTrigger asChild>
+              <Tool label="Add sender details">
+                <UserRound size={16} />
+              </Tool>
+            </MenuTrigger>
+            <MenuContent side="top" align="start">
+              <MenuItem onSelect={() => insert("{{sender_name}}")}>Sender name</MenuItem>
+              <MenuItem onSelect={() => insert("{{sender_email}}")}>Sender email</MenuItem>
+            </MenuContent>
+          </MenuRoot>
+          <Tool label="Add an unsubscribe link" onClick={() => insert("{{unsubscribe}}")}>
+            <Stamp size={16} />
+          </Tool>
+          <span aria-hidden="true" className="mx-1 h-7 w-px bg-border" />
+          <Tool
+            label={aiReady ? "Write all emails with AI" : "Set up an AI model first"}
+            onClick={() => setWriteAi(true)}
+            disabled={!aiReady}
+          >
+            <Sparkles size={16} />
+          </Tool>
+          <Segment label="Width">
+            <SegButton
+              label="Desktop width"
+              on={device === "desktop"}
+              onClick={() => setDevice("desktop")}
+            >
+              <Monitor size={16} />
+            </SegButton>
+            <SegButton
+              label="Phone width"
+              on={device === "mobile"}
+              onClick={() => setDevice("mobile")}
+            >
+              <Smartphone size={16} />
+            </SegButton>
+          </Segment>
+          <Segment label="Body type">
+            <SegButton label="Plain text" on={!cur.html} onClick={() => setHtml(false)}>
+              <Brush size={16} />
+            </SegButton>
+            <SegButton label="HTML" on={cur.html} onClick={() => setHtml(true)}>
+              <Code size={16} />
+            </SegButton>
+          </Segment>
+          <span aria-hidden="true" className="mx-1 h-7 w-px bg-border" />
+          <Tool label="Preview" onClick={() => setPreview(true)}>
+            <Eye size={16} />
+          </Tool>
+        </div>
+      )}
 
       <AiPartDialog
         open={!!aiDialog}
@@ -832,7 +1017,11 @@ export function Editor({
         title="Save emails"
         footer={
           <>
-            <Button variant="secondary" onClick={() => void saveEmails("keep_edited")} busy={saving}>
+            <Button
+              variant="secondary"
+              onClick={() => void saveEmails("keep_edited")}
+              busy={saving}
+            >
               Keep my edits
             </Button>
             <Button variant="danger" onClick={() => void saveEmails("all")} busy={saving}>
@@ -891,6 +1080,135 @@ export function Editor({
         }}
       />
     </div>
+  );
+}
+
+/** A square icon button for the tool bar. The label is the tooltip and the name for screen readers. */
+function Tool({
+  label,
+  className,
+  children,
+  ...rest
+}: ButtonHTMLAttributes<HTMLButtonElement> & { label: string }) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      className={cn(
+        "flex size-10 items-center justify-center rounded-(--radius-control) border border-border bg-surface text-text shadow-(--shadow-card) duration-200 hover:-translate-y-0.5 hover:bg-surface-2 hover:shadow-(--shadow-pop) active:translate-y-0 active:scale-95 disabled:pointer-events-none disabled:opacity-40 data-[state=open]:bg-surface-2",
+        className,
+      )}
+      {...rest}
+    >
+      {children}
+    </button>
+  );
+}
+
+function Segment({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div
+      role="group"
+      aria-label={label}
+      className="flex gap-0.5 rounded-(--radius-card) border border-border bg-surface p-1 shadow-(--shadow-card)"
+    >
+      {children}
+    </div>
+  );
+}
+
+function SegButton({
+  label,
+  on,
+  onClick,
+  children,
+}: {
+  label: string;
+  on: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      aria-pressed={on}
+      onClick={onClick}
+      className={cn(
+        "flex size-8 items-center justify-center rounded-(--radius-control) duration-200",
+        on ? "bg-accent-soft text-text shadow-(--shadow-card)" : "text-muted hover:text-text",
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+/** The menu of variables; `children` is the button that opens it. */
+function VarMenu({
+  fields,
+  onPick,
+  side,
+  children,
+}: {
+  fields: S["LeadField"][] | undefined;
+  onPick: (text: string) => void;
+  side?: "top" | "bottom";
+  children: ReactNode;
+}) {
+  return (
+    <MenuRoot>
+      <MenuTrigger asChild>{children}</MenuTrigger>
+      <MenuContent side={side} align="start" className="max-h-80 overflow-auto">
+        <MenuLabel>Lead</MenuLabel>
+        {LEAD_VARS.map((v) => (
+          <MenuItem key={v} onSelect={() => onPick(`{{${v}}}`)}>
+            {v}
+          </MenuItem>
+        ))}
+        {(fields?.length ?? 0) > 0 && (
+          <>
+            <MenuSeparator />
+            <MenuLabel>Custom fields</MenuLabel>
+            {fields?.map((f) => (
+              <MenuItem key={f.key} onSelect={() => onPick(`{{${f.key}}}`)}>
+                {f.label || f.key}
+              </MenuItem>
+            ))}
+          </>
+        )}
+        <MenuSeparator />
+        <MenuLabel>Sender</MenuLabel>
+        <MenuItem onSelect={() => onPick("{{sender_name}}")}>sender_name</MenuItem>
+        <MenuItem onSelect={() => onPick("{{sender_email}}")}>sender_email</MenuItem>
+        <MenuSeparator />
+        <MenuLabel>Recipient</MenuLabel>
+        <MenuItem onSelect={() => onPick("{{email}}")}>email</MenuItem>
+        <MenuItem onSelect={() => onPick("{{unsubscribe}}")}>unsubscribe link</MenuItem>
+      </MenuContent>
+    </MenuRoot>
+  );
+}
+
+/** A section that opens and closes, to keep the steps list short. */
+function Fold({ title, hint, children }: { title: string; hint: string; children: ReactNode }) {
+  return (
+    <details className="group rounded-(--radius-control) [&_label]:sr-only">
+      <summary className="flex cursor-pointer list-none items-center justify-between rounded-(--radius-control) px-1 py-1.5 text-sm font-medium hover:text-accent [&::-webkit-details-marker]:hidden">
+        {title}
+        <Plus
+          size={14}
+          aria-hidden="true"
+          className="text-muted transition-transform duration-200 group-open:rotate-45"
+        />
+      </summary>
+      <div className="animate-rise-in flex flex-col gap-1.5 pt-1 pb-2">
+        {children}
+        <p className="text-xs text-muted">{hint}</p>
+      </div>
+    </details>
   );
 }
 

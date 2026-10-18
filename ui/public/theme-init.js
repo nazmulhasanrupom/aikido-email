@@ -14,5 +14,5 @@
     (choice === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
   const root = document.documentElement;
   root.setAttribute("data-theme", choice === "aikido" ? "aikido" : dark ? "dark" : "light");
-  root.style.colorScheme = dark ? "dark" : "light";
+  root.style.colorScheme = dark || choice === "aikido" ? "dark" : "light";
 })();

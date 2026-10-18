@@ -49,27 +49,27 @@
 }
 
 /*
- * Aikido: the colors of the logo. White paper, ink black, one red.
- * The red is a little darker than the logo red (#d62a2a) so text in red reaches AA.
+ * Aikido: the logo colors turned around, so it is calm on the eyes.
+ * A deep red ground (not bright red), warm white text, and warm white buttons with red text.
  * The text font is Georgia.
  */
 :root[data-theme="aikido"] {
-  color-scheme: light;
-  --bg: #f7f5f2;
-  --surface: #fefefe;
-  --surface-2: #efebe6;
-  --border: #e2ddd6;
-  --text: #121110;
-  --text-muted: #5a5550;
-  --accent: #b8141c;
-  --accent-fg: #ffffff;
-  --accent-soft: #f9e4e2;
-  --success: #2e6a3e;
-  --warning: #87570a;
-  --danger: #8f1d1d;
-  --info: #2c5c82;
-  --ai: #6646b0;
+  color-scheme: dark;
+  --bg: #2a0e11;
+  --surface: #351318;
+  --surface-2: #42191f;
+  --border: #5e2830;
+  --text: #f8ece8;
+  --text-muted: #d6b7b2;
+  --accent: #fbf1ec;
+  --accent-fg: #2a0e11;
+  --accent-soft: #5d222a;
+  --success: #93d3a2;
+  --warning: #f0c368;
+  --danger: #ff9d92;
+  --info: #a5c9ec;
+  --ai: #d2bcff;
   --app-font: Georgia, "Times New Roman", serif;
-  --shadow-card: 0 1px 2px rgb(18 17 16 / 0.05), 0 1px 3px rgb(18 17 16 / 0.04);
-  --shadow-pop: 0 12px 32px -10px rgb(18 17 16 / 0.22), 0 2px 6px rgb(18 17 16 / 0.06);
+  --shadow-card: 0 1px 2px rgb(10 0 2 / 0.35);
+  --shadow-pop: 0 14px 34px -10px rgb(10 0 2 / 0.65), 0 2px 6px rgb(10 0 2 / 0.3);
 }

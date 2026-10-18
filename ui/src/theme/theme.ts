@@ -32,7 +32,7 @@ function paint() {
   const theme = resolve(current);
   const root = document.documentElement;
   root.setAttribute("data-theme", theme);
-  root.style.colorScheme = theme === "dark" ? "dark" : "light";
+  root.style.colorScheme = theme === "light" ? "light" : "dark";
 }
 
 /** Cross-fade to the new theme where the browser can, and not when the system asks for less motion. */

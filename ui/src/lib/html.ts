@@ -1,5 +1,5 @@
 /** The little HTML the editor allows. Everything else is dropped before the text is saved. */
-const ALLOWED = new Set(["P", "BR", "B", "STRONG", "I", "EM", "A", "UL", "OL", "LI"]);
+const ALLOWED = new Set(["P", "BR", "B", "STRONG", "I", "EM", "A", "UL", "OL", "LI", "IMG"]);
 
 function clean(node: Node, doc: Document): Node {
   if (node.nodeType === Node.TEXT_NODE) return doc.createTextNode(node.textContent ?? "");
@@ -18,6 +18,15 @@ function clean(node: Node, doc: Document): Node {
   if (el.tagName === "A") {
     const href = el.getAttribute("href") ?? "";
     if (/^(https?:|mailto:)/i.test(href.trim())) copy.setAttribute("href", href.trim());
+  }
+  if (el.tagName === "IMG") {
+    // only a picture on the web; no data or script addresses
+    const src = (el.getAttribute("src") ?? "").trim();
+    if (!/^https:\/\//i.test(src)) return out;
+    copy.setAttribute("src", src);
+    copy.setAttribute("alt", el.getAttribute("alt") ?? "");
+    copy.setAttribute("style", "max-width:100%;height:auto");
+    return copy;
   }
   kids(copy);
   return copy;
