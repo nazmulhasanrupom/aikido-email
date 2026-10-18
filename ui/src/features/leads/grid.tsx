@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Columns3, Plus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { toast } from "sonner";
 import { ApiProblem, messageOf } from "@/api/errors";
 import { authStateQuery } from "@/api/auth";
@@ -156,7 +157,10 @@ export function cellValue(lead: Record<string, unknown>, col: GridCol): string {
 
 const INPUT_TYPE = { text: "text", number: "number", url: "url", date: "date" } as const;
 
-/** A table cell. Double-click (or Enter) to edit. Enter saves, Esc cancels. */
+/** One-line cell look. Long text is cut off. Double-click shows all of it. */
+export const CELL = "block max-w-56 truncate";
+
+/** A table cell. Double-click (or Enter) to edit. Enter saves, Shift+Enter adds a line, Esc cancels. */
 export function EditableCell({
   lead,
   col,
@@ -174,11 +178,25 @@ export function EditableCell({
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
   const [error, setError] = useState<string | null>(null);
-  const ref = useRef<HTMLInputElement>(null);
-  const kind = col.field?.kind ?? (col.id === "email" ? "text" : "text");
+  const [box, setBox] = useState<DOMRect | null>(null);
+  const ref = useRef<HTMLInputElement & HTMLTextAreaElement>(null);
+  const cellRef = useRef<HTMLDivElement>(null);
+  const kind = col.field?.kind ?? "text";
+  const blocked = !!locked && col.id === "email";
   useEffect(() => {
-    if (editing) ref.current?.focus();
-  }, [editing]);
+    if (!editing) return;
+    const el = ref.current;
+    el?.focus();
+    if (el && kind === "text") el.setSelectionRange(el.value.length, el.value.length);
+  }, [editing, kind]);
+  useEffect(() => {
+    if (!editing) return;
+    const el = ref.current;
+    if (el && kind === "text") {
+      el.style.height = "auto";
+      el.style.height = `${Math.min(el.scrollHeight, 320)}px`;
+    }
+  }, [editing, draft, kind]);
 
   const save = useMutation({
     mutationFn: (v: string) => {
@@ -202,62 +220,85 @@ export function EditableCell({
       ),
   });
 
-  if (!editable) return <>{value}</>;
-  if (editing) {
-    return (
-      <div>
-        <input
-          ref={ref}
-          type={INPUT_TYPE[kind]}
-          aria-label={`Edit ${col.label}`}
-          className="h-8 w-full min-w-28 rounded border border-accent bg-surface px-2 text-[13px]"
-          value={draft}
-          disabled={save.isPending}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              if (draft === value) setEditing(false);
-              else save.mutate(draft);
-            }
-            if (e.key === "Escape") {
-              setEditing(false);
-              setError(null);
-            }
-          }}
-          onBlur={() => {
-            if (!save.isPending && !error) setEditing(false);
-          }}
-        />
-        {error && (
-          <p role="alert" className="mt-1 text-xs text-danger">
-            {error}
-          </p>
-        )}
-      </div>
-    );
-  }
-  return (
-    <div
-      role="gridcell"
-      tabIndex={0}
-      title={
-        locked && col.id === "email" ? "Stop the sequence to change the email." : "Double-click to edit"
+  if (!editable) return <span className={CELL}>{value}</span>;
+  const start = () => {
+    if (blocked) return;
+    setDraft(value);
+    setError(null);
+    setBox(cellRef.current?.getBoundingClientRect() ?? null);
+    setEditing(true);
+  };
+  const common = {
+    "aria-label": `Edit ${col.label}`,
+    className:
+      "block w-full resize-none rounded border border-accent bg-surface px-2 py-1.5 text-[13px] shadow-lg outline-none",
+    value: draft,
+    disabled: save.isPending,
+    onKeyDown: (e: React.KeyboardEvent) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        if (draft === value) setEditing(false);
+        else save.mutate(draft);
       }
-      className="min-h-6 cursor-text rounded px-1 outline-none focus-visible:ring-2 focus-visible:ring-accent"
-      onDoubleClick={() => {
-        if (locked && col.id === "email") return;
-        setDraft(value);
-        setEditing(true);
-      }}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" && !(locked && col.id === "email")) {
-          setDraft(value);
-          setEditing(true);
-        }
-      }}
-    >
-      {value}
-    </div>
+      if (e.key === "Escape") {
+        setEditing(false);
+        setError(null);
+      }
+    },
+    onBlur: () => {
+      if (!save.isPending && !error) setEditing(false);
+    },
+  };
+  return (
+    <>
+      <div
+        ref={cellRef}
+        role="gridcell"
+        tabIndex={0}
+        title={blocked ? "Stop the sequence to change the email." : value || "Double-click to edit"}
+        className={`${CELL} min-h-6 cursor-text rounded px-1 outline-none focus-visible:ring-2 focus-visible:ring-accent`}
+        onDoubleClick={start}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") start();
+        }}
+      >
+        {value}
+      </div>
+      {editing &&
+        box &&
+        createPortal(
+          <div
+            className="fixed z-50"
+            style={{
+              top: Math.min(box.top - 4, window.innerHeight - 200),
+              left: Math.min(box.left - 4, window.innerWidth - 340),
+              width: Math.max(box.width + 8, 320),
+            }}
+          >
+            {kind === "text" ? (
+              <textarea
+                ref={ref}
+                rows={1}
+                {...common}
+                onChange={(e) => setDraft(e.target.value)}
+              />
+            ) : (
+              <input
+                ref={ref}
+                type={INPUT_TYPE[kind]}
+                {...common}
+                onChange={(e) => setDraft(e.target.value)}
+              />
+            )}
+            {error && (
+              <p role="alert" className="mt-1 rounded bg-surface px-2 py-1 text-xs text-danger shadow">
+                {error}
+              </p>
+            )}
+          </div>,
+          document.body,
+        )}
+    </>
   );
 }
 

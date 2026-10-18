@@ -1,6 +1,6 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { Pencil } from "lucide-react";
+import { Maximize2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { ApiProblem, messageOf } from "@/api/errors";
@@ -26,7 +26,7 @@ import { VerifyPill } from "@/features/reoon/parts";
 import { fmtDate } from "@/lib/format";
 import { CONTACT_STATES, INTERESTS, say } from "@/lib/words";
 import { ImportModal } from "./ImportModal";
-import { AddColumn, ColumnHeader, ColumnsMenu, EditableCell, type GridCol, useColumns } from "./grid";
+import { AddColumn, ColumnHeader, ColumnsMenu, CELL, EditableCell, type GridCol, useColumns } from "./grid";
 
 const BASE_COLS: GridCol[] = [
   { id: "email", label: "Email" },
@@ -320,7 +320,19 @@ export function AllLeads({ search, ws }: { search: LeadSearch; ws: string }) {
         <Table>
           <Head
             cols={[
-              "",
+              <input
+                key="all"
+                type="checkbox"
+                aria-label="Select all leads on this page"
+                checked={allOnPage || allMatching}
+                ref={(el) => {
+                  if (el) el.indeterminate = !allMatching && !allOnPage && picked.size > 0;
+                }}
+                onChange={(e) => {
+                  setPicked(e.target.checked ? new Set(rows.map((r) => r.id)) : new Set());
+                  setAllMatching(false);
+                }}
+              />,
               ...cols.visible.map((c) => <ColumnHeader key={c.id} col={c} />),
               <span key="add" className="inline-flex items-center gap-1">
                 <AddColumn />
@@ -331,37 +343,35 @@ export function AllLeads({ search, ws }: { search: LeadSearch; ws: string }) {
             {rows.map((r) => (
               <tr key={r.id} className="border-t border-border hover:bg-surface-2/50">
                 <td className={TD}>
-                  <input
-                    type="checkbox"
-                    aria-label={`Select ${r.email}`}
-                    checked={picked.has(r.id) || allMatching}
-                    onChange={(e) => {
-                      const n = new Set(picked);
-                      e.target.checked ? n.add(r.id) : n.delete(r.id);
-                      setPicked(n);
-                      setAllMatching(false);
-                    }}
-                  />
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      aria-label={`Select ${r.email}`}
+                      checked={picked.has(r.id) || allMatching}
+                      onChange={(e) => {
+                        const n = new Set(picked);
+                        e.target.checked ? n.add(r.id) : n.delete(r.id);
+                        setPicked(n);
+                        setAllMatching(false);
+                      }}
+                    />
+                    <button
+                      type="button"
+                      aria-label={`Open ${r.email}`}
+                      title="Open lead"
+                      className="rounded p-1 text-muted hover:bg-surface-2"
+                      onClick={() => open(r.id)}
+                    >
+                      <Maximize2 size={13} />
+                    </button>
+                  </div>
                 </td>
                 {cols.visible.map((c) => (
                   <td key={c.id} className={TD}>
                     {STATIC[c.id] ? (
-                      STATIC[c.id]?.(r)
+                      <span className={CELL}>{STATIC[c.id]?.(r)}</span>
                     ) : (
-                      <div className="flex items-center gap-1">
-                        <EditableCell lead={r} col={c} />
-                        {c.id === "email" && (
-                          <button
-                            type="button"
-                            aria-label={`Open ${r.email}`}
-                            title="Open lead"
-                            className="rounded p-1 text-muted hover:bg-surface-2"
-                            onClick={() => open(r.id)}
-                          >
-                            <Pencil size={13} />
-                          </button>
-                        )}
-                      </div>
+                      <EditableCell lead={r} col={c} />
                     )}
                   </td>
                 ))}

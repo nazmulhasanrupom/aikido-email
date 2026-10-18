@@ -1,6 +1,6 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { MoreHorizontal, Pencil } from "lucide-react";
+import { Maximize2, MoreHorizontal } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { messageOf } from "@/api/errors";
@@ -252,7 +252,18 @@ function CampaignLeads() {
         <Table>
           <Head
             cols={[
-              "",
+              <input
+                key="all"
+                type="checkbox"
+                aria-label="Select all leads on this page"
+                checked={rows.length > 0 && rows.every((r) => picked.has(r.lead_id))}
+                ref={(el) => {
+                  if (el)
+                    el.indeterminate =
+                      picked.size > 0 && !rows.every((r) => picked.has(r.lead_id));
+                }}
+                onChange={(e) => setPicked(e.target.checked ? new Set(rows.map((r) => r.lead_id)) : new Set())}
+              />,
               ...cols.visible.map((c) => <ColumnHeader key={c.id} col={c} />),
               ...(onlyMissing ? ["Fill in"] : []),
               <AddColumn key="add" />,
@@ -262,16 +273,26 @@ function CampaignLeads() {
             {rows.map((r) => (
               <tr key={r.lead_id} className="border-t border-border">
                 <td className={TD}>
-                  <input
-                    type="checkbox"
-                    aria-label={`Select ${r.email}`}
-                    checked={picked.has(r.lead_id)}
-                    onChange={(e) => {
-                      const n = new Set(picked);
-                      e.target.checked ? n.add(r.lead_id) : n.delete(r.lead_id);
-                      setPicked(n);
-                    }}
-                  />
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      aria-label={`Select ${r.email}`}
+                      checked={picked.has(r.lead_id)}
+                      onChange={(e) => {
+                        const n = new Set(picked);
+                        e.target.checked ? n.add(r.lead_id) : n.delete(r.lead_id);
+                        setPicked(n);
+                      }}
+                    />
+                    <a
+                      aria-label={`Open ${r.email}`}
+                      title="Open lead"
+                      className="rounded p-1 text-muted hover:bg-surface-2"
+                      href={`/w/${ws}/leads?lead=${r.lead_id}`}
+                    >
+                      <Maximize2 size={13} />
+                    </a>
+                  </div>
                 </td>
                 {cols.visible.map((c) => (
                   <td key={c.id} className={TD}>
@@ -295,27 +316,15 @@ function CampaignLeads() {
                         ""
                       )
                     ) : (
-                      <div className="flex items-center gap-1">
-                        <EditableCell
-                          lead={{ ...r, id: r.lead_id }}
-                          col={c}
-                          inCampaign
-                          locked={
-                            !!r.enrollment_id &&
-                            ["active", "waiting_send", "paused"].includes(r.enrollment_status ?? "")
-                          }
-                        />
-                        {c.id === "email" && (
-                          <a
-                            aria-label={`Open ${r.email}`}
-                            title="Open lead"
-                            className="rounded p-1 text-muted hover:bg-surface-2"
-                            href={`/w/${ws}/leads?lead=${r.lead_id}`}
-                          >
-                            <Pencil size={13} />
-                          </a>
-                        )}
-                      </div>
+                      <EditableCell
+                        lead={{ ...r, id: r.lead_id }}
+                        col={c}
+                        inCampaign
+                        locked={
+                          !!r.enrollment_id &&
+                          ["active", "waiting_send", "paused"].includes(r.enrollment_status ?? "")
+                        }
+                      />
                     )}
                   </td>
                 ))}
