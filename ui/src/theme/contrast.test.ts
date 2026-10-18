@@ -28,7 +28,11 @@ function contrast(a: string, b: string): number {
   return (hi + 0.05) / (lo + 0.05);
 }
 
-const themes = { light: block(":root"), dark: block(':root[data-theme="dark"]') };
+const themes = {
+  light: block(":root"),
+  dark: block(':root[data-theme="dark"]'),
+  aikido: block(':root[data-theme="aikido"]'),
+};
 const AA = 4.5;
 const grounds = ["bg", "surface", "surface-2"] as const;
 const textColors = ["text", "text-muted", "accent", "success", "warning", "danger", "info", "ai"];
@@ -38,6 +42,7 @@ describe("theme tokens", () => {
     const names = Object.keys(themes.light).sort();
     expect(names).toContain("accent-soft");
     expect(Object.keys(themes.dark).sort()).toEqual(names);
+    expect(Object.keys(themes.aikido).sort()).toEqual(names);
   });
 
   for (const [theme, tokens] of Object.entries(themes)) {

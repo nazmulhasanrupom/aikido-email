@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { type AuthState, logout, saveThemePreference } from "@/api/auth";
 import { messageOf } from "@/api/errors";
 import { readStored, writeStored } from "@/lib/safe-storage";
-import { applyChoice, type ThemeChoice } from "@/theme/theme";
+import { applyChoice, isChoice, type ThemeChoice } from "@/theme/theme";
 import { Banners } from "./Banners";
 import { Palette } from "./Palette";
 import { Sidebar } from "./Sidebar";
@@ -26,7 +26,7 @@ export function Shell({ ws, state }: { ws: string; state: AuthState }) {
   // The theme of the account follows the user to a new browser.
   const saved = user?.preferences?.theme;
   useEffect(() => {
-    if (saved === "light" || saved === "dark" || saved === "system") applyChoice(saved);
+    if (isChoice(saved)) applyChoice(saved);
   }, [saved]);
 
   // Ctrl/Cmd + K opens the search.

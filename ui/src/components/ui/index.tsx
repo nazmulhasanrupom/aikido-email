@@ -91,7 +91,7 @@ export function EmptyState({
   action?: ReactNode;
 }) {
   return (
-    <div className="flex flex-col items-center gap-3 rounded-(--radius-card) border border-dashed border-border px-6 py-12 text-center">
+    <div className="animate-rise-in flex flex-col items-center gap-3 rounded-(--radius-card) border border-dashed border-border px-6 py-12 text-center">
       {Icon && <Icon size={22} className="text-muted" aria-hidden="true" />}
       {title && <h2 className="font-semibold">{title}</h2>}
       <p className="max-w-md text-muted">{text}</p>
@@ -104,7 +104,11 @@ export function Skeleton({ rows = 5, className }: { rows?: number; className?: s
   return (
     <div className={cn("flex flex-col gap-2", className)} aria-busy="true" aria-label="Loading">
       {Array.from({ length: rows }, (_, i) => (
-        <div key={i} className="h-10 animate-pulse rounded-(--radius-control) bg-surface-2" />
+        <div
+          key={i}
+          className="skeleton h-10 rounded-(--radius-control)"
+          style={{ animationDelay: `${i * 80}ms` }}
+        />
       ))}
     </div>
   );
@@ -114,7 +118,7 @@ export function ErrorNote({ error, onRetry }: { error: unknown; onRetry?: () => 
   return (
     <div
       role="alert"
-      className="flex items-center justify-between gap-3 rounded-(--radius-control) border border-danger/40 bg-danger/10 px-3 py-2 text-danger"
+      className="animate-rise-in flex items-center justify-between gap-3 rounded-(--radius-control) border border-danger/40 bg-danger/10 px-3 py-2 text-danger"
     >
       <span>{messageOf(error)}</span>
       {onRetry && (
@@ -140,7 +144,9 @@ export function Notice({
     success: "border-success/40 bg-success/10",
   }[tone];
   return (
-    <div className={cn("rounded-(--radius-control) border px-3 py-2 text-sm", t)}>{children}</div>
+    <div className={cn("animate-fade-in rounded-(--radius-control) border px-3 py-2 text-sm", t)}>
+      {children}
+    </div>
   );
 }
 
@@ -426,8 +432,8 @@ export function Modal({ open, onClose, title, children, footer, size = "md", sid
         if (e.target === ref.current) onClose();
       }}
       className={cn(
-        "m-auto w-full rounded-(--radius-card) border border-border bg-surface p-0 text-text shadow-lg backdrop:bg-black/40",
-        side && "ml-auto mr-0 mt-0 mb-0 h-full max-h-full w-full max-w-xl rounded-none",
+        "m-auto w-full rounded-(--radius-card) border border-border bg-surface p-0 text-text shadow-(--shadow-pop) backdrop:bg-black/35",
+        side && "dialog-side ml-auto mr-0 mt-0 mb-0 h-full max-h-full w-full max-w-xl rounded-none",
         !side && width,
       )}
     >
@@ -441,7 +447,7 @@ export function Modal({ open, onClose, title, children, footer, size = "md", sid
               type="button"
               aria-label="Close"
               onClick={onClose}
-              className="rounded p-1 text-muted hover:bg-surface-2"
+              className="flex size-7 items-center justify-center rounded-full text-lg leading-none text-muted hover:rotate-90 hover:bg-surface-2 hover:text-text"
             >
               &times;
             </button>
@@ -563,7 +569,7 @@ export function Tabs<T extends string>({
           aria-selected={it.value === value}
           onClick={() => onChange(it.value)}
           className={cn(
-            "-mb-px border-b-2 px-3 py-2 text-sm",
+            "-mb-px border-b-2 px-3 py-2 text-sm duration-200",
             it.value === value
               ? "border-accent font-medium"
               : "border-transparent text-muted hover:text-text",
@@ -593,7 +599,7 @@ export function LinkTabs({
           to={it.to as any}
           // biome-ignore lint/suspicious/noExplicitAny: same
           params={it.params as any}
-          className="-mb-px whitespace-nowrap border-b-2 border-transparent px-3 py-2 text-sm text-muted hover:text-text"
+          className="-mb-px whitespace-nowrap border-b-2 border-transparent px-3 py-2 text-sm text-muted duration-200 hover:border-border hover:text-text"
           activeProps={{ className: "border-accent font-medium text-text" }}
         >
           {it.label}
@@ -610,7 +616,12 @@ export const TD = "px-3 py-2 align-middle";
 
 export function Table({ children, className }: { children: ReactNode; className?: string }) {
   return (
-    <div className={cn("overflow-x-auto rounded-(--radius-card) border border-border", className)}>
+    <div
+      className={cn(
+        "animate-rise-in overflow-x-auto rounded-(--radius-card) border border-border bg-surface shadow-(--shadow-card)",
+        className,
+      )}
+    >
       <table className="w-full border-collapse text-[13px]">{children}</table>
     </div>
   );

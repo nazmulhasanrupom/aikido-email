@@ -1,8 +1,14 @@
+/** The brand mark (public/logo.jpeg, made from logo.jpeg at the repo root). */
 export function Logo({ size = 28 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden="true">
-      <rect width="32" height="32" rx="8" fill="var(--accent)" />
-      <path d="M8 22 16 9l8 13h-4.2L16 15.6 12.2 22z" fill="var(--accent-fg)" />
-    </svg>
+    <img
+      src="/logo.jpeg"
+      alt=""
+      aria-hidden="true"
+      width={size}
+      height={size}
+      className="shrink-0 rounded-md bg-white object-contain ring-1 ring-black/5"
+      style={{ width: size, height: size }}
+    />
   );
 }

@@ -1,14 +1,14 @@
 import { useSyncExternalStore } from "react";
 import { readStored, writeStored } from "@/lib/safe-storage";
 
-export type ThemeChoice = "light" | "dark" | "system";
-export type ResolvedTheme = "light" | "dark";
+export type ThemeChoice = "light" | "dark" | "aikido" | "system";
+export type ResolvedTheme = "light" | "dark" | "aikido";
 
 /** Keep the key in step with public/theme-init.js. */
 export const THEME_KEY = "aikido.theme";
 
 export function isChoice(value: unknown): value is ThemeChoice {
-  return value === "light" || value === "dark" || value === "system";
+  return value === "light" || value === "dark" || value === "aikido" || value === "system";
 }
 
 export function readChoice(): ThemeChoice {
@@ -32,14 +32,24 @@ function paint() {
   const theme = resolve(current);
   const root = document.documentElement;
   root.setAttribute("data-theme", theme);
-  root.style.colorScheme = theme;
+  root.style.colorScheme = theme === "dark" ? "dark" : "light";
+}
+
+/** Cross-fade to the new theme where the browser can, and not when the system asks for less motion. */
+function paintSmoothly() {
+  const doc = document as Document & { startViewTransition?: (cb: () => void) => unknown };
+  const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (doc.startViewTransition && !still) doc.startViewTransition(paint);
+  else paint();
 }
 
 /** Set the theme now and remember it in this browser. */
 export function applyChoice(choice: ThemeChoice): void {
+  const changed = choice !== current;
   current = choice;
   writeStored(THEME_KEY, choice);
-  paint();
+  if (changed) paintSmoothly();
+  else paint();
   for (const l of listeners) l();
 }
 

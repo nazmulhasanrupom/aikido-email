@@ -26,6 +26,8 @@ const router = createRouter({
   routeTree,
   context: { queryClient },
   defaultPreload: "intent",
+  // The page area cross-fades on a page change (see #content in styles.css).
+  defaultViewTransition: true,
 });
 
 declare module "@tanstack/react-router" {

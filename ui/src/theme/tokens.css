@@ -22,6 +22,9 @@
   --danger: #b3433a;
   --info: #3b6a8e;
   --ai: #7454be;
+  --app-font: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+  --shadow-card: 0 1px 2px rgb(43 38 33 / 0.04), 0 1px 3px rgb(43 38 33 / 0.04);
+  --shadow-pop: 0 10px 30px -8px rgb(43 38 33 / 0.18), 0 2px 6px rgb(43 38 33 / 0.06);
 }
 
 :root[data-theme="dark"] {
@@ -40,4 +43,33 @@
   --danger: #e68574;
   --info: #7fa9cc;
   --ai: #ab92e7;
+  --app-font: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.2);
+  --shadow-pop: 0 12px 32px -8px rgb(0 0 0 / 0.5), 0 2px 6px rgb(0 0 0 / 0.25);
+}
+
+/*
+ * Aikido: the colors of the logo. White paper, ink black, one red.
+ * The red is a little darker than the logo red (#d62a2a) so text in red reaches AA.
+ * The text font is Georgia.
+ */
+:root[data-theme="aikido"] {
+  color-scheme: light;
+  --bg: #f7f5f2;
+  --surface: #fefefe;
+  --surface-2: #efebe6;
+  --border: #e2ddd6;
+  --text: #121110;
+  --text-muted: #5a5550;
+  --accent: #b8141c;
+  --accent-fg: #ffffff;
+  --accent-soft: #f9e4e2;
+  --success: #2e6a3e;
+  --warning: #87570a;
+  --danger: #8f1d1d;
+  --info: #2c5c82;
+  --ai: #6646b0;
+  --app-font: Georgia, "Times New Roman", serif;
+  --shadow-card: 0 1px 2px rgb(18 17 16 / 0.05), 0 1px 3px rgb(18 17 16 / 0.04);
+  --shadow-pop: 0 12px 32px -10px rgb(18 17 16 / 0.22), 0 2px 6px rgb(18 17 16 / 0.06);
 }

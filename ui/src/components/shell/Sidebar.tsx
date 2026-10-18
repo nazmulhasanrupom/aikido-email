@@ -15,6 +15,7 @@ import {
   ShieldCheck,
   Sparkles,
   Sun,
+  Swords,
   UserRoundCog,
   Users,
 } from "lucide-react";
@@ -113,7 +114,7 @@ export function Sidebar(p: Props) {
       <aside
         aria-label="Main menu"
         className={cn(
-          "fixed inset-y-0 left-0 z-40 flex w-60 flex-col border-r border-border bg-surface transition-transform duration-150 md:static md:translate-x-0",
+          "fixed inset-y-0 left-0 z-40 flex w-60 flex-col overflow-hidden border-r border-border bg-surface transition-[transform,width] duration-300 ease-(--ease-out-soft) md:static md:translate-x-0",
           p.drawerOpen ? "translate-x-0" : "-translate-x-full",
           slim ? "md:w-14" : "md:w-58",
         )}
@@ -133,10 +134,13 @@ export function Sidebar(p: Props) {
               onClick={p.onCloseDrawer}
               title={slim ? item.label : undefined}
               className={cn(
-                "flex h-9 items-center gap-3 rounded-(--radius-control) px-2.5 text-sm hover:bg-surface-2",
+                "flex h-9 items-center gap-3 rounded-(--radius-control) px-2.5 text-sm text-muted hover:bg-surface-2 hover:text-text [&>svg]:transition-transform [&>svg]:duration-200 hover:[&>svg]:scale-110",
                 slim && "md:justify-center md:px-0",
               )}
-              activeProps={{ className: "bg-accent-soft font-medium hover:bg-accent-soft" }}
+              activeProps={{
+                className:
+                  "bg-accent-soft font-medium text-text hover:bg-accent-soft [&>svg]:text-accent",
+              }}
             >
               <item.icon size={18} aria-hidden="true" className="shrink-0" />
               <span className={cn("flex-1 truncate", slim && "md:hidden")}>{item.label}</span>
@@ -162,17 +166,24 @@ export function Sidebar(p: Props) {
           ))}
           {reoon.installed && (
             <>
-              <div className={cn("mt-3 px-2.5 text-xs font-medium text-muted", slim && "md:hidden")}>Apps</div>
+              <div
+                className={cn("mt-3 px-2.5 text-xs font-medium text-muted", slim && "md:hidden")}
+              >
+                Apps
+              </div>
               <Link
                 to="/w/$ws/apps/reoon"
                 params={{ ws: p.ws }}
                 onClick={p.onCloseDrawer}
                 title={slim ? "Reoon" : undefined}
                 className={cn(
-                  "flex h-9 items-center gap-3 rounded-(--radius-control) px-2.5 text-sm hover:bg-surface-2",
+                  "flex h-9 items-center gap-3 rounded-(--radius-control) px-2.5 text-sm text-muted hover:bg-surface-2 hover:text-text [&>svg]:transition-transform [&>svg]:duration-200 hover:[&>svg]:scale-110",
                   slim && "md:justify-center md:px-0",
                 )}
-                activeProps={{ className: "bg-accent-soft font-medium hover:bg-accent-soft" }}
+                activeProps={{
+                  className:
+                    "bg-accent-soft font-medium text-text hover:bg-accent-soft [&>svg]:text-accent",
+                }}
               >
                 <ShieldCheck size={18} aria-hidden="true" className="shrink-0" />
                 <span className={cn("flex-1 truncate", slim && "md:hidden")}>Reoon</span>
@@ -344,6 +355,7 @@ function WorkspaceSettings({
 const THEMES: { value: ThemeChoice; label: string; icon: typeof Sun }[] = [
   { value: "light", label: "Light", icon: Sun },
   { value: "dark", label: "Dark", icon: Moon },
+  { value: "aikido", label: "Aikido", icon: Swords },
   { value: "system", label: "System", icon: Monitor },
 ];
 

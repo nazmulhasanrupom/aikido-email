@@ -124,6 +124,7 @@ function Account() {
             { value: "system", label: "System" },
             { value: "light", label: "Light" },
             { value: "dark", label: "Dark" },
+            { value: "aikido", label: "Aikido (red, black and white, Georgia font)" },
           ]}
         />
       </Card>

@@ -17,7 +17,8 @@
   --color-danger: var(--danger);
   --color-info: var(--info);
   --color-ai: var(--ai);
-  --font-sans: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+  /* --app-font comes from the theme: Inter, or Georgia in the Aikido theme. */
+  --font-sans: var(--app-font);
   --font-mono: "JetBrains Mono Variable", ui-monospace, SFMono-Regular, monospace;
   --radius-card: 8px;
   --radius-control: 6px;
@@ -36,6 +37,27 @@ body {
   font-size: 14px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* The serif reads better a little larger and with more air. */
+:root[data-theme="aikido"] body {
+  font-size: 14.5px;
+  letter-spacing: 0.005em;
+}
+:root[data-theme="aikido"] :is(h1, h2, h3) {
+  letter-spacing: -0.01em;
+}
+
+::selection {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+/* Thin, quiet scroll bars. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
 }
 
 /* A visible focus ring for everything you can reach with the keyboard. */
@@ -44,7 +66,7 @@ body {
   outline-offset: 2px;
 }
 
-/* Motion: 150 ms fades and slides only, and none when the system asks for less. */
+/* Motion: short fades, lifts and slides, and none when the system asks for less. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -55,6 +77,46 @@ body {
     animation-iteration-count: 1 !important;
     /* biome-ignore lint/complexity/noImportantStyles: must beat every component's own timing */
     transition-duration: 0.01ms !important;
+  }
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    /* biome-ignore lint/complexity/noImportantStyles: same */
+    animation: none !important;
+  }
+}
+
+@theme {
+  --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Every control changes color and shadow softly, not at once. Utilities still win. */
+@layer base {
+  a,
+  button,
+  summary,
+  [role="tab"],
+  [role="menuitem"],
+  [role="menuitemradio"],
+  input,
+  select,
+  textarea {
+    transition-property: color, background-color, border-color, box-shadow, opacity, transform;
+    transition-duration: 160ms;
+    transition-timing-function: var(--ease-out-soft);
+  }
+  input:not([type="checkbox"], [type="radio"], [type="file"]):focus-visible,
+  select:focus-visible,
+  textarea:focus-visible {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+  }
+  tbody tr {
+    transition: background-color 120ms ease-out;
+  }
+  tbody tr:hover {
+    background: color-mix(in srgb, var(--surface-2) 55%, transparent);
   }
 }
 
@@ -67,6 +129,113 @@ body {
   }
 }
 
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(-2px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes pop-out {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}
+
+@keyframes slide-in-right {
+  from {
+    transform: translateX(24px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
 .animate-fade-in {
-  animation: fade-in 150ms ease-out;
+  animation: fade-in 180ms var(--ease-out-soft);
+}
+
+.animate-rise-in {
+  animation: rise-in 320ms var(--ease-out-soft) both;
+}
+
+/* Pop-up menus grow from the button that opened them, and shrink back when they close. */
+.menu-pop {
+  transform-origin: var(--radix-dropdown-menu-content-transform-origin);
+  animation: pop-in 160ms var(--ease-out-soft);
+}
+.menu-pop[data-state="closed"] {
+  animation: pop-out 110ms ease-in forwards;
+}
+
+/* Dialogs: the backdrop fades in and the box lifts; a side panel slides in from the right. */
+dialog[open] {
+  animation: pop-in 220ms var(--ease-out-soft);
+}
+dialog[open].dialog-side {
+  animation: slide-in-right 280ms var(--ease-out-soft);
+}
+dialog[open]::backdrop {
+  animation: fade-in 220ms ease-out;
+  backdrop-filter: blur(2px);
+}
+
+/* Loading rows: a soft light passes over them. */
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--surface-2) 0%,
+    color-mix(in srgb, var(--surface-2) 40%, var(--surface)) 50%,
+    var(--surface-2) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+
+/* A page change cross-fades the page area only; the menu on the left stays still. */
+#content {
+  view-transition-name: page;
+}
+::view-transition-old(page) {
+  animation: fade-in 120ms ease-in reverse both;
+}
+::view-transition-new(page) {
+  animation: rise-in 260ms var(--ease-out-soft) both;
+}
+/* A theme change cross-fades the whole screen. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 260ms;
+  animation-timing-function: ease-out;
 }

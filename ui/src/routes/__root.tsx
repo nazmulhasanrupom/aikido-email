@@ -30,7 +30,7 @@ function Root() {
         Skip to the page
       </a>
       <Outlet />
-      <Toaster theme={theme} position="bottom-right" />
+      <Toaster theme={theme === "dark" ? "dark" : "light"} position="bottom-right" />
     </>
   );
 }

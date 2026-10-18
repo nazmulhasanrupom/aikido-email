@@ -62,7 +62,9 @@ export function Palette({ open, onClose, ws }: { open: boolean; onClose: () => v
     const first = accounts.data?.[0]?.id;
     const pages: Item[] = [
       p("p-ai", "Pages and settings", "Aikido AI", "/w/$ws/ai"),
-      ...(reoon.installed ? [p("p-reoon", "Pages and settings", "Reoon", "/w/$ws/apps/reoon")] : []),
+      ...(reoon.installed
+        ? [p("p-reoon", "Pages and settings", "Reoon", "/w/$ws/apps/reoon")]
+        : []),
       p("p-camp", "Pages and settings", "Campaigns", "/w/$ws/campaigns"),
       p("p-leads", "Pages and settings", "Leads", "/w/$ws/leads"),
       p("p-lists", "Pages and settings", "Leads: Lists", "/w/$ws/leads", {}, undefined, {

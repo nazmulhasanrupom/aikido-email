@@ -4,7 +4,8 @@
   let choice = "system";
   try {
     const saved = localStorage.getItem("aikido.theme");
-    if (saved === "light" || saved === "dark" || saved === "system") choice = saved;
+    if (saved === "light" || saved === "dark" || saved === "aikido" || saved === "system")
+      choice = saved;
   } catch {
     // no storage: use the system setting
   }
@@ -12,6 +13,6 @@
     choice === "dark" ||
     (choice === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
   const root = document.documentElement;
-  root.setAttribute("data-theme", dark ? "dark" : "light");
+  root.setAttribute("data-theme", choice === "aikido" ? "aikido" : dark ? "dark" : "light");
   root.style.colorScheme = dark ? "dark" : "light";
 })();
