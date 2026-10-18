@@ -80,6 +80,7 @@ pub fn api_router(state: AppState) -> (axum::Router<AppState>, utoipa::openapi::
         .routes(routes!(health))
         .merge(crate::accounts::routes::public_router())
         .merge(crate::accounts::routes::router(state.clone()))
+        .merge(crate::sending::unsubscribe::public_router())
         .merge(crate::sending::routes::router(state.clone()))
         .merge(crate::replies::routes::router(state.clone()))
         .merge(crate::followups::routes::router(state.clone()))

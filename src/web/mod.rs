@@ -21,7 +21,7 @@ fn is_server_path(path: &str) -> bool {
 }
 
 #[cfg(feature = "ui")]
-const CSP: &str = "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; font-src 'self'; connect-src 'self'; \
+const CSP: &str = "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; font-src 'self'; connect-src 'self'; \
                    frame-ancestors 'none'; base-uri 'none'; form-action 'self'";
 
 #[cfg(feature = "ui")]

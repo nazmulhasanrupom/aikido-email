@@ -741,6 +741,7 @@ export function Editor({
                 <MenuSeparator />
                 <MenuLabel>Recipient</MenuLabel>
                 <MenuItem onSelect={() => insert("{{email}}")}>email</MenuItem>
+                <MenuItem onSelect={() => insert("{{unsubscribe}}")}>unsubscribe link</MenuItem>
               </MenuContent>
             </MenuRoot>
             <Button

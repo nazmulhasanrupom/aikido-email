@@ -214,6 +214,9 @@ pub struct StatusReply {
     pub inside_window: bool,
     pub sent_today: i32,
     pub today_limit: i32,
+    /// Warm-up is on in the settings of this account.
+    pub warmup_enabled: bool,
+    /// Days of warm-up with sends so far. 0 on the first day.
     pub warmup_day: i32,
     pub consecutive_failures: i32,
     pub next_send_at: Option<DateTime<Utc>>,
@@ -278,6 +281,7 @@ async fn account_status(State(st): State<AppState>, ApiPath(id): ApiPath<Uuid>) 
         inside_window: rules::inside_window(&settings, now),
         sent_today: state.sent_today,
         today_limit: state.today_limit.unwrap_or(settings.daily_limit as i32),
+        warmup_enabled: settings.warmup_enabled,
         warmup_day: state.warmup_day,
         consecutive_failures: row.consecutive_failures,
         next_send_at: row.next_send_at,

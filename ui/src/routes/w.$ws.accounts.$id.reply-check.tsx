@@ -21,23 +21,40 @@ function ReplyCheck() {
         path: { id },
       }),
   });
+  const reading = useQuery({
+    queryKey: ["accounts", id, "reading"],
+    queryFn: () =>
+      http.get<S["AccountReplyStatus"]>("/v1/replies/accounts/{id}/status", { path: { id } }),
+  });
+  const folders = reading.data?.folders ?? [];
+  const paused = folders.length > 0 && folders.every((f) => f.paused);
   const act = useMutation({
     mutationFn: (what: "pause" | "resume") =>
       http.post(`/v1/replies/accounts/{id}/${what}`, { path: { id }, body: {} }),
-    onSuccess: () => toast.success("Done."),
+    onSuccess: (_, what) => {
+      toast.success(what === "pause" ? "Reply check paused." : "Reply check running.");
+      void qc.invalidateQueries({ queryKey: ["accounts", id, "reading"] });
+    },
     onError: (e) => toast.error(messageOf(e)),
   });
   if (res.isPending) return <Skeleton />;
   if (res.isError) return <ErrorNote error={res.error} />;
   return (
     <div className="flex flex-col gap-8">
-      <div className="flex gap-2">
-        <Button variant="secondary" onClick={() => act.mutate("pause")}>
-          Pause reply check
+      <div className="flex items-center gap-3">
+        <Button
+          variant={paused ? "primary" : "secondary"}
+          busy={act.isPending}
+          disabled={reading.isPending}
+          onClick={() => act.mutate(paused ? "resume" : "pause")}
+        >
+          {paused ? "Start reply check" : "Stop reply check"}
         </Button>
-        <Button variant="secondary" onClick={() => act.mutate("resume")}>
-          Resume reply check
-        </Button>
+        {reading.data && (
+          <span className={`text-sm ${paused ? "text-warning" : "text-success"}`}>
+            {paused ? "Stopped" : "Running"}
+          </span>
+        )}
       </div>
       <ReplyForm
         value={res.data.settings}

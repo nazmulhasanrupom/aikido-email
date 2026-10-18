@@ -124,7 +124,7 @@ function Row({ ws, account: a }: { ws: string; account: import("@/api/http").S["
         <HealthChip accountId={a.id} />
       </td>
       <td className={TD}>{s ? `${s.sent_today} / ${s.today_limit}` : ""}</td>
-      <td className={TD}>{s && s.warmup_day > 0 ? `Day ${s.warmup_day}` : "Off"}</td>
+      <td className={TD}>{s ? (s.warmup_enabled ? `Day ${s.warmup_day + 1}` : "Off") : ""}</td>
       <td className={TD}>{wait}</td>
       <td className={TD}>
         <MenuRoot>

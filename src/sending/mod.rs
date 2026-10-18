@@ -6,4 +6,5 @@ pub mod scheduler;
 pub mod senders;
 pub mod settings;
 pub mod tokens;
+pub mod unsubscribe;
 pub mod worker;

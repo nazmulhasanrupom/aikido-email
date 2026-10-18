@@ -39,7 +39,7 @@ pub enum Escape {
 }
 
 /// Names that every enrollment has. A caller value with the same name does not replace them.
-pub const BUILTINS: [&str; 3] = ["email", "sender_name", "sender_email"];
+pub const BUILTINS: [&str; 5] = ["email", "sender_name", "sender_email", "unsubscribe", "unsubscribe_url"];
 
 pub type Vars = BTreeMap<String, String>;
 
@@ -217,6 +217,9 @@ pub fn build_vars(variables: &Value, email: &str, sender_name: &str, sender_emai
     vars.insert("email".into(), email.to_string());
     vars.insert("sender_name".into(), sender_name.to_string());
     vars.insert("sender_email".into(), sender_email.to_string());
+    // Stay as they are: the worker puts the link of each email in their place (`sending::unsubscribe`).
+    vars.insert("unsubscribe".into(), crate::sending::unsubscribe::TOKEN.into());
+    vars.insert("unsubscribe_url".into(), crate::sending::unsubscribe::TOKEN_URL.into());
     Ok(vars)
 }
 

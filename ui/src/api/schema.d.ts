@@ -6437,6 +6437,11 @@ export interface components {
              */
             send_days: number[];
             /**
+             * @description HTML added under every email of the account. May hold `{{unsubscribe}}`, `{{sender_name}}`, `{{sender_email}}`.
+             * @default
+             */
+            signature_html: string;
+            /**
              * @description IANA time zone name, for example `Asia/Dhaka`.
              * @default UTC
              */

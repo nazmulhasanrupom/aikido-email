@@ -14,6 +14,7 @@ export interface SendStatus {
   inside_window: boolean;
   sent_today: number;
   today_limit: number;
+  warmup_enabled: boolean;
   warmup_day: number;
   consecutive_failures: number;
   next_send_at?: string | null;

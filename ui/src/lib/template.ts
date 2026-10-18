@@ -9,7 +9,13 @@ export type Part =
 
 export class TemplateError extends Error {}
 
-export const BUILTIN_VARS = ["email", "sender_name", "sender_email"];
+export const BUILTIN_VARS = [
+  "email",
+  "sender_name",
+  "sender_email",
+  "unsubscribe",
+  "unsubscribe_url",
+];
 
 export function validName(name: string): boolean {
   return /^[A-Za-z_][A-Za-z0-9_]*$/.test(name);

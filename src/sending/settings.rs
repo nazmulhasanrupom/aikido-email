@@ -52,6 +52,8 @@ pub struct SendingSettings {
     /// Finish the threads that already started before new ones open under the same daily cap.
     pub followups_first: bool,
     pub list_unsubscribe: Option<ListUnsubscribe>,
+    /// HTML added under every email of the account. May hold `{{unsubscribe}}`, `{{sender_name}}`, `{{sender_email}}`.
+    pub signature_html: String,
 }
 
 impl Default for SendingSettings {
@@ -85,6 +87,7 @@ impl Default for SendingSettings {
             reply_check_max_age_mins: 15,
             followups_first: true,
             list_unsubscribe: None,
+            signature_html: String::new(),
         }
     }
 }
@@ -221,6 +224,9 @@ impl SendingSettings {
                     return Err(SettingsError::new("invalid_list_unsubscribe", "list_unsubscribe.url must start with https://."));
                 }
             }
+        }
+        if self.signature_html.chars().count() > 20_000 {
+            return Err(SettingsError::new("invalid_signature", "signature_html must be at most 20000 characters."));
         }
         Ok(warnings)
     }
