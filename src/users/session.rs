@@ -157,6 +157,8 @@ pub fn admin_only_for_sessions(method: &Method, path: &str) -> bool {
         "/v1/sending/defaults",
         "/v1/replies/defaults",
         "/v1/followups/settings",
+        "/v1/verify/reoon/pause",
+        "/v1/verify/reoon/resume",
     ];
-    EXACT.contains(&path.trim_end_matches('/')) || path.starts_with("/v1/keys") || path.starts_with("/v1/ui/onboarding") || path.starts_with("/v1/ui/workspace")
+    EXACT.contains(&path.trim_end_matches('/')) || path.starts_with("/v1/keys") || path.starts_with("/v1/integrations/apps") || path.starts_with("/v1/ui/onboarding") || path.starts_with("/v1/ui/workspace")
 }

@@ -6,10 +6,10 @@ use serde_json::json;
 use sqlx::PgPool;
 
 #[sqlx::test]
-async fn first_boot_makes_eight_keys_second_boot_none(pool: PgPool) {
+async fn first_boot_makes_nine_keys_second_boot_none(pool: PgPool) {
     let state = app_state(pool);
     let first = api_keys::bootstrap(&state.pool, &state.config).await.unwrap();
-    assert_eq!(first.len(), 8);
+    assert_eq!(first.len(), 9);
     for (scope, key) in &first {
         assert!(key.starts_with(&format!("aik_{}_", scope.as_str())));
     }
@@ -31,7 +31,7 @@ async fn keys_from_env_are_used_and_not_printed(pool: PgPool) {
     cfg.env_api_keys.insert(Scope::Admin, "my-own-admin-key-from-env-0123456789".into());
     state.config = std::sync::Arc::new(cfg);
     let made = api_keys::bootstrap(&state.pool, &state.config).await.unwrap();
-    assert_eq!(made.len(), 7, "every scope except admin is made by the server");
+    assert_eq!(made.len(), 8, "every scope except admin is made by the server");
     let r = call(&state, "GET", "/v1/keys", Some("my-own-admin-key-from-env-0123456789"), None).await;
     assert_eq!(r.status, StatusCode::OK);
 }
@@ -79,7 +79,7 @@ async fn list_never_shows_the_key(pool: PgPool) {
     let keys = bootstrap_keys(&state).await;
     let r = call(&state, "GET", "/v1/keys", Some(&keys[&Scope::Admin]), None).await;
     let text = r.body.to_string();
-    assert_eq!(r.body.as_array().unwrap().len(), 8);
+    assert_eq!(r.body.as_array().unwrap().len(), 9);
     for key in keys.values() {
         assert!(!text.contains(key.as_str()));
     }
@@ -200,4 +200,13 @@ async fn the_generator_key_works_on_generator_routes_only(pool: PgPool) {
     assert_eq!(call(&state, "GET", "/v1/generator/status", Some(&keys[&Scope::Followups]), None).await.status, StatusCode::FORBIDDEN);
     assert_eq!(call(&state, "GET", "/v1/generator/status", Some(&keys[&Scope::Admin]), None).await.status, StatusCode::OK);
     assert_eq!(call(&state, "GET", "/v1/generator/status", None, None).await.status, StatusCode::UNAUTHORIZED);
+}
+
+#[sqlx::test]
+async fn an_old_database_gets_only_the_new_integrations_key(pool: PgPool) {
+    let state = app_state(pool);
+    api_keys::bootstrap(&state.pool, &state.config).await.unwrap();
+    sqlx::query("DELETE FROM api_keys WHERE scope = 'integrations'").execute(&state.pool).await.unwrap();
+    let next: Vec<_> = api_keys::bootstrap(&state.pool, &state.config).await.unwrap().into_iter().map(|k| k.0.as_str()).collect();
+    assert_eq!(next, ["integrations"]);
 }

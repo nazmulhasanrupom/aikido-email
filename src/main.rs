@@ -218,6 +218,14 @@ async fn serve() -> anyhow::Result<()> {
         None
     };
 
+    // The verify worker: calls Reoon for the leads of the open runs.
+    let verify_engine = Arc::new(aikido_email::verify_reoon::worker::VerifyEngine::new(state.clone()));
+    let verify_task = if cfg.leads_enabled {
+        Some(tokio::spawn(aikido_email::verify_reoon::worker::run(verify_engine.clone())))
+    } else {
+        None
+    };
+
     let listener = tokio::net::TcpListener::bind(&cfg.bind_addr).await?;
     tracing::info!(addr = %cfg.bind_addr, "listening. API docs at /docs");
     let cancel = engine.cancel.clone();
@@ -225,6 +233,7 @@ async fn serve() -> anyhow::Result<()> {
     let followup_cancel = followup_engine.cancel.clone();
     let import_cancel_on_stop = import_cancel.clone();
     let generator_cancel = generator_engine.cancel.clone();
+    let verify_cancel = verify_engine.cancel.clone();
     axum::serve(listener, docs::app(state).into_make_service_with_connect_info::<std::net::SocketAddr>())
         .with_graceful_shutdown(async move {
             shutdown_signal().await;
@@ -234,6 +243,7 @@ async fn serve() -> anyhow::Result<()> {
             followup_cancel.cancel();
             import_cancel_on_stop.cancel();
             generator_cancel.cancel();
+            verify_cancel.cancel();
         })
         .await?;
 
@@ -261,6 +271,12 @@ async fn serve() -> anyhow::Result<()> {
         // a call in flight finishes; its row keeps a lease and is picked up again if the process dies
         if tokio::time::timeout(Duration::from_secs(60), g).await.is_err() {
             tracing::warn!("generator tick still running after 60 seconds: exiting anyway");
+        }
+    }
+    if let Some(v) = verify_task {
+        // a Reoon call in flight finishes; its item keeps a lease and is picked up again if the process dies
+        if tokio::time::timeout(Duration::from_secs(130), v).await.is_err() {
+            tracing::warn!("verify tick still running after 130 seconds: exiting anyway");
         }
     }
     if let Some(p) = reply_poller {

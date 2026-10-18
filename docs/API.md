@@ -1788,3 +1788,23 @@ Rules:
 | `GET /v1/campaigns/{id}/stats` | Also `by_variant` (first email: sent, replied, reply rate) when more than one variant has sends. |
 | `PUT .../steps` | Also `variant_a_active` (turn off variant A; one variant must stay on). |
 | `GET /v1/replies/messages?handled=false` | Only emails whose lead has no interest set. |
+
+## 24. Apps and the Reoon verifier (`integrations`)
+
+Scope `integrations` (key `AIKIDO_INTEGRATIONS_API_KEY`). Install, update and uninstall need an owner or admin session. A member session can do the rest.
+
+| Route | What it does |
+| --- | --- |
+| `GET /v1/integrations/apps` | The app catalog (`reoon`) with `installed`, `status` (`installed`, `auth_failed`) and `sidebar`. |
+| `POST /v1/integrations/apps/reoon/install` | `{ api_key }`. Tests the key with the balance call first. `422 integration_key_invalid` saves nothing. `409 already_installed`. `502 integration_unreachable`. |
+| `PATCH /v1/integrations/apps/reoon` | `{ api_key?, settings? }`. A new key is tested and clears `auth_failed`. |
+| `DELETE /v1/integrations/apps/reoon` | Uninstall. Cancels open runs, deletes the key, keeps the results. |
+| `GET /v1/verify/reoon/balance` | Live credits: `daily_credits`, `instant_credits`. `404 not_installed`, `409 integration_auth_failed`. |
+| `GET /v1/verify/reoon/leads` | The Reoon page table. `GET /v1/leads` filters plus `verification_status` (comma list, `none` = not verified) and `checked_before`. Each row has `result` (or null). |
+| `POST /v1/verify/reoon/runs` | `{ lead_ids }` or `{ filter }` (up to 10000), `mode`, `force`, `idempotency_key`. Returns `{ run, estimated_credits }`. |
+| `GET /v1/verify/reoon/runs`, `GET .../runs/{id}` | History (last 50) and live counters. A stopped run has `status: failed` and `error: out_of_credits` or `auth_failed`. |
+| `POST .../runs/{id}/cancel`, `POST .../runs/{id}/resume` | Cancel the open items. Resume a stopped run. |
+| `GET`, `PATCH /v1/verify/reoon/settings` | `mode` (`power` default, `quick`), `concurrency` (1-20, default 5), `reuse_days` (default 30), `tick_secs`, `send_rule { allowed: [status], allow_not_verified }`. `422 status_not_allowed` for `invalid`, `disabled`, `disposable`, `spamtrap`. |
+| `POST /v1/verify/reoon/pause`, `.../resume` | Stop or start the worker (owner or admin sessions). |
+
+The lead timeline gets the event `email_verified` (`status`, `mode`, `score`). The send rule is not used by the campaign feeder yet (phase 3).

@@ -46,6 +46,7 @@ impl Modify for SecurityAddon {
         (name = "leads", description = "Leads, lists, tags, import and export, email check. Scope: leads"),
         (name = "campaigns", description = "Campaigns: a sequence, sender accounts and leads. Scope: campaigns"),
         (name = "generator", description = "Email Generator: AI text for the slots of a step, providers, review, usage. Scope: generator"),
+        (name = "integrations", description = "Apps (Reoon email verifier): install, verify leads, send rule. Scope: integrations"),
         (name = "admin", description = "API keys. Scope: admin"),
         (name = "auth", description = "Web login, first-boot setup, invites. No key needed"),
         (name = "users", description = "Web users, sessions, team. Needs a web session"),
@@ -85,6 +86,8 @@ pub fn api_router(state: AppState) -> (axum::Router<AppState>, utoipa::openapi::
         .merge(crate::leads::routes::router(state.clone()))
         .merge(crate::campaigns::routes::router(state.clone()))
         .merge(crate::generator::routes::router(state.clone()))
+        .merge(crate::integrations::routes::router(state.clone()))
+        .merge(crate::verify_reoon::routes::router(state.clone()))
         .merge(crate::reports::routes::router(state.clone()))
         .merge(crate::admin::routes::router(state.clone()))
         .merge(crate::users::routes::public_router())

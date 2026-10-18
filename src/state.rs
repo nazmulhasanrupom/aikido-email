@@ -24,6 +24,8 @@ pub struct AppState {
     /// Hashes and checks the passwords of web users.
     pub passwords: Arc<Passwords>,
     /// Looks up SPF, DKIM and DMARC for the domain check. Tests replace the resolver inside it.
+    /// Builds the Reoon client for a key. Tests replace it with a fake.
+    pub verifier: Arc<dyn crate::verify_reoon::client::VerifierFactory>,
     pub dns: Arc<crate::accounts::dns_check::DnsChecker>,
 }
 
@@ -41,6 +43,7 @@ impl AppState {
             clock: Arc::new(Utc::now),
             mx: Arc::new(SystemResolver::default()),
             llm: Arc::new(RealLlmFactory::default()),
+            verifier: Arc::new(crate::verify_reoon::client::RealVerifierFactory::default()),
             dns: Arc::new(crate::accounts::dns_check::DnsChecker::default()),
         }
     }

@@ -793,3 +793,19 @@ You said "build from phase 3 to the end, all at once, and do not test too much".
   8. The DNS check was never run against real DNS in a test; the tests use a fake resolver. The real resolver code is the same one the MX check uses.
   9. A CSV import or bulk action still does not mark emails Out of date (only `PATCH /v1/leads/{id}`).
   10. Not built from the map: a "Presets" variant for follow-up variants and the column header menu for built-in columns.
+
+## Reoon Email Verifier (started 2026-10-18)
+
+- **Phase 1 done:** migration `0012_integrations_reoon.sql` (all tables of the map, plus `campaigns.verification_rule` and the skip reason `verification_not_allowed`; no Rust code uses those two yet). New scope `integrations` (9 keys on first boot; an old database gets only the new key). `src/integrations/` (catalog, install / update / uninstall, key encrypted with AAD = row id). `src/verify_reoon/client.rs` (`EmailVerifier` trait, `ReoonClient`, `FakeVerifier`, `AppState.verifier` factory). Route `GET /v1/verify/reoon/balance`.
+- Session rule: `POST/PATCH/DELETE /v1/integrations/apps*` need an owner or admin (added to `session::admin_only_for_sessions`). A member can list apps and read the balance.
+- Tests: `tests/integrations.rs` (6), `tests/verify_reoon_logs.rs` (log test), 3 unit tests in `client.rs`, `tests/api_keys.rs` updated, `tests/docs.rs` route list updated. 693 cargo tests pass.
+- **Deviations / things to check by hand (map section 9):**
+  1. Balance path is a guess: `/api/v1/check-account-balance/` (`BALANCE_PATH` in `client.rs`). Check it on the live Reoon page.
+  2. Reoon answers for "bad key" and "no credits" are guessed: 401/403 = bad key, 402 = no credits, and a 200 body with `status: "error"` and a `reason` that has "credit" or "key". Check against real answers.
+  3. `verify_defaults` (one row) holds the verifier settings and `engine_paused`, so the send rule survives an uninstall. `integrations.settings` is only for app-level settings.
+  4. The client retries 2 tries total (1 retry), with a short back-off (`retry_delay`).
+  5. `Cargo` reqwest has no `query` feature, so the URL is built with `Url::query_pairs_mut`.
+- **Phase 2 done:** `src/verify_reoon/{settings,worker,routes}.rs`. Runs, items, the worker (claim with `SKIP LOCKED`, 5 minute lease, parallel calls up to `concurrency`), settings and send rule, the Reoon lead table, pause and resume, event `email_verified`. The worker starts in `main.rs` with `AIKIDO_LEADS_ENABLED`. Tests: `tests/verify_runs.rs` (4). 697 cargo tests; the only failure is the known flaky timing test `search_10000_leads...`. `docs/API.md` section 24.
+  - Limits: a stop for `out_of_credits` or `auth_failed` stops all running runs. A transient error retries an item up to 3 times, then it fails. `credits_used` counts 1 for each checked email. Estimated credits = run total minus results newer than `reuse_days`.
+  - Alerts for the two stop reasons come in phase 3.
+- **Not done yet:** phases 3 to 5 (worker, runs, feeder gate, UI). `docs/API.md` not updated yet (do it with phase 2).

@@ -27,10 +27,11 @@ pub enum Scope {
     Leads,
     Campaigns,
     Generator,
+    Integrations,
 }
 
 impl Scope {
-    pub const ALL: &'static [Scope] = &[Scope::Admin, Scope::Accounts, Scope::Sending, Scope::Replies, Scope::Followups, Scope::Leads, Scope::Campaigns, Scope::Generator];
+    pub const ALL: &'static [Scope] = &[Scope::Admin, Scope::Accounts, Scope::Sending, Scope::Replies, Scope::Followups, Scope::Leads, Scope::Campaigns, Scope::Generator, Scope::Integrations];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -42,6 +43,7 @@ impl Scope {
             Scope::Leads => "leads",
             Scope::Campaigns => "campaigns",
             Scope::Generator => "generator",
+            Scope::Integrations => "integrations",
         }
     }
 
