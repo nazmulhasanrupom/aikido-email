@@ -14,7 +14,6 @@ export const EMAIL_STATUS: Record<string, { word: string; tone: "neutral" | "suc
   ready: { word: "Ready", tone: "success" },
   stale: { word: "Out of date", tone: "warning" },
   failed: { word: "Failed", tone: "danger" },
-  held: { word: "Held", tone: "danger" },
   sent: { word: "Sent", tone: "neutral" },
 };
 
@@ -74,12 +73,12 @@ export function EmailDrawer({
     onError: (err) => toast.error(messageOf(err)),
   });
   const act = useMutation({
-    mutationFn: (action: "approve" | "regenerate" | "clear" | "skip") =>
+    mutationFn: (action: "approve" | "regenerate" | "clear") =>
       http.post<S["ActionReply"]>("/v1/campaigns/{id}/emails/actions", { path: { id: campaignId }, body: { action, ids: [e?.id ?? ""] } }),
     onSuccess: (_r, action) => {
-      toast.success(action === "approve" ? "Approved." : action === "clear" ? "Cleared." : action === "skip" ? "Lead skipped." : "Writing it again.");
+      toast.success(action === "approve" ? "Approved." : action === "clear" ? "Cleared." : "Writing it again.");
       void qc.invalidateQueries({ queryKey: ["campaigns", campaignId] });
-      if (action === "clear" || action === "skip") onClose();
+      if (action === "clear") onClose();
     },
     onError: (err) => toast.error(messageOf(err)),
   });
@@ -100,14 +99,9 @@ export function EmailDrawer({
               Approve
             </Button>
           )}
-          {e && e.status === "held" && (
-            <Button variant="secondary" busy={act.isPending} onClick={() => act.mutate("skip")}>
-              Skip this lead
-            </Button>
-          )}
           {e && !sent && e.source === "ai" && (
             <Button variant="secondary" busy={act.isPending} onClick={() => act.mutate("regenerate")}>
-              {e.status === "held" ? "Edit lead and retry" : "Write again"}
+              Write again
             </Button>
           )}
           {e && !sent && (
@@ -140,20 +134,6 @@ export function EmailDrawer({
             </p>
           )}
           {e?.error_code && <p className="text-sm text-danger">{e.error_code}</p>}
-          {e?.status === "held" && (
-            <div className="rounded-(--radius-control) border border-danger/40 bg-danger/10 p-3 text-sm" role="note">
-              <p className="font-medium">This email is held and will not be sent.</p>
-              <p>{e.hold_reason}</p>
-              {Array.isArray(e.check_failures) && e.check_failures.length > 0 && (
-                <ul className="mt-1 list-disc pl-5">
-                  {(e.check_failures as string[]).map((f) => (
-                    <li key={f}>{f}</li>
-                  ))}
-                </ul>
-              )}
-              <p className="mt-1 text-muted">Fix the lead (or your PERSONALIZATION page), then press "Edit lead and retry".</p>
-            </div>
-          )}
           {missing && <p className="text-sm text-muted">No email is written yet. Save the template, or write one here.</p>}
           {step === 1 || subject ? (
             <Field label="Subject" value={subject} disabled={sent} onChange={(ev) => setSubject(ev.target.value)} />

@@ -776,70 +776,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/campaigns/{id}/preview": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Run the optimized prompt on one lead and step. Saves nothing except an `llm_calls` row (purpose `lead_email_test`).
-         * @description Scope: `campaigns`. Costs tokens (up to 3 model calls), unless `dry_run` is true. Shows the built prompts, the result, the word count and each code check.
-         */
-        post: operations["preview"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/campaigns/{id}/prompts": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * The optimized prompt of a campaign.
-         * @description Scope: `campaigns`. `kind` is `optimized` (the server builds the user prompt; the three blocks are the system prompt) or `custom` (today's prompts, unchanged).
-         */
-        get: operations["get_prompts"];
-        /**
-         * Change the kind and the blocks of a campaign.
-         * @description Scope: `campaigns`. Edits change this campaign only. A block is up to 16000 characters. Switching an old campaign to `optimized` copies the shipped blocks in. Unsent emails are marked out of date.
-         */
-        put: operations["put_prompts"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/campaigns/{id}/prompts/reset": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Reset one block to the shipped default.
-         * @description Scope: `campaigns`. The block is set to null, so the campaign uses the shipped default (and follows later versions).
-         */
-        post: operations["reset_prompt"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/v1/campaigns/{id}/resume": {
         parameters: {
             query?: never;
@@ -2292,8 +2228,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * The shipped default prompt blocks.
-         * @description Scope: `campaigns`. Core is used by every step. Primary is for step 1. Follow-up is for step 2 and later.
+         * The shipped prompts of the Optimised mode.
+         * @description Scope: `campaigns`. A campaign with no prompts of its own uses these. The prompts are plain text with `{{variables}}`; a variable with no value is left out.
          */
         get: operations["get_defaults"];
         put?: never;
@@ -3925,31 +3861,6 @@ export interface components {
             /** Format: uuid */
             next_cursor?: string | null;
         };
-        CampaignPrompts: {
-            core: components["schemas"]["PromptBlock"];
-            /** @description The delay of each step. Change it in the Follow-ups tab. */
-            delays: components["schemas"]["StepDelay"][];
-            followup: components["schemas"]["PromptBlock"];
-            /** @description A sender profile is saved. Without one, mails are held. */
-            has_profile: boolean;
-            /** @description `optimized` or `custom`. */
-            kind: string;
-            /** @description The shipped blocks are newer than the copy. Nothing is updated by itself. */
-            newer_default: boolean;
-            primary: components["schemas"]["PromptBlock"];
-            /** Format: int32 */
-            profile_version?: number | null;
-            /** Format: uuid */
-            sender_profile_id?: string | null;
-            /** Format: int32 */
-            shipped_version: number;
-            /**
-             * Format: int32
-             * @description The shipped version the campaign copy came from.
-             */
-            version?: number | null;
-            warnings: string[];
-        };
         CampaignRef: {
             /** Format: uuid */
             id: string;
@@ -3980,12 +3891,6 @@ export interface components {
             /** @description `ok` (green), `warn` (orange), `fail` (red) or `unknown` (the DNS did not answer). */
             status: string;
             summary: string;
-        };
-        CheckResult: {
-            /** @description Why it failed. Empty when it passed. */
-            detail: string;
-            name: string;
-            passed: boolean;
         };
         Checklist: {
             items: components["schemas"]["ChecklistItem"][];
@@ -4256,16 +4161,6 @@ export interface components {
          * @enum {string}
          */
         DedupeMode: "skip" | "fill_empty" | "overwrite";
-        Defaults: {
-            core: string;
-            followup: string;
-            primary: string;
-            /**
-             * Format: int32
-             * @description The version of the shipped blocks.
-             */
-            version: number;
-        };
         /** @enum {string} */
         DelayType: "business_days" | "calendar_days";
         DeleteFieldReply: {
@@ -4360,14 +4255,12 @@ export interface components {
         EmailCell: {
             edited_by_hand: boolean;
             error_code?: string | null;
-            /** @description Status `held`: why (`missing_required: company`, `checks_failed: ...`). */
-            hold_reason?: string | null;
             /**
              * Format: uuid
              * @description The saved email. Use it with `POST .../emails/actions`.
              */
             id: string;
-            /** @description `none`, `writing`, `review`, `ready`, `stale`, `failed`, `held` or `sent`. */
+            /** @description `none`, `writing`, `review`, `ready`, `stale`, `failed` or `sent`. */
             status: string;
             /** Format: int32 */
             step_number: number;
@@ -4404,6 +4297,8 @@ export interface components {
         };
         EmailTestReply: {
             body: string;
+            /** @description Optimised mode: all 4 emails (the primary email and the 3 follow-ups). `subject` and `body` are the one asked for. */
+            emails: components["schemas"]["TestMail"][];
             /** @description `template` or `ai`. */
             mode: string;
             subject: string;
@@ -4892,10 +4787,6 @@ export interface components {
         Health: {
             status: string;
         };
-        HeldInfo: {
-            failures: string[];
-            reason: string;
-        };
         HostInfo: {
             host: string;
             /** Format: int32 */
@@ -5224,22 +5115,14 @@ export interface components {
             suppressed: boolean;
         };
         LeadEmail: {
-            /** @description Optimized prompt: the angle of this mail (3 to 8 words). The next step must use another one. */
-            angle_used?: string | null;
             body_html?: string | null;
             body_text?: string | null;
             /** Format: uuid */
             campaign_id: string;
-            /** @description Status `held`: the checks that failed. */
-            check_failures?: string[] | null;
-            /** @description Optimized prompt: the claims in the mail and where each one comes from. */
-            claims_check?: string[] | null;
             /** Format: date-time */
             created_at: string;
             edited_by_hand: boolean;
             error_code?: string | null;
-            /** @description Status `held`: why the mail was not written or not sent (`missing_required: company`, `checks_failed: ...`, `previous_step_held`, or the model's reason). */
-            hold_reason?: string | null;
             /** Format: uuid */
             id: string;
             /** Format: uuid */
@@ -5250,7 +5133,7 @@ export interface components {
             run_id?: string | null;
             /** @description `template`, `ai` or `manual`. */
             source: string;
-            /** @description `none`, `writing`, `review`, `ready`, `stale`, `failed`, `held` or `sent`. */
+            /** @description `none`, `writing`, `review`, `ready`, `stale`, `failed` or `sent`. */
             status: string;
             /**
              * Format: int32
@@ -5264,8 +5147,6 @@ export interface components {
             tokens_out: number;
             /** Format: date-time */
             updated_at: string;
-            /** @description Optimized prompt: did the mail use the lead's trigger? */
-            used_trigger?: boolean | null;
             variant_key?: string | null;
         };
         LeadEvent: {
@@ -5702,40 +5583,6 @@ export interface components {
             /** @description `connect-email`, `sending-basics`, `ai`, `import` or `done`. */
             step: string;
         };
-        OptimizedPreviewBody: {
-            /** @description `true`: only build the prompts. No model call, no tokens, no limit. `status` is `PROMPTS_ONLY`. */
-            dry_run?: boolean | null;
-            /** Format: uuid */
-            lead_id: string;
-            /** @description Angles of the earlier mails. Without it, the saved emails of the lead are used. */
-            previous_angles?: string[] | null;
-            /**
-             * Format: int32
-             * @description 1 = Primary email. 2 and later are follow-ups.
-             */
-            step: number;
-        };
-        OptimizedPreviewReply: {
-            angle_used: string;
-            body: string;
-            calls: number;
-            /** @description Every check on the last answer of the model. */
-            checks: components["schemas"]["CheckResult"][];
-            claims_check: string[];
-            held?: components["schemas"]["HeldInfo"] | null;
-            previous_angles: string[];
-            /** @description The mail, when it passed. Null when it was held. */
-            status: string;
-            subject: string;
-            system: string;
-            /** Format: int64 */
-            tokens_in: number;
-            /** Format: int64 */
-            tokens_out: number;
-            used_trigger: boolean;
-            user: string;
-            word_count: number;
-        };
         /**
          * @description How `write` treats an email that exists.
          * @enum {string}
@@ -5948,11 +5795,13 @@ export interface components {
         ProfileReply: {
             profile?: components["schemas"]["SenderProfile"] | null;
         };
-        PromptBlock: {
-            /** @description `true`: the campaign has no copy and uses the shipped default. */
-            is_default: boolean;
-            /** @description The text in use: the campaign copy, or the shipped default when the campaign has none. */
-            text: string;
+        PromptDefaults: {
+            /** @description The shipped instructions of the Optimised mode. */
+            system: string;
+            /** @description The shipped user prompt of the Optimised mode. */
+            user: string;
+            /** @description The `{{names}}` the prompts can use: the sender fields first, then the lead fields. */
+            variables: string[];
         };
         /** @enum {string} */
         Provider: "gmail" | "microsoft" | "smtp";
@@ -6163,10 +6012,6 @@ export interface components {
         ResetLinkReply: {
             /** @description Shown this one time only. Valid 1 hour. */
             link: string;
-        };
-        ResetPromptBody: {
-            /** @description `core`, `primary` or `followup`. */
-            block: string;
         };
         /** @description Extra filter on the latest Reoon result. The status filter is `verification_status` of the lead filter. */
         ResultFilter: {
@@ -6565,7 +6410,7 @@ export interface components {
          */
         Severity: "error" | "warning" | "info";
         /** @enum {string} */
-        SkipReason: "suppressed" | "unverified" | "active_elsewhere" | "no_healthy_account" | "lead_deleted" | "already_in_campaign" | "missing_variable" | "company_replied" | "campaign_archived" | "verification_not_allowed" | "held_skipped";
+        SkipReason: "suppressed" | "unverified" | "active_elsewhere" | "no_healthy_account" | "lead_deleted" | "already_in_campaign" | "missing_variable" | "company_replied" | "campaign_archived" | "verification_not_allowed";
         /** @enum {string} */
         SpamCheck: "warn" | "fail";
         StatsReply: components["schemas"]["Tally"] & {
@@ -6624,13 +6469,6 @@ export interface components {
             wait?: components["schemas"]["WaitInfo"] | null;
             /** Format: int32 */
             warmup_day: number;
-        };
-        StepDelay: {
-            /** Format: int32 */
-            delay_amount: number;
-            delay_type: string;
-            /** Format: int32 */
-            step_number: number;
         };
         StepInput: {
             /**
@@ -6736,6 +6574,12 @@ export interface components {
              * @description 1 = Primary email.
              */
             step: number;
+        };
+        TestMail: {
+            body: string;
+            /** Format: int32 */
+            step: number;
+            subject: string;
         };
         TestReply: {
             detail: string;
@@ -8111,8 +7955,6 @@ export interface operations {
                 limit: number | null;
                 /** @description `true`: only leads that lack a value one of the emails needs (a variable with no fallback). */
                 missing: boolean | null;
-                /** @description `true`: only leads that have a held email (optimized prompt: required field empty, model HOLD, or checks failed twice). */
-                held: boolean | null;
                 /** @description Latest Reoon status, a comma list like `safe,catch_all`. `none` means not verified yet. */
                 verification_status: string | null;
             };
@@ -8370,159 +8212,6 @@ export interface operations {
             };
             /** @description The campaign is not active */
             409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    preview: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["OptimizedPreviewBody"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["OptimizedPreviewReply"];
-                };
-            };
-            /** @description No such campaign, lead or step */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description generator_not_ready, wrong_mode (not the optimized prompt) or generation_failed */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description rate_limited: 10 a minute */
-            429: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    get_prompts: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CampaignPrompts"];
-                };
-            };
-            /** @description No such campaign */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    put_prompts: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        /** @description `{ kind?, core?, primary?, followup?, sender_profile_id? }`. A block that is not sent stays. `null` resets a block to the shipped default. */
-        requestBody: {
-            content: {
-                "application/json": Record<string, never>;
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CampaignPrompts"];
-                };
-            };
-            /** @description No such campaign */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description A value is not valid */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    reset_prompt: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ResetPromptBody"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CampaignPrompts"];
-                };
-            };
-            /** @description No such campaign */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Unknown block */
-            422: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -11286,7 +10975,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Defaults"];
+                    "application/json": components["schemas"]["PromptDefaults"];
                 };
             };
         };

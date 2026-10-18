@@ -119,7 +119,7 @@ export function PersonalizationPage({ ws }: { ws: string }) {
   return (
     <Page>
       <PageHeader
-        title="PERSONALIZATION"
+        title="Personalisation"
         sub="Tell us who you are and what you offer. We write a sender profile that every optimized email uses."
         actions={
           <Button variant="secondary" onClick={() => setWipe(true)} disabled={!saved && !sources.data?.length}>

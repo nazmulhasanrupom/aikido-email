@@ -53,7 +53,7 @@ You connect your inboxes (Gmail, Outlook or any IMAP/SMTP). You import leads. Yo
 | **Lead management** | Leads, custom fields, lists, tags, bulk actions, CSV import and export, MX email check, timeline per lead. |
 | **Campaigns** | A sequence, a pool of sender inboxes, a set of leads and a daily limit of new leads. Stops colleagues at the same company when one replies. |
 | **Email Generator (AI)** | `{{ai:opener}}` slots filled per lead by Anthropic, OpenAI-compatible APIs or a local model (Ollama). Guard checks, review mode, budgets, preview. |
-| **Email optimization** | A default cold-mail prompt (Core, Primary, Follow-up) with a server-built user prompt, a PERSONALIZATION page that turns your link, CV and notes into a sender profile, code checks on every mail, and HOLD for mails that fail. |
+| **Optimised mode** | Third way to write emails (next to Template and AI): one prompt writes the first email and 3 follow-ups per lead in one call. A PERSONALIZATION page turns your link, CV and notes into a sender profile the prompt uses. |
 | **AI column mapping** | Upload any CSV. Rules and an AI map the columns. You confirm before anything is saved. |
 | **Web app** | Setup wizard, accounts, leads, campaigns editor, inbox, reports, settings, status page, alerts, `Ctrl K` search. |
 | **Security** | Secrets encrypted with AES-256-GCM. Scoped API keys (SHA-256 hashed). CSRF protection. Logs never hold tokens or passwords. |

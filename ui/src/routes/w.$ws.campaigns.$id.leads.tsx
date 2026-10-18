@@ -74,19 +74,18 @@ function CampaignLeads() {
   const [openEmail, setOpenEmail] = useState<null | { lead: string; email: string; step: number }>(null);
   const [state, setState] = useState<string>("");
   const [onlyMissing, setOnlyMissing] = useState(false);
-  const [onlyHeld, setOnlyHeld] = useState(false);
   const [vstatus, setVstatus] = useState("");
   const [byRule, setByRule] = useState(false);
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [menu, setMenu] = useState<null | "list" | "import">(null);
   const [listId, setListId] = useState("");
   const leads = useInfiniteQuery({
-    queryKey: ["campaigns", id, "leads", state, onlyMissing, onlyHeld, vstatus, byRule],
+    queryKey: ["campaigns", id, "leads", state, onlyMissing, vstatus, byRule],
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam }) =>
       http.get<S["CampaignLeadsReply"]>("/v1/campaigns/{id}/leads", {
         path: { id },
-        query: { state, limit: 50, cursor: pageParam, verification_status: vstatus, ...(byRule ? { state: "skipped", skip_reason: "verification_not_allowed" } : {}), ...(onlyMissing ? { missing: true } : {}), ...(onlyHeld ? { held: true } : {}) },
+        query: { state, limit: 50, cursor: pageParam, verification_status: vstatus, ...(byRule ? { state: "skipped", skip_reason: "verification_not_allowed" } : {}), ...(onlyMissing ? { missing: true } : {}) },
       }),
     getNextPageParam: (l) => l.next_cursor ?? undefined,
     refetchInterval: 15_000,
@@ -112,17 +111,6 @@ function CampaignLeads() {
       }),
     onSuccess: (r) => {
       toast.success(`${r.changed} approved.`);
-      refresh();
-    },
-    onError: (e) => toast.error(messageOf(e)),
-  });
-  const heldIds = rows.filter((r) => picked.has(r.lead_id)).flatMap((r) => r.emails.filter((e) => e.status === "held").map((e) => e.id));
-  const heldAct = useMutation({
-    mutationFn: (action: "regenerate" | "skip") =>
-      http.post<S["ActionReply"]>("/v1/campaigns/{id}/emails/actions", { path: { id }, body: { action, ids: heldIds } }),
-    onSuccess: (r, action) => {
-      toast.success(action === "skip" ? `${r.changed} skipped.` : `${r.changed} will be written again.`);
-      setPicked(new Set());
       refresh();
     },
     onError: (e) => toast.error(messageOf(e)),
@@ -193,26 +181,6 @@ function CampaignLeads() {
         >
           Missing a value used in your emails
         </button>
-        {camp.data?.content_mode === "ai" && (
-          <button
-            type="button"
-            aria-pressed={onlyHeld}
-            onClick={() => setOnlyHeld(!onlyHeld)}
-            className={`rounded-full border px-3 py-1 text-sm ${onlyHeld ? "border-accent bg-accent-soft" : "border-border"}`}
-          >
-            Held
-          </button>
-        )}
-        {onlyHeld && (
-          <>
-            <Button variant="secondary" className="h-7" disabled={!heldIds.length} busy={heldAct.isPending} onClick={() => heldAct.mutate("regenerate")}>
-              Edit lead and retry{heldIds.length ? ` (${heldIds.length})` : ""}
-            </Button>
-            <Button variant="secondary" className="h-7" disabled={!heldIds.length} busy={heldAct.isPending} onClick={() => heldAct.mutate("skip")}>
-              Skip
-            </Button>
-          </>
-        )}
         {reoon.installed && (
           <button
             type="button"
@@ -253,7 +221,7 @@ function CampaignLeads() {
               Approve all that need review
             </Button>
           )}
-          {camp.data?.content_mode === "ai" && (
+          {camp.data?.content_mode !== "template" && (
             <Button variant="secondary" onClick={() => setGenOpen(true)}>
               Generate emails{picked.size > 0 ? ` for ${picked.size}` : ""}
             </Button>
@@ -340,7 +308,7 @@ function CampaignLeads() {
                     ) : c.id === "state" ? (
                       <Pill>{say("campaignLead", r.state)}</Pill>
                     ) : c.id === "follow" ? (
-                      followText(r, camp.data?.content_mode === "ai")
+                      followText(r, camp.data?.content_mode !== "template")
                     ) : c.id === "interest" ? (
                       r.interest ? (
                         <Pill tone="accent">{say("interest", r.interest)}</Pill>
@@ -479,7 +447,7 @@ function CampaignLeads() {
 function EmailCell({ cell, onOpen }: { cell: S["EmailCell"] | undefined; onOpen: () => void }) {
   return (
     <button type="button" onClick={onOpen} className="flex max-w-56 flex-col items-start gap-0.5 text-left">
-      <StatusChip status={cell?.status ?? "none"} hint={cell?.hold_reason ?? cell?.error_code} />
+      <StatusChip status={cell?.status ?? "none"} hint={cell?.error_code} />
       {cell && (
         <span className="max-w-full truncate text-xs text-muted">
           {cell.variant_key ? `${cell.variant_key}: ` : ""}

@@ -21,7 +21,7 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 pub const EMAIL_COLS: &str = "id, campaign_id, lead_id, step_number, variant_key, subject, body_text, body_html, source, status, edited_by_hand, \
-    input_hash, error_code, tokens_in, tokens_out, job_id, run_id, created_at, updated_at, angle_used, used_trigger, claims_check, hold_reason, check_failures";
+    input_hash, error_code, tokens_in, tokens_out, job_id, run_id, created_at, updated_at";
 
 #[derive(FromRow, Serialize, Clone, Debug, ToSchema)]
 pub struct LeadEmail {
@@ -36,7 +36,7 @@ pub struct LeadEmail {
     pub body_html: Option<String>,
     /// `template`, `ai` or `manual`.
     pub source: String,
-    /// `none`, `writing`, `review`, `ready`, `stale`, `failed`, `held` or `sent`.
+    /// `none`, `writing`, `review`, `ready`, `stale`, `failed` or `sent`.
     pub status: String,
     pub edited_by_hand: bool,
     #[serde(skip)]
@@ -48,18 +48,6 @@ pub struct LeadEmail {
     pub run_id: Option<Uuid>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
-    /// Optimized prompt: the angle of this mail (3 to 8 words). The next step must use another one.
-    pub angle_used: Option<String>,
-    /// Optimized prompt: did the mail use the lead's trigger?
-    pub used_trigger: Option<bool>,
-    /// Optimized prompt: the claims in the mail and where each one comes from.
-    #[schema(value_type = Option<Vec<String>>)]
-    pub claims_check: Option<Value>,
-    /// Status `held`: why the mail was not written or not sent (`missing_required: company`, `checks_failed: ...`, `previous_step_held`, or the model's reason).
-    pub hold_reason: Option<String>,
-    /// Status `held`: the checks that failed.
-    #[schema(value_type = Option<Vec<String>>)]
-    pub check_failures: Option<Value>,
 }
 
 #[derive(FromRow, Serialize, Clone, Debug, ToSchema)]
@@ -475,7 +463,7 @@ pub async fn for_send(conn: &mut PgConnection, campaign_id: Uuid, lead: &Lead, s
         .bind(step.step_number)
         .fetch_optional(&mut *conn)
         .await?;
-    let ai_mode = ctx.campaign.content_mode == "ai";
+    let ai_mode = ctx.campaign.is_ai();
     let usable = |r: &LeadEmail| r.status == "ready" || r.status == "sent" || (r.status == "stale" && (ai_mode || r.edited_by_hand || r.source != "template"));
     if let Some(r) = row.as_ref().filter(|r| usable(r)) {
         return Ok(ForSend::Use(Built { subject: r.subject.clone(), body_text: r.body_text.clone(), body_html: r.body_html.clone(), hash: r.input_hash.clone().unwrap_or_default() }));
@@ -483,7 +471,6 @@ pub async fn for_send(conn: &mut PgConnection, campaign_id: Uuid, lead: &Lead, s
     if ai_mode {
         return Ok(ForSend::Hold(match row.as_ref().map(|r| r.status.as_str()) {
             Some("review") => "email_review",
-            Some("held") => "email_held",
             _ => "email_not_ready",
         }));
     }
@@ -536,7 +523,7 @@ pub fn required_names(ctx: &Ctx, prompts: Option<&super::email_ai::Prompts>) -> 
     let mut names: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
     let mut step_texts: Vec<(String, Option<String>, Option<String>)> = ctx.steps.iter().map(|s| (s.subject.clone(), s.body_text.clone(), s.body_html.clone())).collect();
     step_texts.extend(ctx.variants.iter().map(|v| (v.subject.clone(), v.body_text.clone(), v.body_html.clone())));
-    if ctx.campaign.content_mode != "ai" {
+    if !ctx.campaign.is_ai() {
         for (sub, text, html) in &step_texts {
             if let Ok(t) = StepTemplates::parse(sub, text.as_deref(), html.as_deref()) {
                 names.extend(t.required());
@@ -548,7 +535,7 @@ pub fn required_names(ctx: &Ctx, prompts: Option<&super::email_ai::Prompts>) -> 
             names.extend(t.required().into_iter().map(String::from));
         }
     }
-    if let (Some(p), "ai") = (prompts, ctx.campaign.content_mode.as_str()) {
+    if let (Some(p), true) = (prompts, ctx.campaign.content_mode == "ai") {
         for text in p.system.iter().chain(p.users.values()) {
             if let Ok(t) = Template::parse(text) {
                 names.extend(t.required().into_iter().map(String::from));

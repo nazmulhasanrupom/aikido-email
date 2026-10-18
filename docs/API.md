@@ -1857,23 +1857,13 @@ Four new columns on a lead: `industry`, `personalization_note`, `trigger_event` 
 - The code removes dashes, drops unknown source tags, clears a field with no valid tag (listed in `missing`), keeps one word of `sender_first_name`. `allow_low_personalization` is never set by the AI.
 - Saving a new version marks unsent mails of optimized campaigns `stale`.
 
-### Prompt blocks (`campaigns`)
+### The Optimised mode (`campaigns`)
 
-| Method | Path | Does |
-| --- | --- | --- |
-| GET | `/v1/prompts/defaults` | Shipped `core`, `primary`, `followup` and `version`. |
-| GET / PUT | `/v1/campaigns/{id}/prompts` | `kind` (`optimized` or `custom`), the three blocks (`{text, is_default}`), `version`, `newer_default`, `has_profile`, `warnings` (`no_profile`, `core_missing_sections`), `delays` of each step. PUT takes `{kind?, core?, primary?, followup?, sender_profile_id?}`; `null` resets a block. Up to 16,000 characters per block. |
-| POST | `/v1/campaigns/{id}/prompts/reset` | `{block}`: set one block to `null` (the shipped default). |
-| POST | `/v1/campaigns/{id}/preview` | `{lead_id, step, previous_angles?, dry_run?}`. Runs the whole flow on one lead and saves nothing. Returns `system`, `user`, the result, `word_count`, `held`, and a `checks` list (8 checks, `passed`, `detail`). `dry_run: true` only builds the prompts (no tokens, no limit). |
+A campaign has three modes: `template`, `ai` and `optimized` (`PATCH /v1/campaigns/{id}` `content_mode`). `template` and `ai` are unchanged. In `optimized`, one model call writes the primary email and three follow-ups for a lead, and the server saves them in the four `lead_emails` rows (steps 1 to 4).
 
-- A campaign that turns to AI mode with no prompts of its own starts `optimized`, with the three shipped blocks copied in. A campaign with prompts stays `custom`. Switching an old campaign is `PUT .../prompts {kind: "optimized"}`.
-- System prompt of a step = Core + (Primary for step 1, Follow-up for step 2 and later) + the fixed server rules. The user prompt is built by the server: a `SENDER` JSON (empty values when no profile; `sender_first_name` falls back to the first word of the account name) and a `LEAD` JSON (`first_name`, `company`, `title`, `industry`, `website`, `personalization_note`, `trigger`, `trigger_verified`, `sequence_step`, `previous_angles`, `extra`). Never in the prompt: email, phone, id, notes, tags, states, source, timestamps, suppression and Reoon data. Values are cut at 1,000 characters, `extra` at 3,000.
-
-### The flow and the checks
-
-The model answers `{status, subject, body, angle_used, used_trigger, claims_check, hold_reason}`. Per mail: required fields empty, or the step before has no `angle_used`: held, no call. Model says `HOLD`: held with its reason. `OK`: the code checks status, word limit (under 80 for step 1, under 60 later), no em or en dash, banned phrases, subject (steps 2 and 3 empty; step 1 and 4+ 2 to 5 lowercase words), links (none, except a link from Proof in step 3), `angle_used` new, no placeholder. A failed check gives one more call with the failure list; failing again holds the mail (`checks_failed: ...`). At most 3 calls per mail. Step 4 and later have their own subject and keep `In-Reply-To` and `References`.
-
-- `lead_emails.status` has a new value `held`, with `hold_reason` and `check_failures`; saved mails also have `angle_used`, `used_trigger`, `claims_check`. A held email is never sent; the enrollment waits with `wait_reason: email_held`.
-- `GET /v1/campaigns/{id}/leads?held=true` lists leads with a held email. Each `emails` cell has `id` and `hold_reason`.
-- `POST /v1/campaigns/{id}/emails/actions`: `regenerate` is "Edit lead and retry" (it also clears the hold). New action `skip` (held emails only): the lead's enrollment stops with reason `held_skipped`, a pending lead becomes `skipped` with `skip_reason: held_skipped`.
-- Alert `emails_held` when more than 20% of an AI run is held.
+- Switching to `optimized` makes the sequence have 4 steps: missing steps are added (3, 4 and 5 business days after the step before; existing steps are kept). More than 4 steps gives `422 too_many_steps`.
+- The prompts are plain text with `{{variables}}`. The instructions are `sequences.ai_system_prompt` (`PATCH /v1/followups/sequences/{id}`), the user prompt is `ai_user_prompt` of step 1 (`PUT .../steps`). Empty means the shipped default. `GET /v1/prompts/defaults` (scope `campaigns`) gives `system`, `user` and the `variables` list: the nine sender fields of the saved profile (`sender_first_name`, `ideal_customer`, `not_a_fit`, `problem_solved`, `offer`, `outcome`, `proof_or_none`, `low_friction_offer`, `allow_low_personalization`) and the lead fields (`first_name`, `last_name`, `company_name`, `job_title`, `industry`, `website`, `personalization_note`, `trigger_event`, `trigger_verified`, `location`, `linkedin_url`, `timezone`, plus the short names `company`, `title`, `trigger` and the custom fields). A variable with no value is left out, and a line whose variables are all empty is dropped; `{{name|fallback}}` gives a value. Email, phone, notes and tags are never available.
+- The server adds only the answer format: `{primary: {subject, body}, followup_1: {body}, followup_2: {body}, followup_3: {body}}`. The only check is that format (one more try if it is wrong; then the email is `failed`). Dashes are replaced by commas. Follow-ups have no subject (same thread). No footer is added.
+- `POST /v1/campaigns/{id}/emails/generate` queues one row per lead (the first wanted step) and the worker fills all four. `estimate` counts leads. A sent or hand edited email is never replaced; a new sender profile version marks unsent emails `stale`.
+- `POST /v1/campaigns/{id}/emails/test` in this mode answers with `emails`: all four `{step, subject, body}`. Nothing is saved.
+- 10 calls a minute per user for `generate` of a profile (`429 rate_limited`).

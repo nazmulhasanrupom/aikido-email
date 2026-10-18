@@ -114,3 +114,45 @@ mod tests {
         assert!(!is_optimized_column("phone"));
     }
 }
+
+/// A lead for tests.
+#[cfg(test)]
+pub fn test_lead() -> crate::leads::model::Lead {
+    use crate::leads::model::{ContactState, Lead, LeadSource, Verification};
+    use chrono::Utc;
+    use serde_json::json;
+    use uuid::Uuid;
+    Lead {
+        id: Uuid::nil(),
+        email: "secret@example.com".into(),
+        email_domain: "example.com".into(),
+        first_name: Some("Ana".into()),
+        last_name: Some("Silva".into()),
+        company_name: Some("Acme \"Co\"".into()),
+        job_title: Some("CTO".into()),
+        phone: Some("+123456".into()),
+        website: Some("https://acme.test".into()),
+        linkedin_url: None,
+        location: None,
+        timezone: None,
+        custom_fields: json!({ "team_size": "40", "empty": "" }),
+        tags: vec!["vip".into()],
+        contact_state: ContactState::New,
+        interest: None,
+        verification: Verification::SyntaxOk,
+        source: LeadSource::Manual,
+        source_ref: None,
+        notes: Some("private note".into()),
+        last_contacted_at: None,
+        last_replied_at: None,
+        created_at: Utc::now(),
+        updated_at: Utc::now(),
+        industry: Some("Logistics".into()),
+        personalization_note: None,
+        trigger_event: Some("Opened a new depot".into()),
+        trigger_verified: true,
+        verification_status: None,
+        verification_score: None,
+        verification_checked_at: None,
+    }
+}

@@ -65,12 +65,17 @@ pub enum SkipReason {
     CampaignArchived,
     /// Reoon: the result of the lead is not allowed by the send rule.
     VerificationNotAllowed,
-    /// The email of the lead was held and a person chose to skip the lead.
-    HeldSkipped,
 }
 
 pub const CAMPAIGN_COLS: &str = "id, name, status, sequence_id, daily_new_leads, account_pick, stop_company_on_reply, allow_unverified, timezone, \
     last_account_id, warning, launched_at, completed_at, content_mode, auto_write, footer, emails_saved_at, verification_rule, created_at, updated_at";
+
+impl Campaign {
+    /// AI mode and Optimised mode both write the emails with a model.
+    pub fn is_ai(&self) -> bool {
+        matches!(self.content_mode.as_str(), "ai" | "optimized")
+    }
+}
 
 #[derive(FromRow, Serialize, Clone, Debug, ToSchema)]
 pub struct Campaign {

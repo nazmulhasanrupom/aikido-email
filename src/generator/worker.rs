@@ -72,8 +72,6 @@ pub struct TickReport {
     /// AI mode emails (`campaigns::email_ai`): written (ready or in review), and failed.
     pub emails_written: usize,
     pub emails_failed: usize,
-    /// Optimized prompt: emails the model or the checks held.
-    pub emails_held: usize,
 }
 
 pub async fn tick(engine: &GeneratorEngine) -> anyhow::Result<TickReport> {
@@ -172,7 +170,6 @@ pub async fn tick(engine: &GeneratorEngine) -> anyhow::Result<TickReport> {
         let e = crate::campaigns::email_ai::tick(&engine.state, &ctx.client, provider.id, &settings, width, &engine.cancel).await?;
         report.emails_written = e.written;
         report.emails_failed = e.failed;
-        report.emails_held = e.held;
         report.claimed += e.claimed;
         report.auth_failed |= e.auth_failed;
         report.daily_budget_reached |= e.daily_budget_reached;

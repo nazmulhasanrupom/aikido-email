@@ -43,7 +43,6 @@ pub fn router(state: AppState) -> OpenApiRouter<AppState> {
         .routes(routes!(feeder_resume))
         .routes(routes!(feeder_status))
         .merge(super::email_routes::routes())
-        .merge(super::prompt_routes::routes())
         .merge(super::extras::routes())
         .route_layer(axum::middleware::from_fn_with_state((state, Scope::Campaigns), require_scope))
 }
@@ -445,8 +444,8 @@ async fn patch_campaign(State(st): State<AppState>, ApiPath(id): ApiPath<Uuid>, 
             "timezone" => c.timezone = check_tz(v.as_str().ok_or_else(|| bad("text"))?)?,
             "content_mode" => {
                 c.content_mode = match v.as_str() {
-                    Some(m @ ("template" | "ai")) => m.to_string(),
-                    _ => return Err(bad("template or ai")),
+                    Some(m @ ("template" | "ai" | "optimized")) => m.to_string(),
+                    _ => return Err(bad("template, ai or optimized")),
                 }
             }
             "auto_write" => c.auto_write = v.as_bool().ok_or_else(|| bad("true or false"))?,
@@ -503,9 +502,9 @@ async fn patch_campaign(State(st): State<AppState>, ApiPath(id): ApiPath<Uuid>, 
     if patch.contains_key("footer") {
         super::emails::mark_stale(&mut tx, id, None).await?;
     }
-    // a campaign that turns to AI mode starts with the optimized prompt, unless it already has prompts of its own
-    if patch.contains_key("content_mode") && c.content_mode == "ai" {
-        super::prompt_routes::init_optimized_if_blank(&mut tx, c.sequence_id).await?;
+    // The Optimised mode writes exactly 4 emails: the primary email and 3 follow-ups.
+    if patch.contains_key("content_mode") && c.content_mode == "optimized" {
+        super::email_opt::ensure_four_steps(&mut tx, c.sequence_id, st.now()).await?;
     }
     if let Some(ids) = accounts {
         sqlx::query("DELETE FROM campaign_accounts WHERE campaign_id = $1 AND NOT account_id = ANY($2)").bind(id).bind(&ids).execute(&mut *tx).await?;
@@ -657,8 +656,6 @@ pub struct CampaignLeadsQuery {
     limit: Option<i64>,
     /// `true`: only leads that lack a value one of the emails needs (a variable with no fallback).
     missing: Option<bool>,
-    /// `true`: only leads that have a held email (optimized prompt: required field empty, model HOLD, or checks failed twice).
-    held: Option<bool>,
     /// Latest Reoon status, a comma list like `safe,catch_all`. `none` means not verified yet.
     verification_status: Option<String>,
 }
@@ -712,15 +709,13 @@ pub struct EmailCell {
     #[serde(skip)]
     pub lead_id: Uuid,
     pub step_number: i32,
-    /// `none`, `writing`, `review`, `ready`, `stale`, `failed`, `held` or `sent`.
+    /// `none`, `writing`, `review`, `ready`, `stale`, `failed` or `sent`.
     pub status: String,
     pub variant_key: Option<String>,
     /// The first words of the subject (or of the body for a follow up with no subject).
     pub subject_preview: String,
     pub edited_by_hand: bool,
     pub error_code: Option<String>,
-    /// Status `held`: why (`missing_required: company`, `checks_failed: ...`).
-    pub hold_reason: Option<String>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -750,14 +745,9 @@ async fn list_campaign_leads(State(st): State<AppState>, ApiPath(id): ApiPath<Uu
         ),
     };
     let ctx = super::emails::load_ctx(&mut conn, id).await?.ok_or_else(not_found)?;
-    let prompts = if ctx.campaign.content_mode == "ai" { Some(super::email_ai::load_prompts(&mut conn, &ctx).await?) } else { None };
+    let prompts = if ctx.campaign.is_ai() { Some(super::email_ai::load_prompts(&mut conn, &ctx).await?) } else { None };
     let needs = super::emails::required_names(&ctx, prompts.as_ref());
     let missing_cond = if q.missing == Some(true) { super::emails::missing_sql(&needs, &ctx.defs) } else { "true".to_string() };
-    let held_cond = if q.held == Some(true) {
-        "EXISTS (SELECT 1 FROM lead_emails h WHERE h.campaign_id = cl.campaign_id AND h.lead_id = cl.lead_id AND h.status = 'held')"
-    } else {
-        "true"
-    };
     let statuses = crate::verify_reoon::auto::parse_statuses(q.verification_status.as_deref());
     let status_cond = crate::verify_reoon::auto::status_cond(7);
     let mut leads: Vec<CampaignLeadRow> = sqlx::query_as(&format!(
@@ -774,8 +764,6 @@ async fn list_campaign_leads(State(st): State<AppState>, ApiPath(id): ApiPath<Uu
                   WHEN EXISTS (SELECT 1 FROM generations g WHERE g.enrollment_id = e.id AND g.step_number = e.next_step AND g.status = 'pending_review')
                     THEN 'waiting_ai_review'
                   WHEN e.status = 'waiting_send' THEN 'queued'
-                  WHEN EXISTS (SELECT 1 FROM lead_emails h WHERE h.campaign_id = cl.campaign_id AND h.lead_id = cl.lead_id AND h.step_number = e.next_step AND h.status = 'held')
-                    THEN 'email_held'
                   WHEN e.next_due_at > now() THEN 'waiting_delay'
                   ELSE NULL
                 END AS wait_reason
@@ -783,7 +771,7 @@ async fn list_campaign_leads(State(st): State<AppState>, ApiPath(id): ApiPath<Uu
            CROSS JOIN (SELECT count(*)::bigint AS n FROM sequence_steps WHERE sequence_id = (SELECT sequence_id FROM campaigns WHERE id = $1)) steps
           WHERE cl.campaign_id = $1 AND ($2::campaign_lead_state IS NULL OR cl.state = $2) AND ($3::campaign_skip_reason IS NULL OR cl.skip_reason = $3)
             AND ($4::timestamptz IS NULL OR (cl.added_at, cl.lead_id) > ($4, $5))
-            AND ({missing_cond}) AND ({held_cond}) AND {status_cond}
+            AND ({missing_cond}) AND {status_cond}
           ORDER BY cl.added_at, cl.lead_id LIMIT $6",
     ))
     .bind(id)
@@ -803,7 +791,7 @@ async fn list_campaign_leads(State(st): State<AppState>, ApiPath(id): ApiPath<Uu
     };
     let ids: Vec<Uuid> = leads.iter().map(|l| l.lead_id).collect();
     let cells: Vec<EmailCell> = sqlx::query_as(
-        "SELECT id, lead_id, step_number, status, variant_key, left(COALESCE(NULLIF(subject, ''), body_text, ''), 60) AS subject_preview, edited_by_hand, error_code, hold_reason
+        "SELECT id, lead_id, step_number, status, variant_key, left(COALESCE(NULLIF(subject, ''), body_text, ''), 60) AS subject_preview, edited_by_hand, error_code
            FROM lead_emails WHERE campaign_id = $1 AND lead_id = ANY($2) ORDER BY step_number",
     )
     .bind(id)

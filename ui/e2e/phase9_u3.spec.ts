@@ -12,10 +12,6 @@ test("AI mode: switch, presets, prompts are saved, the privacy chip and the Gene
   await expect(page).toHaveURL(/\/editor$/);
 
   await page.getByRole("group", { name: "How the emails are written" }).getByRole("button", { name: "AI" }).click();
-  // a new AI campaign starts with the optimized prompt; this test is about the custom prompt
-  await expect(page.getByRole("button", { name: "Optimized prompt" })).toHaveAttribute("aria-pressed", "true");
-  await page.getByRole("button", { name: "Custom prompt" }).click();
-  await page.getByRole("button", { name: "Switch", exact: true }).click();
   await expect(page.getByLabel("System prompt (all steps)")).toBeVisible();
   await expect(page.getByText(/Set up an AI model first/).first()).toBeVisible();
 

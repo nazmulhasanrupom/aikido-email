@@ -57,13 +57,13 @@ fn default_answer(req: &LlmRequest) -> Result<LlmResponse, LlmError> {
             .collect();
         return Ok(response(json!({ "steps": steps }).to_string()));
     }
-    if let Some(spec) = between(&req.system, "optimized_request") {
-        let step = serde_json::from_str::<Value>(spec).ok().and_then(|v| v["step"].as_u64()).unwrap_or(1);
-        let subject = if req.system.contains("set \"subject\" to an empty string") { String::new() } else { "fake subject".to_string() };
+    if between(&req.system, "optimized_request").is_some() {
         return Ok(response(
             json!({
-                "status": "OK", "subject": subject, "body": format!("Hi there, fake mail body for step {step}.\nDana"),
-                "angle_used": format!("fake angle {step}"), "used_trigger": false, "claims_check": [], "hold_reason": ""
+                "primary": { "subject": "fake subject", "body": "Hi there, fake primary email.\nDana" },
+                "followup_1": { "body": "Fake follow up 1.\nDana" },
+                "followup_2": { "body": "Fake follow up 2.\nDana" },
+                "followup_3": { "body": "Fake follow up 3.\nDana" }
             })
             .to_string(),
         ));

@@ -226,29 +226,6 @@ pub async fn collect(st: &AppState) -> Result<Vec<Alert>, sqlx::Error> {
         ));
     }
 
-    // optimized prompt: more than 20% of a run is held (the lead data or the sender profile is probably the cause)
-    let rows: Vec<(uuid::Uuid, uuid::Uuid, String, i64, i64, DateTime<Utc>)> = sqlx::query_as(
-        "SELECT r.id, c.id, c.name, r.total::bigint, (SELECT count(*) FROM lead_emails le WHERE le.run_id = r.id AND le.status = 'held'), COALESCE(r.finished_at, r.created_at)
-           FROM lead_email_runs r JOIN campaigns c ON c.id = r.campaign_id
-          WHERE r.kind = 'ai' AND r.total > 0 AND r.created_at > $1 - interval '7 days'",
-    )
-    .bind(now)
-    .fetch_all(p)
-    .await?;
-    for (run, id, name, total, held, at) in rows {
-        if held * 5 > total {
-            out.push(alert(
-                "emails_held",
-                &run.to_string(),
-                Severity::Warning,
-                format!("{held} of {total} emails in {name} are held"),
-                "The model or the checks held them. Fill the empty lead fields or your PERSONALIZATION page, then try again.".into(),
-                format!("{WS}/campaigns/{id}/leads"),
-                at,
-            ));
-        }
-    }
-
     // imports and stuck jobs
     let rows: Vec<(uuid::Uuid, Option<String>, Option<String>, DateTime<Utc>)> = sqlx::query_as(
         "SELECT id, file_name, error, COALESCE(finished_at, created_at) FROM lead_imports

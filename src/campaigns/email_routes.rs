@@ -172,7 +172,7 @@ pub struct Estimate {
 async fn estimate(State(st): State<AppState>, ApiPath(id): ApiPath<Uuid>, ApiJson(b): ApiJson<GenerateBody>) -> ApiResult<ApiJson<Estimate>> {
     let mut conn = st.pool.acquire().await?;
     let ctx = emails::load_ctx(&mut conn, id).await?.ok_or_else(no_campaign)?;
-    if ctx.campaign.content_mode != "ai" {
+    if !ctx.campaign.is_ai() {
         let plan = emails::plan(&mut conn, &ctx, b.overwrite.unwrap_or_default(), None).await?;
         return Ok(ApiJson(Estimate {
             emails: plan.emails,
@@ -184,20 +184,24 @@ async fn estimate(State(st): State<AppState>, ApiPath(id): ApiPath<Uuid>, ApiJso
             follow_ups_without_primary: false,
         }));
     }
-    let pairs = email_ai::targets(&mut conn, &ctx, &b).await?;
+    let mut pairs = email_ai::targets(&mut conn, &ctx, &b).await?;
     let prompts = email_ai::load_prompts(&mut conn, &ctx).await?;
+    if prompts.optimized.is_some() {
+        let mut seen = std::collections::HashSet::new();
+        pairs.retain(|(lead, _)| seen.insert(*lead));
+    }
     let settings = crate::generator::repo::load_settings(&mut conn).await?;
     let rules_len = 700usize;
     let mut tokens_in = 0i64;
     for (_, step) in &pairs {
         let chars = match &prompts.optimized {
-            // the blocks of the step, the SENDER block (about 800 characters) and the LEAD block (about 900)
-            Some(o) => o.blocks.system_prompt(*step).len() + 1700,
+            // the instructions, the lead block and the answer format
+            Some(o) => o.system.as_deref().map(str::len).unwrap_or(crate::prompting::optimized::DEFAULT_SYSTEM.len()) + o.user.as_deref().map(str::len).unwrap_or(crate::prompting::optimized::DEFAULT_USER.len()) + rules_len,
             None => prompts.system.as_deref().map(str::len).unwrap_or(email_ai::DEFAULT_SYSTEM.len()) + prompts.users.get(step).map(String::len).unwrap_or(0) + rules_len,
         };
         tokens_in += (chars / 4) as i64 + 60;
     }
-    let tokens_out = pairs.len() as i64 * 220;
+    let tokens_out = pairs.len() as i64 * if prompts.optimized.is_some() { 600 } else { 220 };
     let model = match settings.slot_provider_id {
         Some(p) => crate::generator::providers::get(&mut conn, p).await?.map(|p| p.model),
         None => None,
@@ -287,7 +291,7 @@ async fn generate(State(st): State<AppState>, ApiPath(id): ApiPath<Uuid>, ApiJso
     let mut tx = st.pool.begin().await?;
     sqlx::query("SELECT 1 FROM campaigns WHERE id = $1 FOR UPDATE").bind(id).fetch_optional(&mut *tx).await?.ok_or_else(no_campaign)?;
     let ctx = emails::load_ctx(&mut tx, id).await?.ok_or_else(no_campaign)?;
-    if ctx.campaign.content_mode != "ai" {
+    if !ctx.campaign.is_ai() {
         return Err(ApiError::unprocessable("wrong_mode", "The campaign is in template mode. Use render (Save)."));
     }
     ready_provider(&mut tx).await?;
@@ -295,14 +299,19 @@ async fn generate(State(st): State<AppState>, ApiPath(id): ApiPath<Uuid>, ApiJso
         Some(s) if !s.is_empty() => s.clone(),
         _ => ctx.steps.iter().map(|x| x.step_number).collect(),
     };
-    let optimized = email_ai::prompt_settings(&mut tx, ctx.campaign.sequence_id).await?.is_some_and(|p| p.kind == "optimized");
+    let optimized = ctx.campaign.content_mode == "optimized";
     for n in &wanted {
         let step = ctx.steps.iter().find(|s| s.step_number == *n).ok_or_else(|| ApiError::unprocessable("invalid_steps", format!("The sequence has no step {n}.")))?;
         if !optimized && step.ai_user_prompt.as_deref().is_none_or(|p| p.trim().is_empty()) {
             return Err(ApiError::unprocessable("missing_prompt", format!("Step {n} has no user prompt. Write it in the Editor first.")));
         }
     }
-    let pairs = email_ai::targets(&mut tx, &ctx, &b).await?;
+    let mut pairs = email_ai::targets(&mut tx, &ctx, &b).await?;
+    if optimized {
+        // one call writes all four emails of a lead, so a lead is queued once, at its first wanted step
+        let mut seen = std::collections::HashSet::new();
+        pairs.retain(|(lead, _)| seen.insert(*lead));
+    }
     let steps: Vec<i32> = { let mut v: Vec<i32> = pairs.iter().map(|p| p.1).collect(); v.sort_unstable(); v.dedup(); v };
     let run_id = Uuid::now_v7();
     sqlx::query("INSERT INTO lead_email_runs (id, campaign_id, kind, steps, scope, overwrite, status, total, created_at) VALUES ($1, $2, 'ai', $3, $4, $5, $6, $7, $8)")
@@ -341,6 +350,15 @@ pub struct EmailTestReply {
     pub tokens_in: i64,
     pub tokens_out: i64,
     pub warnings: Vec<String>,
+    /// Optimised mode: all 4 emails (the primary email and the 3 follow-ups). `subject` and `body` are the one asked for.
+    pub emails: Vec<TestMail>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct TestMail {
+    pub step: i32,
+    pub subject: String,
+    pub body: String,
 }
 
 /// Try the prompts (or the template) on one lead. Saves nothing.
@@ -357,7 +375,7 @@ async fn test_email(State(st): State<AppState>, ApiPath(id): ApiPath<Uuid>, ApiJ
     let ctx = emails::load_ctx(&mut conn, id).await?.ok_or_else(no_campaign)?;
     let step = ctx.steps.iter().find(|s| s.step_number == b.step).ok_or_else(|| ApiError::not_found("step_not_found", "The sequence has no such step."))?.clone();
     let lead = crate::leads::repo::get(&mut conn, b.lead_id).await?.ok_or_else(|| ApiError::not_found("lead_not_found", "No lead with this id."))?;
-    if ctx.campaign.content_mode != "ai" {
+    if !ctx.campaign.is_ai() {
         let built = emails::build(&ctx, &lead, &step, "A").map_err(|m| ApiError::unprocessable("missing_variable", format!("Missing: {}", m.join(", "))))?;
         return Ok(ApiJson(EmailTestReply {
             mode: "template".into(),
@@ -368,6 +386,7 @@ async fn test_email(State(st): State<AppState>, ApiPath(id): ApiPath<Uuid>, ApiJ
             tokens_in: 0,
             tokens_out: 0,
             warnings: vec![],
+            emails: vec![],
         }));
     }
     let settings = crate::generator::repo::load_settings(&mut conn).await?;
@@ -394,9 +413,8 @@ async fn test_email(State(st): State<AppState>, ApiPath(id): ApiPath<Uuid>, ApiJ
         .map_err(|_| ApiError::unprocessable("generator_not_ready", "The AI model can not be used (its key can not be read)."))?;
     let client = st.llm.build(&cfg).map_err(|_| ApiError::unprocessable("generator_not_ready", "The AI model can not be used."))?;
     if let Some(opt) = &prompts.optimized {
-        // the optimized prompt: run the whole flow (checks, one repair) and show the result
-        let (angles, _) = super::email_opt::previous_state(&mut conn, id, b.lead_id, b.step).await?;
-        let out = super::email_opt::generate(client.as_ref(), &settings, opt, &lead, b.step, &angles).await;
+        // Optimised mode: one call writes all four
+        let out = super::email_opt::generate(client.as_ref(), &settings, opt, &lead).await;
         let calls = match &out {
             Ok(g) => g.calls.clone(),
             Err(f) => f.calls.clone(),
@@ -406,10 +424,19 @@ async fn test_email(State(st): State<AppState>, ApiPath(id): ApiPath<Uuid>, ApiJ
         }
         let (tin, tout, _) = crate::generator::pipeline::totals(&calls);
         let g = out.map_err(|f| ApiError::unprocessable("generation_failed", format!("{} ({})", f.message, f.code)))?;
-        return match g.verdict {
-            super::email_opt::Verdict::Mail(m) => Ok(ApiJson(EmailTestReply { mode: "ai".into(), system: Some(system), user: Some(user), subject: m.subject, body: m.body, tokens_in: tin as i64, tokens_out: tout as i64, warnings: vec![] })),
-            super::email_opt::Verdict::Held { reason, .. } => Err(ApiError::unprocessable("email_held", format!("The mail was held: {reason}"))),
-        };
+        let emails: Vec<TestMail> = g.mails.iter().enumerate().map(|(i, m)| TestMail { step: i as i32 + 1, subject: m.subject.clone(), body: m.body.clone() }).collect();
+        let mine = emails.iter().find(|m| m.step == b.step).or(emails.first());
+        return Ok(ApiJson(EmailTestReply {
+            mode: "optimized".into(),
+            system: Some(system),
+            user: Some(user),
+            subject: mine.map(|m| m.subject.clone()).unwrap_or_default(),
+            body: mine.map(|m| m.body.clone()).unwrap_or_default(),
+            tokens_in: tin as i64,
+            tokens_out: tout as i64,
+            warnings: vec![],
+            emails,
+        }));
     }
     let result = email_ai::generate_email(client.as_ref(), &settings, &system, &user, email_ai::wants_subject(b.step, prompts.thread)).await;
     let calls = match &result {
@@ -421,15 +448,14 @@ async fn test_email(State(st): State<AppState>, ApiPath(id): ApiPath<Uuid>, ApiJ
     }
     let (tin, tout, _) = crate::generator::pipeline::totals(&calls);
     match result {
-        Ok(g) => Ok(ApiJson(EmailTestReply { mode: "ai".into(), system: Some(system), user: Some(user), subject: g.subject, body: g.body, tokens_in: tin as i64, tokens_out: tout as i64, warnings: g.warnings })),
+        Ok(g) => Ok(ApiJson(EmailTestReply { mode: "ai".into(), system: Some(system), user: Some(user), subject: g.subject, body: g.body, tokens_in: tin as i64, tokens_out: tout as i64, warnings: g.warnings, emails: vec![] })),
         Err(f) => Err(ApiError::unprocessable("generation_failed", format!("{} ({})", f.message, f.code))),
     }
 }
 
 #[derive(Deserialize, ToSchema)]
 pub struct ActionBody {
-    /// `approve` (review to ready), `reject` or `regenerate` (write again; this is "Edit lead and retry" for a held email), `clear` (delete the email),
-    /// `skip` (held emails only: stop the lead in this campaign, reason `held_skipped`).
+    /// `approve` (review to ready), `reject` or `regenerate` (write again), `clear` (delete the email).
     pub action: String,
     /// Ids of saved emails.
     pub ids: Option<Vec<Uuid>>,
@@ -455,8 +481,8 @@ pub struct ActionReply {
     description = "Scope: `campaigns`. Pick emails by `ids` or by `filter: { step, status }`. Sent emails never change. \
         `approve`: `review` to `ready`. `reject` and `regenerate`: the model writes the email again (the old text stays until the new one is saved). `clear`: the email is deleted.")]
 async fn actions(State(st): State<AppState>, ApiPath(id): ApiPath<Uuid>, ApiJson(b): ApiJson<ActionBody>) -> ApiResult<ApiJson<ActionReply>> {
-    if !matches!(b.action.as_str(), "approve" | "reject" | "regenerate" | "clear" | "skip") {
-        return Err(ApiError::unprocessable("invalid_action", "action must be approve, reject, regenerate, clear or skip."));
+    if !matches!(b.action.as_str(), "approve" | "reject" | "regenerate" | "clear") {
+        return Err(ApiError::unprocessable("invalid_action", "action must be approve, reject, regenerate or clear."));
     }
     if b.ids.is_none() && b.filter.is_none() {
         return Err(ApiError::unprocessable("invalid_selection", "Give ids or a filter."));
@@ -467,40 +493,11 @@ async fn actions(State(st): State<AppState>, ApiPath(id): ApiPath<Uuid>, ApiJson
     let f = b.filter.as_ref();
     let sel = "campaign_id = $1 AND status <> 'sent' AND ($2::uuid[] IS NULL OR id = ANY($2)) AND ($3::int IS NULL OR step_number = $3) AND ($4::text IS NULL OR status = $4)";
     let (ids, step, status) = (b.ids.clone(), f.and_then(|f| f.step), f.and_then(|f| f.status.clone()));
-    if b.action == "skip" {
-        let held: Vec<(Uuid,)> = sqlx::query_as(&format!("SELECT DISTINCT lead_id FROM lead_emails WHERE {sel} AND status = 'held' AND $5::timestamptz IS NOT NULL"))
-            .bind(id)
-            .bind(&ids)
-            .bind(step)
-            .bind(&status)
-            .bind(now)
-            .fetch_all(&mut *tx)
-            .await?;
-        let mut changed = 0i64;
-        for (lead_id,) in held {
-            let cl: Option<(Option<Uuid>, String)> =
-                sqlx::query_as("SELECT enrollment_id, state::text FROM campaign_leads WHERE campaign_id = $1 AND lead_id = $2 FOR UPDATE").bind(id).bind(lead_id).fetch_optional(&mut *tx).await?;
-            let Some((enrollment_id, state)) = cl else { continue };
-            if let Some(eid) = enrollment_id {
-                if let Some(e) = crate::followups::lifecycle::lock(&mut tx, eid).await? {
-                    if e.status.is_open() {
-                        crate::followups::lifecycle::stop(&mut tx, &e, "held_skipped", serde_json::json!({ "campaign_id": id }), now).await?;
-                    }
-                }
-            }
-            if state == "pending" {
-                sqlx::query("UPDATE campaign_leads SET state = 'skipped', skip_reason = 'held_skipped' WHERE campaign_id = $1 AND lead_id = $2").bind(id).bind(lead_id).execute(&mut *tx).await?;
-            }
-            changed += 1;
-        }
-        tx.commit().await?;
-        return Ok(ApiJson(ActionReply { changed }));
-    }
     let sql = match b.action.as_str() {
         "approve" => format!("UPDATE lead_emails SET status = 'ready', updated_at = $5 WHERE {sel} AND status = 'review'"),
         "clear" => format!("DELETE FROM lead_emails WHERE {sel} AND $5::timestamptz IS NOT NULL"),
         _ => format!(
-            "UPDATE lead_emails SET status = 'writing', source = 'ai', run_id = NULL, attempts = 0, claim_id = NULL, claimed_at = NULL, retry_at = NULL, error_code = NULL, hold_reason = NULL, check_failures = NULL, updated_at = $5
+            "UPDATE lead_emails SET status = 'writing', source = 'ai', run_id = NULL, attempts = 0, claim_id = NULL, claimed_at = NULL, retry_at = NULL, error_code = NULL, updated_at = $5
               WHERE {sel} AND status <> 'writing'"
         ),
     };

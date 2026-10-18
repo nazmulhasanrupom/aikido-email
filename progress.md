@@ -819,27 +819,19 @@ You said "build from phase 3 to the end, all at once, and do not test too much".
   - `campaigns/{id}/duplicate` does not copy `verification_rule` yet.
 - **Left:** try Reoon for real (section 9 of the map): balance URL, bad key / no credits answers, status list, rate limits. (worker, runs, feeder gate, UI). `docs/API.md` not updated yet (do it with phase 2).
 
-## Email Optimization (started 2026-10-18, build map v2)
+## Email Optimization (2026-10-18)
 
-Built from `AIKIDO_EMAIL_Optimization_Build_Map.md` (v2). API: `docs/API.md` section 25.
+First built from build map v2 (blocks, checks, HOLD). Then simplified on request: the **Optimised mode** below replaced all of that. API: `docs/API.md` section 25.
 
-- **Phase 0 done:** `src/prompting/default_prompt/{core,primary,followup}.md`, `DEFAULT_PROMPT_VERSION = 1`, `Blocks::system_prompt(step)` (Core + Primary for step 1, Follow-up for step 2 and later + fixed `checks::rules(step)`). The banned phrases in `checks.rs` and in `core.md` are kept equal by a test.
-- **Phase 1 done:** migration `0014_optimization.sql`. Lead columns `industry`, `personalization_note`, `trigger_event`, `trigger_verified` (model, input, upsert, patch, CSV import with bool parse, mapper targets and synonyms, export, `{{vars}}`). Field registry `src/prompting/fields.rs` and `GET /v1/fields`. The four names are now reserved: the migration moves an old custom field with one of these keys into the column and deletes the field. Tests in `tests/optimization.rs`.
-- **Phase 2 done:** `sequences.ai_prompt_kind/core/primary/followup/version`, `sender_profile_id`. A campaign that turns to AI mode with no prompts starts `optimized` (`prompt_routes::init_optimized_if_blank`). A campaign with prompts stays `custom`. Routes `GET /v1/prompts/defaults`, `GET/PUT /v1/campaigns/{id}/prompts`, `POST .../prompts/reset`. Duplicate copies the prompt columns.
-- **Phase 3 done:** `src/prompting/user_prompt.rs` (SENDER and LEAD JSON by `serde_json`, caps 1,000 and 3,000, private data never in), `sender.rs` (versioned profile, fallback name).
-- **Phase 4 done:** `src/campaigns/email_opt.rs` (flow, max 3 calls), `src/prompting/checks.rs` (8 named checks), `lead_emails.status = 'held'` with `hold_reason`, `check_failures`, `angle_used`, `used_trigger`, `claims_check`. `previous_step_held`, `missing_required`, model HOLD. `wait_reason` `email_held`. Held filter (`?held=true`), `skip` action (`held_skipped`), alert `emails_held` (over 20% of a run). Step 4+ has its own subject; the scheduler already kept the thread headers when a subject is set.
-- **Phase 5 done:** `src/net/safe_fetch.rs` (every IP checked, connect to the checked IP, redirects checked, 10 s, 2 MB), `src/prompting/sources.rs` (html/pdf/docx/txt to text, clean, tag, 6,000 token budget with the cut order). New crates `zip` and `lopdf`.
-- **Phase 6 done:** `src/prompting/sender_builder.rs` (prompt `sender_profile_builder_v1`, post checks), `src/prompting/routes.rs` (scope `personalization`, new `Scope::Personalization`, 10 keys on first boot), rate limit 10 a minute (`prompting/limit.rs`, `AppState.ai_limiter`). `FakeLlm` answers the builder and the optimized request.
-- **Phase 7 done (UI):** page `/w/:ws/personalization` and sidebar item (`features/personalization/`), "Optimized" badges and column order, Optimization panel with fill score in the lead drawer (`LeadDrawer.tsx`), Optimized | Custom switch with Primary and Follow-ups tabs, built user prompt, test box with checks (`features/campaigns/OptimizedPanel.tsx`), Held chip with "Edit lead and retry" and "Skip", held box in the email drawer, scope `personalization` in the API key menu. `pnpm gen:api` was rerun.
-- **Phase 8 done:** `docs/API.md` section 25, README feature table, this file.
-- **Tests:** cargo 780+ pass (new: `tests/optimization.rs` 13, unit tests in `prompting/*`, `net/safe_fetch.rs`, `campaigns/email_opt.rs`; old tests updated for 10 keys, the route list, `sequences` having 18 columns, and the custom field name `industry` being reserved). The only failure seen is the known flaky timing test `search_10000_leads...`. vitest 69. e2e 32 pass (`phase9_u6_optimization.spec.ts` is new; `phase9_u3` now switches to the custom prompt first).
-- **Deviations and limits:**
-  1. Never run against a real model. Only `FakeLlm`. The default prompt text (`core.md`, `primary.md`, `followup.md`) was written by me from the map's section list and must be read and tuned by a person.
-  2. Section 7.3 is not built: the template parser still takes flat names only (no `{{sender.*}}`), and the Variable menu of the custom editor is unchanged.
-  3. The campaign Leads tab has no columns for the new lead fields (the campaign row API has only first name and company). They are on All leads and in the lead drawer.
-  4. A CSV import or API upsert can set `trigger_verified` to true but not clear it (clear it with `PATCH /v1/leads/{id}`).
-  5. The Gmail threading of a step 4 mail with a new subject was not tried (open question 1 of the map). The mail keeps `In-Reply-To` and `References`.
-  6. "Compare" shows the two texts side by side, with no diff marks. Reset to default takes the new text.
-  7. A step N mail waits for step N-1 to have an `angle_used`. A step 1 mail written by a template or by hand has none, so step 2 is held (`previous_step_held`).
-  8. The CV reader is `lopdf`: a PDF with unusual fonts may give no text (the user sees "No text found in this file.").
-  9. `POST /v1/personalization/sources` with a URL was tested with fakes only (blocked addresses and a local server); never against a real site.
+- **Optimised mode:** a third `campaigns.content_mode` (`optimized`) next to `template` and `ai` (both unchanged). One model call writes the primary email and 3 follow-ups; `src/campaigns/email_opt.rs` (call + one format retry, `ensure_four_steps`), `src/prompting/optimized.rs` (plain `{{variable}}` prompts, lenient fill, output parser), defaults in `src/prompting/default_system.md` and `default_user.md`. The worker (`email_ai.rs`) claims one row per lead and saves the other three steps in the same transaction (never over a sent or hand edited email). Migration `0015_optimised_mode.sql` drops the 0014 block/hold columns and adds the mode.
+- **Kept from the first build:** lead columns `industry`, `personalization_note`, `trigger_event`, `trigger_verified` (+ import, export, mapper, vars, reserved names), `GET /v1/fields`, the PERSONALIZATION page and API (`src/prompting/{sender,sources,sender_builder,routes}.rs`, `src/net/safe_fetch.rs`, scope `personalization`, 10 keys on first boot), "Optimized" badges and the Optimization panel in the lead drawer.
+- **Removed:** Core/Primary/Follow-up blocks, the 8 code checks, HOLD (`held` status, Held filter, skip action, alert), previous angles, JSON user prompt, the preview route.
+- **UI:** `ModeSwitch.tsx` (Template | AI | Optimised, shared), `OptimizedEditor.tsx` (instructions, user prompt as plain text with a Variable menu, "The 4 emails" list, Test on 1 lead, Generate; no "About your offer" and no Footer), Generate dialog hides the step list in this mode. `pnpm gen:api` rerun.
+- **Tests:** cargo all pass except the known flaky timing test `search_10000_leads...`; new `tests/optimization.rs` (9), unit tests in `prompting/*`, `net/safe_fetch.rs`, `campaigns/email_opt.rs`; vitest 69; e2e 32 pass (`phase9_u6_optimization.spec.ts`).
+- **Limits:**
+  1. Never run against a real model. The default prompt text was written by me: read and tune `default_system.md` and `default_user.md`.
+  2. Quality is not checked in code (word counts, banned phrases, links): only the format.
+  3. The Optimised mode needs exactly 4 steps; a sequence with more is refused.
+  4. `trigger_verified` can be set to true by an import or the API upsert but only cleared with `PATCH /v1/leads/{id}`.
+  5. The campaign Leads tab has no columns for the new lead fields (All leads and the lead drawer have them).
+  6. The safe URL fetch was tested with fakes and a local server only, never a real site. The CV reader (`lopdf`) may find no text in a PDF with unusual fonts.

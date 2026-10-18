@@ -61,7 +61,7 @@ const NAV: NavItem[] = [
   { to: "/w/$ws/leads", label: "Leads", icon: Users },
   { to: "/w/$ws/inbox", label: "Inbox", icon: Inbox },
   { to: "/w/$ws/accounts", label: "Email Accounts", icon: Mail },
-  { to: "/w/$ws/personalization", label: "PERSONALIZATION", icon: UserRoundCog },
+  { to: "/w/$ws/personalization", label: "Personalisation", icon: UserRoundCog },
   { to: "/w/$ws/reports", label: "Reports", icon: ChartColumn },
 ];
 

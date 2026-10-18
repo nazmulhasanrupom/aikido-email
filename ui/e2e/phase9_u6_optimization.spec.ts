@@ -1,13 +1,13 @@
 import { expect } from "@playwright/test";
 import { authed as test } from "./helpers";
 
-// Email optimization: the PERSONALIZATION page and the optimized prompt editor.
+// Email optimization: the Personalisation page and the optimized prompt editor.
 // The server in these tests has no AI model, so Build with AI and the model test are not run here.
 test.describe.configure({ mode: "serial" });
 
-test("PERSONALIZATION: add text, edit the profile, save, and see the version", async ({ page }) => {
+test("Personalisation: add text, edit the profile, save, and see the version", async ({ page }) => {
   await page.goto("/w/default/personalization");
-  await expect(page.getByRole("heading", { name: "PERSONALIZATION" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Personalisation" })).toBeVisible();
   await expect(page.getByText(/No profile is saved yet/)).toBeVisible();
 
   await page.getByLabel("Tell us about you and your offer").fill("I help dental groups get patients with paid search.\n\nI help dental groups get patients with paid search.");
@@ -34,35 +34,37 @@ test("PERSONALIZATION: add text, edit the profile, save, and see the version", a
   await expect(page.getByText(/Set up an AI provider first/)).toBeVisible();
 });
 
-test("optimized prompt: tabs, the built user prompt, edit, save and reset", async ({ page }) => {
+test("Optimised mode: three modes, plain prompts, 4 emails, save and reset", async ({ page }) => {
   await page.goto("/w/default/campaigns");
   await page.getByRole("button", { name: "New campaign" }).first().click();
-  await page.getByLabel("Name", { exact: true }).fill("Optimized test");
+  await page.getByLabel("Name", { exact: true }).fill("Optimised test");
   await page.getByRole("button", { name: "Create campaign" }).click();
   await expect(page).toHaveURL(/\/editor$/);
-  await page.getByRole("group", { name: "How the emails are written" }).getByRole("button", { name: "AI" }).click();
+  const modes = page.getByRole("group", { name: "How the emails are written" });
+  await expect(modes.getByRole("button")).toHaveText(["Template", "AI", "Optimised"]);
+  await modes.getByRole("button", { name: "Optimised" }).click();
 
-  await expect(page.getByRole("button", { name: "Optimized prompt" })).toHaveAttribute("aria-pressed", "true");
-  await expect(page.getByRole("tab", { name: "Primary mail" })).toBeVisible();
-  await expect(page.getByLabel("Primary mail block (step 1)")).toHaveValue(/under 80 words/);
-  await page.getByRole("tab", { name: "Follow-ups" }).click();
-  await expect(page.getByLabel("Follow-up block (step 2 and later)")).toHaveValue(/under 60 words/);
-  await expect(page.getByText("Change this in the Follow-ups tab")).toBeVisible();
+  // plain text prompts, no JSON, and the old fields are gone
+  await expect(page.getByLabel("Instructions for the AI")).toHaveValue(/short cold email sequence/);
+  await expect(page.getByLabel("What the AI knows about you and each lead")).toHaveValue(/Company: \{\{company_name\}\}/);
+  await expect(page.getByText("About your offer")).toHaveCount(0);
+  await expect(page.getByLabel("Footer")).toHaveCount(0);
+  // the 4 emails are made by themselves
+  const four = page.getByRole("region", { name: "The 4 emails" });
+  await expect(four.getByText("Primary email")).toBeVisible();
+  await expect(four.getByText("Follow up 3")).toBeVisible();
 
-  // edit the follow-up block, save, reload, reset
-  await page.getByLabel("Follow-up block (step 2 and later)").fill("# STEP RULES\nMy own follow-up rule.");
-  await page.getByRole("button", { name: "Save prompt" }).click();
-  await expect(page.getByText("Saved for this campaign.")).toBeVisible();
+  // edit the user prompt, save, reload, reset
+  const user = page.getByLabel("What the AI knows about you and each lead");
+  await user.fill("Lead: {{first_name}} at {{company}}.");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByText(/Saved. Use Generate/)).toBeVisible();
   await page.reload();
-  await page.getByRole("tab", { name: "Follow-ups" }).click();
-  await expect(page.getByLabel("Follow-up block (step 2 and later)")).toHaveValue(/My own follow-up rule/);
+  await expect(page.getByLabel("What the AI knows about you and each lead")).toHaveValue("Lead: {{first_name}} at {{company}}.");
   await page.getByRole("button", { name: "Reset to default" }).click();
-  await expect(page.getByLabel("Follow-up block (step 2 and later)")).toHaveValue(/under 60 words/);
+  await expect(page.getByLabel("What the AI knows about you and each lead")).toHaveValue(/Company: \{\{company_name\}\}/);
 
-  // removing a section the checks need shows a warning
-  await page.getByText(/Core \(shared by both tabs\)/).click();
-  await page.getByLabel("Core block").fill("# ROLE\nshort");
-  await expect(page.getByText(/The checks need the sections/)).toBeVisible();
-  // and no profile warning is shown once a profile is saved (the first test saved one)
-  await expect(page.getByText(/Mails will be HOLD/)).toHaveCount(0);
+  // back to AI mode: the old editor is unchanged
+  await modes.getByRole("button", { name: "AI" }).click();
+  await expect(page.getByLabel("System prompt (all steps)")).toBeVisible();
 });

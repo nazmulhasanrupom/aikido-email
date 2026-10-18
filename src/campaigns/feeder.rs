@@ -201,7 +201,7 @@ async fn feed_one(st: &AppState, c: &Campaign, now: DateTime<Utc>) -> Result<Ste
           ORDER BY cl.added_at, cl.lead_id LIMIT 1 FOR UPDATE OF cl SKIP LOCKED",
     )
     .bind(c.id)
-    .bind(c.content_mode == "ai")
+    .bind(c.is_ai())
     .fetch_optional(&mut *tx)
     .await?;
     let Some((lead_id, email, state, verification)) = row else { return Ok(Step::Empty) };

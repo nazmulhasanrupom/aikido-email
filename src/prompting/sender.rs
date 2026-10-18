@@ -2,7 +2,7 @@
 //! The current profile is the newest version with `is_default`. Only a saved profile is used by campaigns.
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value, json};
+use serde_json::Value;
 use sqlx::{FromRow, PgConnection};
 use utoipa::ToSchema;
 use uuid::Uuid;
@@ -102,40 +102,12 @@ impl SenderProfile {
     }
 }
 
-/// The SENDER block of the user prompt. Every key is there, with its empty value when there is no profile.
-/// `fallback_name` (the first word of the account name) fills an empty `sender_first_name`.
-pub fn prompt_json(profile: Option<&SenderProfile>, fallback_name: &str) -> Value {
-    let f = profile.map(SenderProfile::fields).unwrap_or_else(|| SenderFields { proof_or_none: "none".into(), ..Default::default() });
-    let name = if f.sender_first_name.trim().is_empty() { fallback_name.split_whitespace().next().unwrap_or("").to_string() } else { f.sender_first_name.clone() };
-    let mut m = Map::new();
-    m.insert("sender_first_name".into(), json!(name));
-    m.insert("ideal_customer".into(), json!(f.ideal_customer));
-    m.insert("not_a_fit".into(), json!(f.not_a_fit));
-    m.insert("problem_solved".into(), json!(f.problem_solved));
-    m.insert("offer".into(), json!(f.offer));
-    m.insert("outcome".into(), json!(f.outcome));
-    m.insert("proof_or_none".into(), json!(if f.proof_or_none.trim().is_empty() { "none" } else { f.proof_or_none.as_str() }));
-    m.insert("low_friction_offer".into(), json!(f.low_friction_offer));
-    m.insert("allow_low_personalization".into(), json!(f.allow_low_personalization));
-    Value::Object(m)
-}
-
 pub async fn current(conn: &mut PgConnection) -> Result<Option<SenderProfile>, sqlx::Error> {
     sqlx::query_as(&format!("SELECT {PROFILE_COLS} FROM sender_profiles WHERE is_default ORDER BY version DESC LIMIT 1")).fetch_optional(conn).await
 }
 
 pub async fn get(conn: &mut PgConnection, id: Uuid) -> Result<Option<SenderProfile>, sqlx::Error> {
     sqlx::query_as(&format!("SELECT {PROFILE_COLS} FROM sender_profiles WHERE id = $1")).bind(id).fetch_optional(conn).await
-}
-
-/// The profile a campaign uses: its own `sender_profile_id`, else the current default.
-pub async fn for_sequence(conn: &mut PgConnection, profile_id: Option<Uuid>) -> Result<Option<SenderProfile>, sqlx::Error> {
-    if let Some(id) = profile_id {
-        if let Some(p) = get(conn, id).await? {
-            return Ok(Some(p));
-        }
-    }
-    current(conn).await
 }
 
 /// The newest `n` versions, newest first.
@@ -169,9 +141,9 @@ pub async fn save(conn: &mut PgConnection, f: &SenderFields, other_offers: &Valu
     .await
 }
 
-/// Mark the unsent mails of every optimized campaign out of date. Call it after a new profile version.
+/// Mark the unsent mails of every Optimised campaign out of date. Call it after a new profile version.
 pub async fn profile_changed(conn: &mut PgConnection) -> Result<(), sqlx::Error> {
-    let ids: Vec<(Uuid,)> = sqlx::query_as("SELECT c.id FROM campaigns c JOIN sequences s ON s.id = c.sequence_id WHERE c.content_mode = 'ai' AND s.ai_prompt_kind = 'optimized'")
+    let ids: Vec<(Uuid,)> = sqlx::query_as("SELECT c.id FROM campaigns c JOIN sequences s ON s.id = c.sequence_id WHERE c.content_mode = 'optimized'")
         .fetch_all(&mut *conn)
         .await?;
     for (id,) in ids {
@@ -195,8 +167,8 @@ pub fn test_profile(version: i32) -> SenderProfile {
         proof_or_none: "none".into(),
         low_friction_offer: "A free audit".into(),
         allow_low_personalization: false,
-        other_offers: json!([]),
-        sources_used: json!({}),
+        other_offers: serde_json::json!([]),
+        sources_used: serde_json::json!({}),
         created_at: chrono::Utc::now(),
     }
 }
@@ -204,16 +176,6 @@ pub fn test_profile(version: i32) -> SenderProfile {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn no_profile_prints_every_key_with_its_empty_value() {
-        let v = prompt_json(None, "Dana Lee");
-        assert_eq!(v["sender_first_name"], "Dana");
-        assert_eq!(v["proof_or_none"], "none");
-        assert_eq!(v["allow_low_personalization"], false);
-        assert_eq!(v["offer"], "");
-        assert_eq!(v.as_object().map(|m| m.len()), Some(9));
-    }
 
     #[test]
     fn empty_proof_becomes_none_and_long_text_is_refused() {

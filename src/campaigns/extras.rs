@@ -114,12 +114,12 @@ async fn checklist(State(st): State<AppState>, ApiPath(id): ApiPath<Uuid>) -> Ap
         if day1.is_empty() {
             if leads_n > 0 { "No lead waits: they are all in the sequence.".into() } else { "Add leads first.".into() }
         } else {
-            format!("{written} of {} leads have their primary email{}.", day1.len(), if c.content_mode == "ai" { "" } else { ". Press Save in the Editor to write them" })
+            format!("{written} of {} leads have their primary email{}.", day1.len(), if c.is_ai() { "" } else { ". Press Save in the Editor to write them" })
         },
         "editor",
     );
     // 5. missing values
-    let prompts = if c.content_mode == "ai" { Some(super::email_ai::load_prompts(&mut conn, &ctx).await?) } else { None };
+    let prompts = if c.is_ai() { Some(super::email_ai::load_prompts(&mut conn, &ctx).await?) } else { None };
     let needs = emails::required_names(&ctx, prompts.as_ref());
     let cond = emails::missing_sql(&needs, &ctx.defs);
     let (missing_n,): (i64,) = sqlx::query_as(&format!(
@@ -176,15 +176,6 @@ async fn duplicate(State(st): State<AppState>, ApiPath(id): ApiPath<Uuid>) -> Ap
     };
     let new_seq = insert_sequence(&mut tx, &body, now).await?;
     sqlx::query("UPDATE sequences SET status = 'paused', ai_system_prompt = $2, variant_a_active = $3 WHERE id = $1").bind(new_seq).bind(&seq.ai_system_prompt).bind(seq.variant_a_active).execute(&mut *tx).await?;
-    sqlx::query(
-        "UPDATE sequences n SET ai_prompt_kind = o.ai_prompt_kind, ai_prompt_core = o.ai_prompt_core, ai_prompt_primary = o.ai_prompt_primary,
-                ai_prompt_followup = o.ai_prompt_followup, ai_prompt_version = o.ai_prompt_version, sender_profile_id = o.sender_profile_id
-           FROM sequences o WHERE o.id = $1 AND n.id = $2",
-    )
-    .bind(c.sequence_id)
-    .bind(new_seq)
-    .execute(&mut *tx)
-    .await?;
     sqlx::query(
         "INSERT INTO step_variants (id, sequence_id, key, name, subject, body_text, body_html, ai_slots, active, position)
          SELECT gen_random_uuid(), $2, key, name, subject, body_text, body_html, ai_slots, active, position FROM step_variants WHERE sequence_id = $1",
@@ -275,7 +266,7 @@ async fn send_test(State(st): State<AppState>, ApiPath(id): ApiPath<Uuid>, ApiJs
         .await?;
     let (subject, text, html) = match saved {
         Some(e) => (e.subject, e.body_text, e.body_html),
-        None if ctx.campaign.content_mode != "ai" => {
+        None if !ctx.campaign.is_ai() => {
             let built = emails::build(&ctx, &lead, &step, "A").map_err(|m| ApiError::unprocessable("missing_variable", format!("Missing: {}", m.join(", "))))?;
             (built.subject, built.body_text, built.body_html)
         }

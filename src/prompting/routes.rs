@@ -26,8 +26,33 @@ pub fn router(state: AppState) -> OpenApiRouter<AppState> {
         .routes(routes!(get_profile, save_profile))
         .routes(routes!(list_versions))
         .route_layer(axum::middleware::from_fn_with_state((state.clone(), Scope::Personalization), require_scope));
-    let registry = OpenApiRouter::new().routes(routes!(get_fields)).route_layer(axum::middleware::from_fn_with_state((state, Scope::Leads), require_scope));
-    personalization.merge(registry)
+    let registry = OpenApiRouter::new().routes(routes!(get_fields)).route_layer(axum::middleware::from_fn_with_state((state.clone(), Scope::Leads), require_scope));
+    let defaults = OpenApiRouter::new().routes(routes!(get_defaults)).route_layer(axum::middleware::from_fn_with_state((state, Scope::Campaigns), require_scope));
+    personalization.merge(registry).merge(defaults)
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct PromptDefaults {
+    /// The shipped instructions of the Optimised mode.
+    pub system: String,
+    /// The shipped user prompt of the Optimised mode.
+    pub user: String,
+    /// The `{{names}}` the prompts can use: the sender fields first, then the lead fields.
+    pub variables: Vec<String>,
+}
+
+/// The shipped prompts of the Optimised mode.
+#[utoipa::path(get, path = "/v1/prompts/defaults", tag = "campaigns",
+    responses((status = 200, body = PromptDefaults)),
+    security(("api_key" = ["campaigns"])),
+    description = "Scope: `campaigns`. A campaign with no prompts of its own uses these. The prompts are plain text with `{{variables}}`; a variable with no value is left out.")]
+async fn get_defaults() -> ApiJson<PromptDefaults> {
+    use super::optimized::{DEFAULT_SYSTEM, DEFAULT_USER, LEAD_VARS, SENDER_VARS};
+    ApiJson(PromptDefaults {
+        system: DEFAULT_SYSTEM.to_string(),
+        user: DEFAULT_USER.to_string(),
+        variables: SENDER_VARS.iter().chain(LEAD_VARS.iter()).map(|s| s.to_string()).collect(),
+    })
 }
 
 // ---------- the field registry ----------
@@ -193,7 +218,7 @@ pub struct GenerateReply {
     description = "Scope: `personalization`. Costs tokens. The sources are cut to about 6000 tokens (portfolio pages first, guide answers last), then sent. \
         The code removes dashes, drops unknown source tags, and clears a field that no source supports. `allow_low_personalization` is always false in a draft.")]
 async fn generate_profile(State(st): State<AppState>, who: Option<Extension<Uuid>>) -> ApiResult<ApiJson<GenerateReply>> {
-    crate::campaigns::prompt_routes::limit(&st, who.map(|e| e.0))?;
+    crate::prompting::limit::check_user(&st, who.map(|e| e.0))?;
     let now = st.now();
     let mut conn = st.pool.acquire().await?;
     let list = sources::list(&mut conn).await?;

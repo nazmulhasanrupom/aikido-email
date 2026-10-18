@@ -48,7 +48,7 @@ pub fn unknown_names(text: &str, defs: &FieldDefs) -> Vec<String> {
     let Ok(t) = Template::parse(text) else { return vec![] };
     t.required()
         .into_iter()
-        .filter(|n| !(BUILTINS.contains(n) || PROMPT_VARS.contains(n) || TEXT_FIELDS.contains(n) || defs.by_key.contains_key(*n)))
+        .filter(|n| !(BUILTINS.contains(n) || PROMPT_VARS.contains(n) || TEXT_FIELDS.contains(n) || crate::prompting::optimized::is_known(n) || defs.by_key.contains_key(*n)))
         .map(String::from)
         .collect()
 }
@@ -61,7 +61,7 @@ pub struct Prompts {
     pub thread: bool,
     pub sender_name: String,
     pub sender_email: String,
-    /// `Some` when the campaign uses the optimized prompt. Then `system` and `users` are not used.
+    /// `Some` in the Optimised mode. Then `system` and `users` are not used.
     pub optimized: Option<super::email_opt::Optimized>,
 }
 
@@ -75,12 +75,13 @@ pub async fn load_prompts(conn: &mut PgConnection, ctx: &Ctx) -> Result<Prompts,
             sender_email = email;
         }
     }
-    let optimized = match prompt_settings(conn, ctx.campaign.sequence_id).await? {
-        Some(ps) if ps.kind == "optimized" => {
-            let profile = crate::prompting::sender::for_sequence(conn, ps.sender_profile_id).await?;
-            Some(super::email_opt::Optimized { blocks: ps.blocks(), profile, fallback_name: sender_name.clone() })
-        }
-        _ => None,
+    let optimized = if ctx.campaign.content_mode == "optimized" {
+        let profile = crate::prompting::sender::current(conn).await?;
+        let own = seq.as_ref().and_then(|s| s.ai_system_prompt.clone()).filter(|p| !p.trim().is_empty());
+        let user = ctx.steps.iter().find(|s| s.step_number == 1).and_then(|s| s.ai_user_prompt.clone()).filter(|p| !p.trim().is_empty());
+        Some(super::email_opt::Optimized { system: own, user, profile, fallback_name: sender_name.clone() })
+    } else {
+        None
     };
     Ok(Prompts {
         optimized,
@@ -91,34 +92,6 @@ pub async fn load_prompts(conn: &mut PgConnection, ctx: &Ctx) -> Result<Prompts,
         sender_name,
         sender_email,
     })
-}
-
-/// The optimized prompt columns of a sequence.
-#[derive(sqlx::FromRow, Clone, Debug)]
-pub struct PromptSettings {
-    pub kind: String,
-    pub core: Option<String>,
-    pub primary: Option<String>,
-    pub followup: Option<String>,
-    pub version: Option<i32>,
-    pub sender_profile_id: Option<Uuid>,
-}
-
-impl PromptSettings {
-    pub fn blocks(&self) -> crate::prompting::Blocks {
-        let some = |b: &Option<String>| b.clone().filter(|t| !t.trim().is_empty());
-        crate::prompting::Blocks { core: some(&self.core), primary: some(&self.primary), followup: some(&self.followup) }
-    }
-}
-
-pub async fn prompt_settings(conn: &mut PgConnection, sequence_id: Uuid) -> Result<Option<PromptSettings>, sqlx::Error> {
-    sqlx::query_as(
-        "SELECT ai_prompt_kind AS kind, ai_prompt_core AS core, ai_prompt_primary AS primary, ai_prompt_followup AS followup, ai_prompt_version AS version, sender_profile_id
-           FROM sequences WHERE id = $1",
-    )
-    .bind(sequence_id)
-    .fetch_optional(conn)
-    .await
 }
 
 /// What changes per lead and is not a lead field.
@@ -148,11 +121,6 @@ pub fn wants_subject(step: i32, thread: bool) -> bool {
     step == 1 || !thread
 }
 
-/// The optimized prompt has its own subject rule: step 1 and step 4 or more have one (the thread headers stay), steps 2 and 3 have none.
-pub fn wants_subject_for(p: &Prompts, step: i32) -> bool {
-    if p.optimized.is_some() { crate::prompting::checks::subject_allowed(step) } else { wants_subject(step, p.thread) }
-}
-
 fn rules(step: i32, thread: bool) -> String {
     let subject = if wants_subject(step, thread) {
         format!("\"subject\" is a short subject line, up to {SUBJECT_MAX_WORDS} words.")
@@ -174,7 +142,7 @@ fn rules(step: i32, thread: bool) -> String {
 /// The filled system and user prompt for one lead and step. `Err` lists the missing names.
 pub fn build_prompts(ctx: &Ctx, p: &Prompts, lead: &Lead, step: i32, extra: &Extra) -> Result<(String, String), Vec<String>> {
     if let Some(o) = &p.optimized {
-        return Ok(o.prompts(lead, step, &[], &[]));
+        return Ok(o.prompts(lead));
     }
     let vars = vars_for(ctx, p, lead, extra).map_err(|m| vec![m])?;
     let user_src = p.users.get(&step).ok_or_else(|| vec!["missing_prompt".to_string()])?;
@@ -186,7 +154,7 @@ pub fn build_prompts(ctx: &Ctx, p: &Prompts, lead: &Lead, step: i32, extra: &Ext
 /// Hash of the filled prompts (without the parts that change when an earlier email changes). It tells when a lead or a prompt changed.
 pub fn prompt_hash(ctx: &Ctx, p: &Prompts, lead: &Lead, step: i32) -> Option<String> {
     if let Some(o) = &p.optimized {
-        return Some(o.hash(lead, step, ctx.campaign.footer.as_deref().unwrap_or("")));
+        return Some(o.hash(lead, step));
     }
     let (system, user) = build_prompts(ctx, p, lead, step, &Extra::default()).ok()?;
     let mut h = Sha256::new();
@@ -388,8 +356,6 @@ pub struct EmailTick {
     pub discovered: usize,
     pub claimed: usize,
     pub written: usize,
-    /// Mails the model or the checks held.
-    pub held: usize,
     pub failed: usize,
     pub retried: usize,
     pub auth_failed: bool,
@@ -414,7 +380,7 @@ async fn discover(pool: &PgPool, now: DateTime<Utc>, lookahead_hours: u32) -> Re
          SELECT gen_random_uuid(), c.id, e.lead_id, e.next_step, '', 'ai', 'writing', $1, $1
            FROM enrollments e
            JOIN sequences s ON s.id = e.sequence_id AND s.status = 'active'
-           JOIN campaigns c ON c.sequence_id = s.id AND c.content_mode = 'ai' AND c.auto_write AND c.status = 'active'
+           JOIN campaigns c ON c.sequence_id = s.id AND c.content_mode IN ('ai', 'optimized') AND c.auto_write AND c.status = 'active'
           WHERE e.status = 'active' AND e.lead_id IS NOT NULL AND e.next_due_at <= $1 + make_interval(hours => $2)
             AND NOT EXISTS (SELECT 1 FROM lead_emails le WHERE le.campaign_id = c.id AND le.lead_id = e.lead_id AND le.step_number = e.next_step)
           ORDER BY e.next_due_at, e.id LIMIT $3
@@ -459,25 +425,15 @@ async fn claim(pool: &PgPool, now: DateTime<Utc>, n: i64) -> Result<Vec<Claimed>
 
 enum Done {
     Written,
-    Held,
     Failed,
     Retry,
     AuthFailed,
     Lost,
 }
 
-/// What the optimized prompt adds to a saved email.
-#[derive(Default)]
-struct Meta {
-    angle_used: Option<String>,
-    used_trigger: Option<bool>,
-    claims_check: Option<Value>,
-    hold_reason: Option<String>,
-    check_failures: Option<Value>,
-}
-
 struct Outcome {
-    meta: Meta,
+    /// Optimised mode: the other emails of the set (step, subject, body, hash). They are saved with the claimed one.
+    others: Vec<(i32, String, String, Option<String>)>,
     status: &'static str,
     out: Option<(String, String)>,
     hash: Option<String>,
@@ -488,7 +444,7 @@ struct Outcome {
 
 impl Outcome {
     fn failed(code: impl Into<String>) -> Self {
-        Self { meta: Meta::default(), status: "failed", out: None, hash: None, error_code: Some(code.into()), retry_at: None, calls: vec![] }
+        Self { others: vec![], status: "failed", out: None, hash: None, error_code: Some(code.into()), retry_at: None, calls: vec![] }
     }
 }
 
@@ -527,7 +483,6 @@ pub async fn tick(
         for r in results {
             match r {
                 Ok(Done::Written) => report.written += 1,
-                Ok(Done::Held) => report.held += 1,
                 Ok(Done::Failed) => report.failed += 1,
                 Ok(Done::Retry) => report.retried += 1,
                 Ok(Done::AuthFailed) => {
@@ -610,42 +565,22 @@ async fn process(state: &crate::state::AppState, client: &dyn LlmClient, provide
         let Some(lead) = crate::leads::repo::get(&mut conn, row.lead_id).await? else { break 'o Outcome::failed("no_lead") };
         let prompts = load_prompts(&mut conn, &ctx).await?;
         if let Some(opt) = &prompts.optimized {
-            let (angles, prev_ok) = super::email_opt::previous_state(&mut conn, row.campaign_id, row.lead_id, row.step_number).await?;
             let review = match gen_repo::campaign_overrides(&mut conn, row.campaign_id).await? {
                 (Some(r), _) => r,
                 _ => settings.review_required,
             };
-            let hash = prompt_hash(&ctx, &prompts, &lead, row.step_number);
-            let footer = footer_text(&ctx, &lead);
             drop(conn);
-            if !prev_ok {
-                break 'o held_outcome("previous_step_held", vec![], hash, vec![]);
+            let step = row.step_number;
+            if !(1..=super::email_opt::EMAILS as i32).contains(&step) {
+                break 'o Outcome::failed("step_out_of_range");
             }
-            break 'o match super::email_opt::generate(client, settings, opt, &lead, row.step_number, &angles).await {
-                Ok(g) => match g.verdict {
-                    super::email_opt::Verdict::Held { reason, failures } => held_outcome(&reason, failures, hash, g.calls),
-                    super::email_opt::Verdict::Mail(m) => {
-                        let mut body = m.body.clone();
-                        if let Some(f) = footer {
-                            body.push_str("\n\n");
-                            body.push_str(&f);
-                        }
-                        Outcome {
-                            meta: Meta {
-                                angle_used: Some(m.angle_used.clone()),
-                                used_trigger: Some(m.used_trigger),
-                                claims_check: Some(serde_json::json!(m.claims_check)),
-                                ..Default::default()
-                            },
-                            status: if review { "review" } else { "ready" },
-                            out: Some((m.subject.clone(), body)),
-                            hash,
-                            error_code: None,
-                            retry_at: None,
-                            calls: g.calls,
-                        }
-                    }
-                },
+            break 'o match super::email_opt::generate(client, settings, opt, &lead).await {
+                Ok(g) => {
+                    let status = if review { "review" } else { "ready" };
+                    let mine = &g.mails[step as usize - 1];
+                    let others = g.mails.iter().enumerate().filter(|(i, _)| *i as i32 + 1 != step).map(|(i, m)| (i as i32 + 1, m.subject.clone(), m.body.clone(), Some(opt.hash(&lead, i as i32 + 1)))).collect();
+                    Outcome { others, status, out: Some((mine.subject.clone(), mine.body.clone())), hash: Some(opt.hash(&lead, step)), error_code: None, retry_at: None, calls: g.calls }
+                }
                 Err(f) => failure_outcome(f, row.attempts, settings, now),
             };
         }
@@ -670,25 +605,12 @@ async fn process(state: &crate::state::AppState, client: &dyn LlmClient, provide
                     body.push_str("\n\n");
                     body.push_str(&f);
                 }
-                Outcome { meta: Meta::default(), status: if review { "review" } else { "ready" }, out: Some((g.subject, body)), hash, error_code: None, retry_at: None, calls: g.calls }
+                Outcome { others: vec![], status: if review { "review" } else { "ready" }, out: Some((g.subject, body)), hash, error_code: None, retry_at: None, calls: g.calls }
             }
             Err(f) => failure_outcome(f, row.attempts, settings, now),
         }
     };
     save(state, provider_id, &row, outcome, now).await
-}
-
-/// A mail the model or the checks held. It is not sent. A person edits the lead and tries again, or skips the lead.
-fn held_outcome(reason: &str, failures: Vec<String>, hash: Option<String>, calls: Vec<CallInfo>) -> Outcome {
-    Outcome {
-        meta: Meta { hold_reason: Some(reason.to_string()), check_failures: Some(serde_json::json!(failures)), ..Default::default() },
-        status: "held",
-        out: None,
-        hash,
-        error_code: None,
-        retry_at: None,
-        calls,
-    }
 }
 
 fn failure_outcome(f: GenFailure, attempts: i32, settings: &GeneratorSettings, now: DateTime<Utc>) -> Outcome {
@@ -724,8 +646,7 @@ async fn save(state: &crate::state::AppState, provider_id: Uuid, row: &Claimed, 
         "UPDATE lead_emails SET status = $3, subject = COALESCE($4, subject), body_text = COALESCE($5, body_text), body_html = CASE WHEN $5 IS NULL THEN body_html ELSE NULL END,
                 source = 'ai', variant_key = NULL, edited_by_hand = CASE WHEN $5 IS NULL THEN edited_by_hand ELSE false END,
                 input_hash = COALESCE($6, input_hash), error_code = $7, retry_at = $8, claim_id = NULL, claimed_at = NULL,
-                tokens_in = tokens_in + $9, tokens_out = tokens_out + $10, updated_at = $11,
-                angle_used = $12, used_trigger = $13, claims_check = $14, hold_reason = $15, check_failures = $16
+                tokens_in = tokens_in + $9, tokens_out = tokens_out + $10, updated_at = $11
           WHERE id = $1 AND claim_id = $2 AND status = 'writing'",
     )
     .bind(row.id)
@@ -739,21 +660,37 @@ async fn save(state: &crate::state::AppState, provider_id: Uuid, row: &Claimed, 
     .bind(input as i32)
     .bind(output as i32)
     .bind(now)
-    .bind(&o.meta.angle_used)
-    .bind(o.meta.used_trigger)
-    .bind(&o.meta.claims_check)
-    .bind(&o.meta.hold_reason)
-    .bind(&o.meta.check_failures)
     .execute(&mut *tx)
     .await?;
     if done.rows_affected() == 0 {
         tx.commit().await?;
         return Ok(Done::Lost);
     }
+    // Optimised mode: the other emails of the set go to their own rows. A sent or hand edited email is never replaced.
+    for (step, subject, body, hash) in &o.others {
+        sqlx::query(
+            "INSERT INTO lead_emails (id, campaign_id, lead_id, step_number, subject, body_text, source, status, input_hash, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, $5, $6, 'ai', $7, $8, $9, $9)
+             ON CONFLICT (campaign_id, lead_id, step_number) DO UPDATE SET subject = EXCLUDED.subject, body_text = EXCLUDED.body_text, body_html = NULL,
+                source = 'ai', status = EXCLUDED.status, input_hash = EXCLUDED.input_hash, error_code = NULL, retry_at = NULL, claim_id = NULL, claimed_at = NULL,
+                run_id = NULL, updated_at = EXCLUDED.updated_at
+             WHERE lead_emails.status <> 'sent' AND NOT lead_emails.edited_by_hand AND (lead_emails.status <> 'writing' OR lead_emails.claim_id IS NULL)",
+        )
+        .bind(Uuid::now_v7())
+        .bind(row.campaign_id)
+        .bind(row.lead_id)
+        .bind(step)
+        .bind(subject)
+        .bind(body)
+        .bind(o.status)
+        .bind(hash)
+        .bind(now)
+        .execute(&mut *tx)
+        .await?;
+    }
     let finished = o.status != "writing";
     if let (Some(run), true) = (row.run_id, finished) {
-        // a held mail counts as not done: nothing is written for it
-        let failed = i32::from(matches!(o.status, "failed" | "held"));
+        let failed = i32::from(o.status == "failed");
         sqlx::query(
             "UPDATE lead_email_runs SET done = done + $2, failed = failed + $3, tokens = tokens + $4 WHERE id = $1",
         )
@@ -773,7 +710,6 @@ async fn save(state: &crate::state::AppState, provider_id: Uuid, row: &Claimed, 
     tracing::info!(email_id = %row.id, status = o.status, input_tokens = input, output_tokens = output, code = o.error_code.as_deref().unwrap_or(""), "email saved");
     Ok(match o.status {
         "ready" | "review" => Done::Written,
-        "held" => Done::Held,
         "failed" => Done::Failed,
         _ => Done::Retry,
     })

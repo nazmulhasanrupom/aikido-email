@@ -19,7 +19,7 @@ import { htmlToText, sanitizeHtml, textToHtml } from "@/lib/html";
 import { aiKeys, BUILTIN_VARS, variables, withFallback } from "@/lib/template";
 import { PROBLEM_WORDS } from "@/lib/words";
 import { AiPanel } from "./AiPanel";
-import { PromptKindSwitch } from "./OptimizedPanel";
+import { ModeSwitch } from "./ModeSwitch";
 import { EmailScore } from "./EmailScore";
 import { AiPartDialog } from "./AiPartDialog";
 import { type Brief, BriefForm, EMPTY_BRIEF } from "./NewCampaign";
@@ -112,7 +112,6 @@ export function Editor({
   const [footer, setFooter] = useState(campaign.footer ?? "");
   const [aiSystem, setAiSystem] = useState(campaign.sequence.ai_system_prompt ?? "");
   const savedSystem = useRef(campaign.sequence.ai_system_prompt ?? "");
-  const [modeAsk, setModeAsk] = useState<null | "template" | "ai">(null);
   const aiMode = campaign.content_mode === "ai";
   const [sel, setSel] = useState(0);
   const [save, setSave] = useState<"saved" | "dirty" | "saving" | "error">("saved");
@@ -193,15 +192,6 @@ export function Editor({
     }, 1500);
     return () => clearTimeout(t);
   }, [steps, variants, aiSystem]);
-
-  async function changeMode(m: "template" | "ai") {
-    try {
-      await http.patch("/v1/campaigns/{id}", { path: { id: campaign.id }, body: { content_mode: m } });
-      await qc.invalidateQueries({ queryKey: ["campaigns", campaign.id] });
-    } catch (e) {
-      toast.error(messageOf(e));
-    }
-  }
 
   /** Save: the template, then the emails of every lead. */
   async function saveEmails(overwrite?: "keep_edited" | "all") {
@@ -363,28 +353,7 @@ export function Editor({
         </Notice>
       )}
       <div className="flex items-center gap-3">
-        <div role="group" aria-label="How the emails are written" className="flex rounded-(--radius-control) border border-border p-0.5 text-sm">
-          {(["template", "ai"] as const).map((m) => (
-            <button
-              key={m}
-              type="button"
-              aria-pressed={campaign.content_mode === m}
-              onClick={() => {
-                if (campaign.content_mode === m) return;
-                if (live) setModeAsk(m);
-                else void changeMode(m);
-              }}
-              className={cn("rounded px-3 py-1", campaign.content_mode === m && "bg-accent-soft font-medium")}
-            >
-              {m === "template" ? "Template" : "AI"}
-            </button>
-          ))}
-        </div>
-        <p className="text-xs text-muted">
-          {aiMode
-            ? "The AI writes each email from your prompts. Generate saves them per lead."
-            : "You write the email once. Save fills it for every lead."}
-        </p>
+        <ModeSwitch campaign={campaign} />
         <div className="ml-auto flex items-center gap-3">
               <span className="text-xs text-muted" role="status" aria-live="polite">
                 {save === "saving"
@@ -552,23 +521,18 @@ export function Editor({
 
         {/* editor */}
         {aiMode ? (
-          <PromptKindSwitch
+          <AiPanel
             campaign={campaign}
-            custom={
-              <AiPanel
-                campaign={campaign}
-                stepIndex={Math.min(sel, steps.length - 1)}
-                userPrompt={steps[Math.min(sel, steps.length - 1)]?.ai_user_prompt ?? ""}
-                system={aiSystem}
-                onSystem={setAiSystem}
-                onUser={(v) => setSteps((all) => all.map((x, i) => (i === sel ? { ...x, ai_user_prompt: v } : x)))}
-                aiReady={!!aiReady}
-                onPreset={(p) => {
-                  setAiSystem(p.system);
-                  setSteps((all) => all.map((x, i) => ({ ...x, ai_user_prompt: p.steps[Math.min(i, p.steps.length - 1)] ?? "" })));
-                }}
-              />
-            }
+            stepIndex={Math.min(sel, steps.length - 1)}
+            userPrompt={steps[Math.min(sel, steps.length - 1)]?.ai_user_prompt ?? ""}
+            system={aiSystem}
+            onSystem={setAiSystem}
+            onUser={(v) => setSteps((all) => all.map((x, i) => (i === sel ? { ...x, ai_user_prompt: v } : x)))}
+            aiReady={!!aiReady}
+            onPreset={(p) => {
+              setAiSystem(p.system);
+              setSteps((all) => all.map((x, i) => ({ ...x, ai_user_prompt: p.steps[Math.min(i, p.steps.length - 1)] ?? "" })));
+            }}
           />
         ) : (
         <section className="flex min-w-0 flex-col gap-3" aria-label="Email editor">
@@ -839,15 +803,6 @@ export function Editor({
         )}
       </div>
 
-      <ConfirmDialog
-        open={modeAsk !== null}
-        onClose={() => setModeAsk(null)}
-        title="Change how the emails are written?"
-        text="This campaign is live. Only emails that are not sent yet change. Sent emails stay as they are."
-        danger={false}
-        confirmLabel="Change"
-        onConfirm={() => modeAsk && changeMode(modeAsk)}
-      />
       <AiPartDialog
         open={!!aiDialog}
         onClose={() => setAiDialog(null)}

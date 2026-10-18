@@ -1,4 +1,4 @@
-//! Email optimization: the new lead fields, the default prompt blocks, the optimized AI flow with checks and HOLD,
+//! Email optimization: the new lead fields, the Optimised mode (one call writes the primary email and 3 follow-ups),
 //! the PERSONALIZATION sources and the sender profile. `FakeLlm` answers every call. No real provider, no real network.
 mod common;
 use aikido_email::auth::api_keys::Scope;
@@ -13,30 +13,21 @@ use uuid::Uuid;
 struct A {
     g: G,
     camp: String,
+    seq: String,
 }
 
-fn good(step: i32, angle: &str) -> Value {
-    json!({
-        "status": "OK", "subject": if step == 1 || step >= 4 { "short subject" } else { "" },
-        "body": "Hi Ana, the new depot caught my eye. Routing gets slow at that size. Worth a look?\nDana",
-        "angle_used": angle, "used_trigger": false, "claims_check": [], "hold_reason": ""
-    })
-}
+const GOOD: &str = r#"{"primary":{"subject":"new depot","body":"Hi Ana, one"},"followup_1":{"body":"two"},"followup_2":{"body":"three"},"followup_3":{"body":"four"}}"#;
 
 impl A {
-    /// An AI mode campaign with four steps and no prompt text: it starts with the optimized prompt.
+    /// A campaign with one template step, switched to the Optimised mode.
     async fn new(pool: PgPool) -> Self {
         let g = G::new(pool).await;
-        let steps = json!([
-            { "delay_amount": 0, "subject": "Hi", "body_text": "x" },
-            { "delay_amount": 3, "subject": "", "body_text": "y" },
-            { "delay_amount": 4, "subject": "", "body_text": "z" },
-            { "delay_amount": 5, "subject": "", "body_text": "w" }
-        ]);
+        let steps = json!([{ "delay_amount": 0, "subject": "Hi", "body_text": "x" }]);
         let r = g.ok(Scope::Campaigns, "POST", "/v1/campaigns", Some(json!({ "name": "Opt", "account_ids": [g.account], "sequence": { "name": "S", "steps": steps } }))).await;
         let camp = r["id"].as_str().unwrap().to_string();
-        let a = Self { g, camp };
-        a.cok("PATCH", &format!("/v1/campaigns/{}", a.camp), Some(json!({ "content_mode": "ai" }))).await;
+        let seq = r["sequence_id"].as_str().unwrap().to_string();
+        let a = Self { g, camp, seq };
+        a.cok("PATCH", &format!("/v1/campaigns/{}", a.camp), Some(json!({ "content_mode": "optimized" }))).await;
         a
     }
 
@@ -72,257 +63,130 @@ impl A {
     async fn email(&self, lead: Uuid, step: i32) -> Value {
         self.cok("GET", &format!("/v1/campaigns/{}/leads/{lead}/emails/{step}", self.camp), None).await
     }
-
-    async fn action(&self, action: &str, ids: Value) -> Value {
-        self.cok("POST", &format!("/v1/campaigns/{}/emails/actions", self.camp), Some(json!({ "action": action, "ids": ids }))).await
-    }
-
-    async fn email_id(&self, lead: Uuid, step: i32) -> String {
-        self.email(lead, step).await["id"].as_str().unwrap().to_string()
-    }
 }
 
-// ---------- the default prompt blocks ----------
+// ---------- the Optimised mode ----------
 
 #[sqlx::test]
-async fn a_new_ai_campaign_starts_optimized_and_a_block_can_be_edited_and_reset(pool: PgPool) {
+async fn switching_to_optimised_makes_four_steps_and_the_other_modes_stay_as_they_are(pool: PgPool) {
     let a = A::new(pool).await;
-    let d = a.cok("GET", "/v1/prompts/defaults", None).await;
-    assert_eq!(d["version"], 1);
-    for (key, mark) in [("core", "# OUTPUT"), ("primary", "under 80 words"), ("followup", "under 60 words")] {
-        assert!(d[key].as_str().unwrap().contains(mark), "{key}");
+    let c = a.cok("GET", &format!("/v1/campaigns/{}", a.camp), None).await;
+    assert_eq!(c["content_mode"], "optimized");
+    let steps = c["steps"].as_array().unwrap();
+    assert_eq!(steps.len(), 4);
+    assert_eq!(steps.iter().map(|s| s["delay_amount"].as_i64().unwrap()).collect::<Vec<_>>(), [0, 3, 4, 5]);
+    assert_eq!(steps[0]["body_text"], "x", "the existing step is kept");
+    // back to a template and to AI: nothing breaks
+    for m in ["template", "ai", "optimized"] {
+        a.cok("PATCH", &format!("/v1/campaigns/{}", a.camp), Some(json!({ "content_mode": m }))).await;
     }
-    let p = a.cok("GET", &format!("/v1/campaigns/{}/prompts", a.camp), None).await;
-    assert_eq!(p["kind"], "optimized");
-    assert_eq!(p["version"], 1);
-    assert_eq!(p["core"]["text"], d["core"]);
-    assert_eq!(p["newer_default"], false);
-    assert!(p["warnings"].as_array().unwrap().contains(&json!("no_profile")), "{p}");
-    assert_eq!(p["delays"].as_array().unwrap().len(), 4);
-    assert_eq!(p["delays"][1]["delay_amount"], 3);
-
-    // edits change this campaign only
-    let put = a.cok("PUT", &format!("/v1/campaigns/{}/prompts", a.camp), Some(json!({ "primary": "# STEP RULES\nMy own rule." }))).await;
-    assert_eq!(put["primary"]["text"], "# STEP RULES\nMy own rule.");
-    assert_eq!(a.cok("GET", "/v1/prompts/defaults", None).await["primary"], d["primary"]);
-    // a core without # OUTPUT gets a warning
-    let put = a.cok("PUT", &format!("/v1/campaigns/{}/prompts", a.camp), Some(json!({ "core": "# ROLE\nshort" }))).await;
-    assert!(put["warnings"].as_array().unwrap().contains(&json!("core_missing_sections")));
-    // reset
-    let r = a.cok("POST", &format!("/v1/campaigns/{}/prompts/reset", a.camp), Some(json!({ "block": "core" }))).await;
-    assert_eq!(r["core"]["is_default"], true);
-    assert_eq!(r["core"]["text"], d["core"]);
-    let bad = a.capi("POST", &format!("/v1/campaigns/{}/prompts/reset", a.camp), Some(json!({ "block": "x" }))).await;
-    assert_eq!(bad.status, StatusCode::UNPROCESSABLE_ENTITY);
-    let long = a.capi("PUT", &format!("/v1/campaigns/{}/prompts", a.camp), Some(json!({ "core": "x".repeat(16001) }))).await;
-    assert_eq!(long.status, StatusCode::UNPROCESSABLE_ENTITY);
+    // more than 4 steps: refused with a plain message
+    let b = a.g.ok(Scope::Campaigns, "POST", "/v1/campaigns", Some(json!({ "name": "Five", "account_ids": [a.g.account], "sequence": { "name": "S5", "steps": [
+        { "delay_amount": 0, "subject": "a", "body_text": "x" }, { "delay_amount": 1, "body_text": "x" }, { "delay_amount": 1, "body_text": "x" },
+        { "delay_amount": 1, "body_text": "x" }, { "delay_amount": 1, "body_text": "x" }] } }))).await;
+    let r = a.capi("PATCH", &format!("/v1/campaigns/{}", b["id"].as_str().unwrap()), Some(json!({ "content_mode": "optimized" }))).await;
+    assert_eq!((r.status, r.body["error"]["code"].as_str()), (StatusCode::UNPROCESSABLE_ENTITY, Some("too_many_steps")));
+    let _ = &a.seq;
 }
 
 #[sqlx::test]
-async fn an_old_campaign_with_prompts_stays_custom_and_can_switch(pool: PgPool) {
-    let g = G::new(pool).await;
-    let steps = json!([{ "delay_amount": 0, "subject": "Hi", "body_text": "x", "ai_user_prompt": "Write to {{first_name}}." }]);
-    let r = g.ok(Scope::Campaigns, "POST", "/v1/campaigns", Some(json!({ "name": "Old", "account_ids": [g.account], "sequence": { "name": "S", "steps": steps } }))).await;
-    let id = r["id"].as_str().unwrap();
-    g.ok(Scope::Campaigns, "PATCH", &format!("/v1/campaigns/{id}"), Some(json!({ "content_mode": "ai" }))).await;
-    let p = g.ok(Scope::Campaigns, "GET", &format!("/v1/campaigns/{id}/prompts"), None).await;
-    assert_eq!(p["kind"], "custom");
-    // the preview refuses a custom campaign
-    let lead = g.lead("a@acme.example", "Ana").await;
-    let pre = g.api(Scope::Campaigns, "POST", &format!("/v1/campaigns/{id}/preview"), Some(json!({ "lead_id": lead, "step": 1 }))).await;
-    assert_eq!(pre.status, StatusCode::UNPROCESSABLE_ENTITY);
-    // switch with one call: the shipped blocks are copied in
-    let p = g.ok(Scope::Campaigns, "PUT", &format!("/v1/campaigns/{id}/prompts"), Some(json!({ "kind": "optimized" }))).await;
-    assert_eq!((p["kind"].as_str(), p["version"].as_i64()), (Some("optimized"), Some(1)));
-    assert_eq!(p["primary"]["is_default"], false);
-    // and back
-    let p = g.ok(Scope::Campaigns, "PUT", &format!("/v1/campaigns/{id}/prompts"), Some(json!({ "kind": "custom" }))).await;
-    assert_eq!(p["kind"], "custom");
+async fn one_call_writes_the_primary_email_and_three_follow_ups_into_their_own_places(pool: PgPool) {
+    let a = A::new(pool).await;
+    let lead = a.add_lead("ana@acme.example", json!({ "first_name": "Ana", "last_name": "Silva", "company_name": "Acme", "industry": "Logistics", "trigger_event": "Opened a depot", "trigger_verified": true })).await;
+    let est = a.cok("POST", &format!("/v1/campaigns/{}/emails/estimate", a.camp), Some(json!({}))).await;
+    assert_eq!(est["emails"], 1, "one call per lead");
+    let run = a.generate(json!({})).await;
+    assert_eq!(run["total"], 1);
+    let t = a.g.gen_tick().await;
+    assert_eq!((t.emails_written, t.emails_failed), (1, 0));
+    assert_eq!(a.g.fake.call_count(), 1, "one model call for the four emails");
+    let bodies: Vec<String> = {
+        let mut v = Vec::new();
+        for s in 1..=4 {
+            let e = a.email(lead, s).await;
+            assert_eq!((e["status"].as_str(), e["source"].as_str()), (Some("ready"), Some("ai")), "step {s}");
+            v.push(e["body_text"].as_str().unwrap().to_string());
+        }
+        v
+    };
+    assert!(bodies[0].starts_with("Hi there, fake primary email"));
+    assert!(bodies[1].starts_with("Fake follow up 1") && bodies[2].starts_with("Fake follow up 2") && bodies[3].starts_with("Fake follow up 3"));
+    assert_eq!(a.email(lead, 1).await["subject"], "fake subject");
+    for s in 2..=4 {
+        assert_eq!(a.email(lead, s).await["subject"], "", "follow-ups go in the same thread");
+    }
+    // the prompt is plain text with the lead values, no JSON, and no footer is added
+    let call = &a.g.fake.calls()[0];
+    assert!(call.user.contains("Company: Acme") && call.user.contains("Industry: Logistics") && call.user.contains("Recent event: Opened a depot"), "{}", call.user);
+    assert!(!call.user.contains('{'));
+    assert!(call.system.contains("followup_3"));
+    assert!(!bodies[0].contains("Footer"));
+    // the run is done
+    let r = a.cok("GET", &format!("/v1/campaigns/{}/email-runs/{}", a.camp, run["id"].as_str().unwrap()), None).await;
+    assert_eq!((r["status"].as_str(), r["done"].as_i64()), (Some("done"), Some(1)));
 }
 
-// ---------- the optimized flow ----------
-
 #[sqlx::test]
-async fn four_steps_follow_the_subject_rules_and_each_step_sees_the_earlier_angles(pool: PgPool) {
+async fn own_prompts_the_saved_profile_a_hand_edit_and_a_bad_format(pool: PgPool) {
     let a = A::new(pool).await;
     let lead = a.add_lead("ana@acme.example", json!({ "first_name": "Ana", "company_name": "Acme" })).await;
+    // the profile fills the sender part of the user prompt
+    a.pok("PUT", "/v1/personalization/profile", Some(json!({ "fields": { "sender_first_name": "Dana", "offer": "Route software", "outcome": "Faster deliveries" } }))).await;
+    // own prompts: the instructions on the sequence, the user prompt on step 1
+    a.g.ok(Scope::Followups, "PATCH", &format!("/v1/followups/sequences/{}", a.seq), Some(json!({ "ai_system_prompt": "Be very short for {{sender_first_name}}." }))).await;
+    let steps = a.cok("GET", &format!("/v1/campaigns/{}", a.camp), None).await["steps"].clone();
+    let mut put: Vec<Value> = steps.as_array().unwrap().iter().map(|s| json!({ "delay_amount": s["delay_amount"], "subject": s["subject"], "body_text": s["body_text"], "ai_user_prompt": null })).collect();
+    put[0]["ai_user_prompt"] = json!("Lead: {{first_name}} at {{company}}. I sell: {{offer}}. Ask: {{low_friction_offer|a short call}}.");
+    let r = a.g.api(Scope::Followups, "PUT", &format!("/v1/followups/sequences/{}/steps", a.seq), Some(json!({ "steps": put }))).await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.body);
+
+    // a hand edit of follow-up 2 is kept when the set is written again
     a.generate(json!({})).await;
-    let t = a.g.gen_tick().await;
-    assert_eq!((t.emails_written, t.emails_held, t.emails_failed), (4, 0, 0));
-    for (step, subject) in [(1, "fake subject"), (2, ""), (3, ""), (4, "fake subject")] {
-        let e = a.email(lead, step).await;
-        assert_eq!(e["status"], "ready", "step {step}: {e}");
-        assert_eq!(e["subject"], subject, "step {step}");
-        assert_eq!(e["angle_used"], format!("fake angle {step}"));
-        assert!(e["body_text"].as_str().unwrap().starts_with("Hi there, fake mail body"));
-    }
-    let calls = a.g.fake.calls();
-    assert_eq!(calls.len(), 4);
-    let third = calls.iter().find(|c| c.system.contains("\"step\":3")).unwrap();
-    let lead_block: Value = serde_json::from_str(third.user.split("LEAD\n").nth(1).unwrap().split("\n\nWrite").next().unwrap()).unwrap();
-    assert_eq!(lead_block["previous_angles"], json!(["fake angle 1", "fake angle 2"]));
-    assert_eq!(lead_block["sequence_step"], 3);
-    assert_eq!(lead_block["company"], "Acme");
-    assert!(third.system.contains("FOLLOW-UP MAIL") && !third.system.contains("PRIMARY MAIL"));
-    assert!(calls.iter().find(|c| c.system.contains("\"step\":1")).unwrap().system.contains("PRIMARY MAIL"));
-    // the user prompt has no private data
-    assert!(!third.user.contains("ana@acme.example"));
-}
-
-#[sqlx::test]
-async fn an_empty_required_field_holds_the_mail_with_no_model_call_and_a_retry_works(pool: PgPool) {
-    let a = A::new(pool).await;
-    let lead = a.add_lead("bob@acme.example", json!({ "first_name": "Bob" })).await;
-    a.generate(json!({ "steps": [1] })).await;
-    let t = a.g.gen_tick().await;
-    assert_eq!((t.emails_written, t.emails_held), (0, 1));
-    assert_eq!(a.g.fake.call_count(), 0);
-    let e = a.email(lead, 1).await;
-    assert_eq!((e["status"].as_str(), e["hold_reason"].as_str()), (Some("held"), Some("missing_required: company")));
-    // the Held filter
-    let held = a.cok("GET", &format!("/v1/campaigns/{}/leads?held=true", a.camp), None).await;
-    assert_eq!(held["leads"].as_array().unwrap().len(), 1);
-    assert_eq!(held["leads"][0]["emails"][0]["hold_reason"], "missing_required: company");
-    let all = a.cok("GET", &format!("/v1/campaigns/{}/leads", a.camp), None).await;
-    assert_eq!(all["leads"].as_array().unwrap().len(), 1);
-    // edit the lead and retry
-    a.g.ok(Scope::Leads, "PATCH", &format!("/v1/leads/{lead}"), Some(json!({ "company_name": "Acme" }))).await;
-    assert_eq!(a.action("regenerate", json!([a.email_id(lead, 1).await])).await["changed"], 1);
-    let t = a.g.gen_tick().await;
-    assert_eq!((t.emails_written, t.emails_held), (1, 0));
-    let e = a.email(lead, 1).await;
-    assert_eq!(e["status"], "ready");
-    assert!(e["hold_reason"].is_null());
-    assert_eq!(a.cok("GET", &format!("/v1/campaigns/{}/leads?held=true", a.camp), None).await["leads"].as_array().unwrap().len(), 0);
-}
-
-#[sqlx::test]
-async fn a_model_hold_is_saved_a_failed_check_is_tried_once_more_and_then_held(pool: PgPool) {
-    let a = A::new(pool).await;
-    let l1 = a.add_lead("one@acme.example", json!({ "first_name": "One", "company_name": "Acme" })).await;
-    a.generate(json!({ "steps": [1] })).await;
-    a.g.fake.push(Ok(response(json!({ "status": "HOLD", "subject": "", "body": "", "angle_used": "", "used_trigger": false, "claims_check": [], "hold_reason": "sender_incomplete: offer is empty" }).to_string())));
-    a.g.gen_tick().await;
-    let e = a.email(l1, 1).await;
-    assert_eq!((e["status"].as_str(), e["hold_reason"].as_str()), (Some("held"), Some("sender_incomplete: offer is empty")));
-    assert_eq!(a.g.fake.call_count(), 1, "a model HOLD is not tried again");
-
-    // two answers with a dash: held after 2 calls, with the failure list
-    let l2 = a.add_lead("two@acme.example", json!({ "first_name": "Two", "company_name": "Acme" })).await;
-    a.generate(json!({ "steps": [1], "leads": { "lead_ids": [l2] } })).await;
-    let mut bad = good(1, "x");
-    bad["body"] = json!("Hi \u{2014} routing is slow.");
-    a.g.fake.push(Ok(response(bad.to_string())));
-    a.g.fake.push(Ok(response(bad.to_string())));
-    a.g.gen_tick().await;
-    assert_eq!(a.g.fake.call_count(), 3);
-    let e = a.email(l2, 1).await;
-    assert_eq!(e["status"], "held");
-    assert!(e["hold_reason"].as_str().unwrap().starts_with("checks_failed: "), "{e}");
-    assert!(e["check_failures"][0].as_str().unwrap().contains("dash"));
-    assert!(e["body_text"].is_null(), "a held mail has no text to send");
-
-    // one bad answer and then a good one: written after 2 calls
-    let l3 = a.add_lead("three@acme.example", json!({ "first_name": "Three", "company_name": "Acme" })).await;
-    a.generate(json!({ "steps": [1], "leads": { "lead_ids": [l3] } })).await;
-    a.g.fake.push(Ok(response(bad.to_string())));
-    a.g.fake.push(Ok(response(good(1, "depot growth").to_string())));
-    a.g.gen_tick().await;
-    assert_eq!(a.g.fake.call_count(), 5);
-    let e = a.email(l3, 1).await;
-    assert_eq!((e["status"].as_str(), e["angle_used"].as_str()), (Some("ready"), Some("depot growth")));
-    assert!(a.g.fake.calls()[4].user.contains("Your last answer failed these checks"));
-}
-
-#[sqlx::test]
-async fn a_held_step_holds_the_steps_after_it_and_skip_stops_the_lead(pool: PgPool) {
-    let a = A::new(pool).await;
-    let lead = a.add_lead("ana@acme.example", json!({ "first_name": "Ana", "company_name": "Acme" })).await;
-    a.generate(json!({ "steps": [1, 2] })).await;
-    a.g.fake.push(Ok(response(json!({ "status": "HOLD", "subject": "", "body": "", "angle_used": "", "used_trigger": false, "claims_check": [], "hold_reason": "no hook" }).to_string())));
-    let t = a.g.gen_tick().await;
-    assert_eq!(t.emails_held, 2);
-    assert_eq!(a.g.fake.call_count(), 1, "step 2 made no call");
-    assert_eq!(a.email(lead, 2).await["hold_reason"], "previous_step_held");
-
-    // skip: the lead leaves the campaign
-    let ids = json!([a.email_id(lead, 1).await]);
-    assert_eq!(a.action("skip", ids).await["changed"], 1);
-    let row = a.cok("GET", &format!("/v1/campaigns/{}/leads?state=skipped", a.camp), None).await;
-    assert_eq!(row["leads"][0]["skip_reason"], "held_skipped");
-}
-
-#[sqlx::test]
-async fn the_saved_profile_goes_into_the_prompt_and_a_new_version_marks_mails_stale(pool: PgPool) {
-    let a = A::new(pool).await;
-    let lead = a.add_lead("ana@acme.example", json!({ "first_name": "Ana", "company_name": "Acme", "industry": "Logistics", "trigger_event": "Opened a depot", "trigger_verified": true })).await;
-    let fields = json!({ "sender_first_name": "Dana", "ideal_customer": "Ops heads", "problem_solved": "Slow routing", "offer": "Route software", "outcome": "Faster deliveries" });
-    let saved = a.pok("PUT", "/v1/personalization/profile", Some(json!({ "fields": fields }))).await;
-    assert_eq!(saved["version"], 1);
-    a.generate(json!({ "steps": [1] })).await;
     a.g.gen_tick().await;
     let call = &a.g.fake.calls()[0];
-    let sender: Value = serde_json::from_str(call.user.split("SENDER\n").nth(1).unwrap().split("\n\nLEAD").next().unwrap()).unwrap();
-    assert_eq!((sender["offer"].as_str(), sender["proof_or_none"].as_str(), sender["allow_low_personalization"].as_bool()), (Some("Route software"), Some("none"), Some(false)));
-    let lead_block: Value = serde_json::from_str(call.user.split("LEAD\n").nth(1).unwrap().split("\n\nWrite").next().unwrap()).unwrap();
-    assert_eq!((lead_block["trigger"].as_str(), lead_block["trigger_verified"].as_bool(), lead_block["industry"].as_str()), (Some("Opened a depot"), Some(true), Some("Logistics")));
-    assert_eq!(a.email(lead, 1).await["status"], "ready");
+    assert!(call.system.starts_with("Be very short for Dana."), "{}", call.system);
+    assert_eq!(call.user, "Lead: Ana at Acme. I sell: Route software. Ask: a short call.");
+    let e = a.email(lead, 3).await;
+    a.cok("PATCH", &format!("/v1/campaigns/{}/leads/{lead}/emails/3", a.camp), Some(json!({ "subject": "", "body_text": "My own words" }))).await;
+    assert_eq!(e["status"], "ready");
+    a.cok("POST", &format!("/v1/campaigns/{}/emails/actions", a.camp), Some(json!({ "action": "regenerate", "ids": [a.email(lead, 1).await["id"]] }))).await;
+    a.g.gen_tick().await;
+    assert_eq!(a.email(lead, 3).await["body_text"], "My own words", "a hand edit is never replaced");
+    assert!(a.email(lead, 2).await["body_text"].as_str().unwrap().starts_with("Fake follow up 1"));
 
-    // a new version marks the unsent mail out of date
-    let mut f2 = fields.clone();
-    f2["offer"] = json!("Route software v2");
-    let v2 = a.pok("PUT", "/v1/personalization/profile", Some(json!({ "fields": f2 }))).await;
-    assert_eq!(v2["version"], 2);
-    assert_eq!(a.email(lead, 1).await["status"], "stale");
-    let versions = a.pok("GET", "/v1/personalization/profile/versions", None).await;
-    assert_eq!(versions.as_array().unwrap().len(), 2);
-    assert_eq!(versions[0]["version"], 2);
-    assert_eq!(a.pok("GET", "/v1/personalization/profile", None).await["profile"]["offer"], "Route software v2");
+    // a new profile version marks the unsent emails out of date
+    a.pok("PUT", "/v1/personalization/profile", Some(json!({ "fields": { "sender_first_name": "Dana", "offer": "Route software v2" } }))).await;
+    assert_eq!(a.email(lead, 2).await["status"], "stale");
+
+    // a wrong format: one more try, then the email fails
+    let l2 = a.add_lead("bob@acme.example", json!({ "first_name": "Bob", "company_name": "Acme" })).await;
+    a.generate(json!({ "leads": { "lead_ids": [l2] } })).await;
+    let before = a.g.fake.call_count();
+    a.g.fake.push(Ok(response("sorry, no")));
+    a.g.fake.push(Ok(response(GOOD)));
+    let t = a.g.gen_tick().await;
+    assert_eq!((t.emails_written, a.g.fake.call_count() - before), (1, 2));
+    assert_eq!(a.email(l2, 4).await["body_text"], "four");
+    let l3 = a.add_lead("cy@acme.example", json!({ "first_name": "Cy", "company_name": "Acme" })).await;
+    a.generate(json!({ "leads": { "lead_ids": [l3] } })).await;
+    a.g.fake.push(Ok(response("no")));
+    a.g.fake.push(Ok(response("still no")));
+    let t = a.g.gen_tick().await;
+    assert_eq!(t.emails_failed, 1);
+    assert_eq!(a.email(l3, 1).await["status"], "failed");
 }
 
 #[sqlx::test]
-async fn preview_shows_the_prompts_the_result_and_every_check_and_is_rate_limited(pool: PgPool) {
+async fn the_test_route_shows_all_four_and_saves_nothing(pool: PgPool) {
     let a = A::new(pool).await;
     let lead = a.add_lead("ana@acme.example", json!({ "first_name": "Ana", "company_name": "Acme" })).await;
-    let uri = format!("/v1/campaigns/{}/preview", a.camp);
-    a.g.fake.push(Ok(response(good(1, "depot growth").to_string())));
-    let r = a.cok("POST", &uri, Some(json!({ "lead_id": lead, "step": 1 }))).await;
-    assert_eq!(r["status"], "OK");
-    assert_eq!(r["angle_used"], "depot growth");
-    assert!(r["word_count"].as_u64().unwrap() > 5);
-    assert_eq!(r["checks"].as_array().unwrap().len(), 8);
-    assert!(r["checks"].as_array().unwrap().iter().all(|c| c["passed"] == true));
-    assert!(r["system"].as_str().unwrap().contains("PRIMARY MAIL") && r["user"].as_str().unwrap().contains("SENDER"));
-    assert_eq!(r["calls"], 1);
-    // dry run: the prompts only, no model call, not counted by the limit
-    let calls_before = a.g.fake.call_count();
-    let d = a.cok("POST", &uri, Some(json!({ "lead_id": lead, "step": 1, "dry_run": true }))).await;
-    assert_eq!(d["status"], "PROMPTS_ONLY");
-    assert!(d["user"].as_str().unwrap().contains("\"company\": \"Acme\""));
-    assert_eq!(a.g.fake.call_count(), calls_before);
-    // step 2 with earlier angles typed in
-    let r = a.cok("POST", &uri, Some(json!({ "lead_id": lead, "step": 2, "previous_angles": ["fake angle 1"] }))).await;
-    assert_eq!(r["previous_angles"], json!(["fake angle 1"]));
-    // a held result shows the checks of the last answer
-    let mut bad = good(1, "x");
-    bad["body"] = json!("see https://acme.example now");
-    a.g.fake.push(Ok(response(bad.to_string())));
-    a.g.fake.push(Ok(response(bad.to_string())));
-    let r = a.cok("POST", &uri, Some(json!({ "lead_id": lead, "step": 1 }))).await;
-    assert_eq!(r["status"], "HOLD");
-    assert!(r["held"]["reason"].as_str().unwrap().starts_with("checks_failed"));
-    assert!(r["checks"].as_array().unwrap().iter().any(|c| c["name"] == "links" && c["passed"] == false));
-    let none = a.capi("POST", &uri, Some(json!({ "lead_id": lead, "step": 9 }))).await;
-    assert_eq!(none.status, StatusCode::NOT_FOUND);
-    // calls are logged
-    let (n,): (i64,) = sqlx::query_as("SELECT count(*) FROM llm_calls WHERE purpose = 'lead_email_test'").fetch_one(&a.g.h.state.pool).await.unwrap();
-    assert_eq!(n, 4);
-    // the limit: 10 a minute (4 calls so far counted as 4 requests: 3 ok + 1 not found)
-    let mut last = StatusCode::OK;
-    for _ in 0..10 {
-        last = a.capi("POST", &uri, Some(json!({ "lead_id": lead, "step": 1 }))).await.status;
-    }
-    assert_eq!(last, StatusCode::TOO_MANY_REQUESTS);
+    let r = a.cok("POST", &format!("/v1/campaigns/{}/emails/test", a.camp), Some(json!({ "lead_id": lead, "step": 1 }))).await;
+    assert_eq!(r["mode"], "optimized");
+    assert_eq!(r["emails"].as_array().unwrap().len(), 4);
+    assert_eq!(r["subject"], "fake subject");
+    assert_eq!(r["emails"][2]["step"], 3);
+    let saved = a.capi("GET", &format!("/v1/campaigns/{}/leads/{lead}/emails/1", a.camp), None).await;
+    assert_eq!(saved.status, StatusCode::NOT_FOUND);
 }
 
 // ---------- lead fields ----------

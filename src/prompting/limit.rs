@@ -28,6 +28,14 @@ impl RateLimiter {
     }
 }
 
+/// 10 calls a minute per user (or API key) for the routes that cost tokens.
+pub fn check_user(st: &crate::state::AppState, who: Option<uuid::Uuid>) -> crate::error::ApiResult<()> {
+    let key = who.map(|u| u.to_string()).unwrap_or_else(|| "key".to_string());
+    st.ai_limiter
+        .check(&key, PER_MINUTE, Duration::from_secs(60))
+        .map_err(|wait| crate::error::ApiError::too_many("rate_limited", "This costs tokens. You can do it 10 times a minute. Wait a moment.", wait as i64))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -78,7 +78,10 @@ export function GenerateDialog({
 }) {
   const qc = useQueryClient();
   const steps = campaign.steps;
-  const [picked, setPicked] = useState<number[]>([1]);
+  const optimized = campaign.content_mode === "optimized";
+  const [pickedOwn, setPicked] = useState<number[]>([1]);
+  // the Optimised mode writes all 4 emails of a lead in one go
+  const picked = optimized ? steps.map((s) => s.step_number) : pickedOwn;
   const [who, setWho] = useState<Who>(selected && selected.length > 0 ? "selected" : "count");
   const [count, setCount] = useState(50);
   const [overwrite, setOverwrite] = useState<Overwrite>("skip");
@@ -136,6 +139,7 @@ export function GenerateDialog({
       }
     >
       <div className="flex flex-col gap-4">
+        {!optimized && (
         <fieldset className="flex flex-col gap-1.5">
           <legend className="mb-1 text-sm font-medium">What</legend>
           {steps.map((s) => (
@@ -152,6 +156,7 @@ export function GenerateDialog({
             </p>
           )}
         </fieldset>
+        )}
         <fieldset className="flex flex-col gap-1.5">
           <legend className="mb-1 text-sm font-medium">For</legend>
           <label className="flex items-center gap-2 text-sm">
@@ -200,7 +205,7 @@ export function GenerateDialog({
           {est.isError && <ErrorNote error={est.error} />}
           {e && (
             <>
-              About {fmtInt(e.emails)} email{e.emails === 1 ? "" : "s"}, about {fmtInt(Math.round(e.tokens / 1000))}k tokens
+              {optimized ? `About ${fmtInt(e.emails)} lead${e.emails === 1 ? "" : "s"} (4 emails each), about` : `About ${fmtInt(e.emails)} email${e.emails === 1 ? "" : "s"}, about`} {fmtInt(Math.round(e.tokens / 1000))}k tokens
               {e.cost_known ? `, about $${e.cost_usd.toFixed(2)}` : ", price unknown (add one in the AI settings)"}.
               {e.edited_by_hand > 0 && overwrite === "all" ? ` This replaces ${e.edited_by_hand} edited by hand.` : ""}
             </>
