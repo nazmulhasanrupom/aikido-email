@@ -1253,3 +1253,139 @@ async fn campaign_lead_rows_carry_the_follow_up_status(pool: PgPool) {
     let waiting = rows["leads"].as_array().unwrap().iter().find(|r| r["enrollment_id"] == enrollment.as_str()).unwrap();
     assert_eq!(waiting["wait_reason"], "waiting_ai_review");
 }
+
+// ---------- UI update map v2: emails saved per lead (U2) ----------
+
+impl C {
+    async fn variants_on(&self, campaign: &Value, variants: Value) {
+        let seq = campaign["sequence_id"].as_str().unwrap();
+        let steps = campaign["steps"].clone();
+        let steps: Vec<Value> = steps
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|s| json!({ "delay_amount": s["delay_amount"], "subject": s["subject"], "body_text": s["body_text"] }))
+            .collect();
+        let r = self.fapi("PUT", &format!("/v1/followups/sequences/{seq}/steps"), Some(json!({ "steps": steps, "variants": variants }))).await;
+        assert!(r.status.is_success(), "{}", r.body);
+    }
+
+    async fn save(&self, camp: &str, overwrite: Option<&str>) -> Value {
+        let body = overwrite.map(|o| json!({ "overwrite": o })).unwrap_or(json!({}));
+        let r = self.api("POST", &format!("/v1/campaigns/{camp}/emails/render"), Some(body)).await;
+        assert_eq!(r.status, StatusCode::ACCEPTED, "{}", r.body);
+        r.body
+    }
+
+    async fn email_of(&self, camp: &str, lead: Uuid, step: i32) -> Value {
+        self.ok("GET", &format!("/v1/campaigns/{camp}/leads/{lead}/emails/{step}"), None).await
+    }
+}
+
+#[sqlx::test]
+async fn save_splits_the_variants_evenly_and_keeps_hand_edits(pool: PgPool) {
+    let c = C::new(pool).await;
+    let a = c.account("a@x.test").await;
+    let camp_v = c.campaign(&[a], json!({})).await;
+    let camp = id(&camp_v);
+    let leads = c.many_leads(30, "acme.com").await;
+    c.add(&camp, &leads).await;
+    c.variants_on(
+        &camp_v,
+        json!([{ "name": "Short", "subject": "Quick one, {{first_name}}", "body_text": "B text for {{first_name}}. {{sender_name}}" },
+               { "name": "Long", "subject": "Idea for {{first_name}}", "body_text": "C text for {{first_name}}" }]),
+    )
+    .await;
+    let run = c.save(&camp, None).await;
+    assert_eq!(run["status"], "done");
+    assert_eq!(run["done"], 60, "30 leads x 2 steps");
+    let counts: Vec<(String, i64)> = sqlx::query_as("SELECT variant_key, count(*) FROM lead_emails WHERE step_number = 1 GROUP BY 1 ORDER BY 1").fetch_all(&c.h.state.pool).await.unwrap();
+    assert_eq!(counts, vec![("A".to_string(), 10), ("B".to_string(), 10), ("C".to_string(), 10)]);
+    // leads added in one call share a time, so the order is the lead id: A, B, C, A, B, C ...
+    let mut sorted = leads.clone();
+    sorted.sort();
+    for (i, l) in sorted.iter().enumerate().take(6) {
+        assert_eq!(c.email_of(&camp, *l, 1).await["variant_key"], ["A", "B", "C"][i % 3]);
+    }
+    let b = c.email_of(&camp, sorted[1], 1).await;
+    assert!(b["body_text"].as_str().unwrap().ends_with(". {{sender_name}}"), "the sender token waits for send time: {b}");
+    assert_eq!(b["status"], "ready");
+
+    // a hand edit survives a second Save, and `all` replaces it
+    let p = c.ok("PATCH", &format!("/v1/campaigns/{camp}/leads/{}/emails/1", leads[0]), Some(json!({ "subject": "Mine", "body_text": "By hand" }))).await;
+    assert_eq!(p["edited_by_hand"], true);
+    let est = c.ok("POST", &format!("/v1/campaigns/{camp}/emails/estimate"), Some(json!({ "overwrite": "all" }))).await;
+    assert_eq!(est["edited_by_hand"], 1);
+    c.save(&camp, None).await;
+    assert_eq!(c.email_of(&camp, leads[0], 1).await["subject"], "Mine");
+    c.save(&camp, Some("all")).await;
+    assert_eq!(c.email_of(&camp, leads[0], 1).await["subject"], "Hello N0");
+
+    // the list shows a cell per step
+    let rows = c.ok("GET", &format!("/v1/campaigns/{camp}/leads"), None).await;
+    assert_eq!(rows["leads"][0]["emails"].as_array().unwrap().len(), 2);
+}
+
+#[sqlx::test]
+async fn a_lead_edit_makes_the_email_out_of_date_and_the_sent_text_uses_the_new_value(pool: PgPool) {
+    let c = C::new(pool).await;
+    let a = c.account("a@x.test").await;
+    let camp = id(&c.campaign(&[a], json!({})).await);
+    let leads = c.many_leads(2, "acme.com").await;
+    c.add(&camp, &leads).await;
+    c.save(&camp, None).await;
+    assert_eq!(c.email_of(&camp, leads[0], 1).await["subject"], "Hello N0");
+    c.leads("PATCH", &format!("/v1/leads/{}", leads[0]), Some(json!({ "first_name": "Zed" }))).await;
+    assert_eq!(c.email_of(&camp, leads[0], 1).await["status"], "stale");
+    assert_eq!(c.email_of(&camp, leads[1], 1).await["status"], "ready", "other leads are not touched");
+    // a hand-edited stale email is sent as written; an unedited one is rendered again
+    c.launch(&camp).await;
+    for _ in 0..4 {
+        c.round(Duration::minutes(10)).await;
+    }
+    let sent: Vec<(String,)> = sqlx::query_as("SELECT subject FROM send_jobs WHERE to_email = 'u0@acme.com' ORDER BY step_number").fetch_all(&c.h.state.pool).await.unwrap();
+    assert_eq!(sent[0].0, "Hello Zed");
+    let after = c.email_of(&camp, leads[0], 1).await;
+    assert_eq!(after["status"], "sent");
+    assert!(after["job_id"].is_string());
+    assert_eq!(c.api("PATCH", &format!("/v1/campaigns/{camp}/leads/{}/emails/1", leads[0]), Some(json!({ "subject": "x" }))).await.status, StatusCode::CONFLICT);
+}
+
+#[sqlx::test]
+async fn new_leads_get_their_emails_after_the_first_save_and_a_template_change_makes_them_stale(pool: PgPool) {
+    let c = C::new(pool).await;
+    let a = c.account("a@x.test").await;
+    let camp_v = c.campaign(&[a], json!({})).await;
+    let camp = id(&camp_v);
+    c.add(&camp, &c.many_leads(1, "acme.com").await).await;
+    let late = c.many_leads(1, "beta.com").await;
+    c.save(&camp, None).await;
+    c.add(&camp, &late).await;
+    assert_eq!(c.email_of(&camp, late[0], 2).await["status"], "ready");
+    // a footer is added to every email, and changing it marks the saved ones out of date
+    c.ok("PATCH", &format!("/v1/campaigns/{camp}"), Some(json!({ "footer": "Bye, {{sender_name}}" }))).await;
+    assert_eq!(c.email_of(&camp, late[0], 1).await["status"], "stale");
+    c.save(&camp, None).await;
+    let e = c.email_of(&camp, late[0], 1).await;
+    assert!(e["body_text"].as_str().unwrap().ends_with("Bye, {{sender_name}}"), "{e}");
+    assert_eq!(e["status"], "ready");
+}
+
+#[sqlx::test]
+async fn ai_mode_holds_a_step_without_an_email(pool: PgPool) {
+    let c = C::new(pool).await;
+    let a = c.account("a@x.test").await;
+    let camp = id(&c.campaign(&[a], json!({})).await);
+    c.add(&camp, &c.many_leads(1, "acme.com").await).await;
+    c.ok("PATCH", &format!("/v1/campaigns/{camp}"), Some(json!({ "content_mode": "ai" }))).await;
+    let r = c.api("POST", &format!("/v1/campaigns/{camp}/emails/render"), Some(json!({}))).await;
+    assert_eq!(r.status, StatusCode::UNPROCESSABLE_ENTITY);
+    c.launch(&camp).await;
+    for _ in 0..3 {
+        c.round(Duration::minutes(10)).await;
+    }
+    let (jobs,): (i64,) = sqlx::query_as("SELECT count(*) FROM send_jobs").fetch_one(&c.h.state.pool).await.unwrap();
+    assert_eq!(jobs, 0);
+    let (reason,): (Option<String>,) = sqlx::query_as("SELECT wait_reason FROM enrollments LIMIT 1").fetch_one(&c.h.state.pool).await.unwrap();
+    assert_eq!(reason.as_deref(), Some("email_not_ready"));
+}

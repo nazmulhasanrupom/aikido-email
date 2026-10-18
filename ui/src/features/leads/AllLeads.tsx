@@ -1,5 +1,6 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
+import { Pencil } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { ApiProblem, messageOf } from "@/api/errors";
@@ -20,9 +21,31 @@ import {
   TD,
   useDebounced,
 } from "@/components/ui";
-import { fmtDate, fullName } from "@/lib/format";
+import { fmtDate } from "@/lib/format";
 import { CONTACT_STATES, INTERESTS, say } from "@/lib/words";
 import { ImportModal } from "./ImportModal";
+import { AddColumn, ColumnHeader, ColumnsMenu, EditableCell, type GridCol, useColumns } from "./grid";
+
+const BASE_COLS: GridCol[] = [
+  { id: "email", label: "Email" },
+  { id: "first_name", label: "First name" },
+  { id: "last_name", label: "Last name" },
+  { id: "company_name", label: "Company" },
+  { id: "job_title", label: "Job title" },
+  { id: "contact_state", label: "State" },
+  { id: "interest", label: "Interest" },
+  { id: "verification", label: "Email check" },
+  { id: "tags", label: "Tags" },
+  { id: "created_at", label: "Created" },
+];
+/** Columns that are not edited in the cell. */
+const STATIC: Record<string, (r: S["Lead"]) => React.ReactNode> = {
+  contact_state: (r) => say("contact", r.contact_state),
+  interest: (r) => (r.interest ? <Pill tone="accent">{say("interest", r.interest)}</Pill> : ""),
+  verification: (r) => say("verification", r.verification),
+  tags: (r) => r.tags.join(", "),
+  created_at: (r) => fmtDate(r.created_at),
+};
 
 export type LeadSearch = {
   q?: string;
@@ -54,6 +77,7 @@ function toQuery(s: LeadSearch): Record<string, unknown> {
 export function AllLeads({ search, ws }: { search: LeadSearch; ws: string }) {
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const cols = useColumns("leads", BASE_COLS);
   const lists = useQuery(q.lists);
   const campaigns = useQuery(q.campaigns);
   const [text, setText] = useState(search.q ?? "");
@@ -207,6 +231,7 @@ export function AllLeads({ search, ws }: { search: LeadSearch; ws: string }) {
           >
             Export
           </a>
+          <ColumnsMenu cols={cols} />
           <Button onClick={() => setAdding(true)}>Add lead</Button>
         </div>
       </div>
@@ -275,24 +300,11 @@ export function AllLeads({ search, ws }: { search: LeadSearch; ws: string }) {
         <Table>
           <Head
             cols={[
-              <input
-                key="all"
-                type="checkbox"
-                aria-label="Select all on this page"
-                checked={allOnPage}
-                onChange={(e) =>
-                  setPicked(e.target.checked ? new Set(rows.map((r) => r.id)) : new Set())
-                }
-              />,
-              "Email",
-              "Name",
-              "Company",
-              "Job title",
-              "State",
-              "Interest",
-              "Email check",
-              "Tags",
-              "Created",
+              "",
+              ...cols.visible.map((c) => <ColumnHeader key={c.id} col={c} />),
+              <span key="add" className="inline-flex items-center gap-1">
+                <AddColumn />
+              </span>,
             ]}
           />
           <tbody>
@@ -311,25 +323,29 @@ export function AllLeads({ search, ws }: { search: LeadSearch; ws: string }) {
                     }}
                   />
                 </td>
-                <td className={TD}>
-                  <button
-                    type="button"
-                    className="font-medium hover:underline"
-                    onClick={() => open(r.id)}
-                  >
-                    {r.email}
-                  </button>
-                </td>
-                <td className={TD}>{fullName(r)}</td>
-                <td className={TD}>{r.company_name}</td>
-                <td className={TD}>{r.job_title}</td>
-                <td className={TD}>{say("contact", r.contact_state)}</td>
-                <td className={TD}>
-                  {r.interest ? <Pill tone="accent">{say("interest", r.interest)}</Pill> : ""}
-                </td>
-                <td className={TD}>{say("verification", r.verification)}</td>
-                <td className={TD}>{r.tags.join(", ")}</td>
-                <td className={TD}>{fmtDate(r.created_at)}</td>
+                {cols.visible.map((c) => (
+                  <td key={c.id} className={TD}>
+                    {STATIC[c.id] ? (
+                      STATIC[c.id]?.(r)
+                    ) : (
+                      <div className="flex items-center gap-1">
+                        <EditableCell lead={r} col={c} />
+                        {c.id === "email" && (
+                          <button
+                            type="button"
+                            aria-label={`Open ${r.email}`}
+                            title="Open lead"
+                            className="rounded p-1 text-muted hover:bg-surface-2"
+                            onClick={() => open(r.id)}
+                          >
+                            <Pencil size={13} />
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </td>
+                ))}
+                <td className={TD} />
               </tr>
             ))}
           </tbody>

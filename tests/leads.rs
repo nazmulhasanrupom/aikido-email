@@ -78,7 +78,7 @@ async fn migration_adds_only_new_tables(pool: PgPool) {
         .await
         .unwrap();
     let names: Vec<&str> = tables.iter().map(|t| t.0.as_str()).collect();
-    assert_eq!(names, ["lead_defaults", "lead_events", "lead_fields", "lead_import_files", "lead_imports", "lead_list_members", "lead_lists", "leads"]);
+    assert_eq!(names, ["lead_defaults", "lead_email_runs", "lead_emails", "lead_events", "lead_fields", "lead_import_files", "lead_imports", "lead_list_members", "lead_lists", "leads"]);
     // the old tables did not change
     let (n,): (i64,) = sqlx::query_as("SELECT count(*) FROM information_schema.columns WHERE table_name = 'enrollments'").fetch_one(&pool).await.unwrap();
     // 16 before the lead tables; the Email Generator (0006) added wait_reason and wait_since
@@ -131,9 +131,9 @@ async fn fields_create_patch_delete(pool: PgPool) {
 }
 
 #[sqlx::test]
-async fn at_most_50_fields(pool: PgPool) {
+async fn at_most_200_fields(pool: PgPool) {
     let l = L::new(pool).await;
-    for i in 0..50 {
+    for i in 0..200 {
         l.field(&format!("f{i}"), "text").await;
     }
     let r = l.api("POST", "/v1/leads/fields", Some(json!({ "key": "one_more" }))).await;

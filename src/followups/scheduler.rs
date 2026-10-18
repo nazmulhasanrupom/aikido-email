@@ -7,7 +7,7 @@
 use super::lifecycle::{self, fail, stop};
 use super::model::*;
 use super::repo;
-use super::template::{StepTemplates, build_vars, sender_name_of};
+use super::template::{Rendered, StepTemplates, build_vars, sender_name_of};
 use crate::generator::hooks::AiOutcome;
 use crate::sending::queue::{self, EnrollmentLink, NewJob, log_event};
 use crate::state::AppState;
@@ -257,42 +257,72 @@ pub async fn process_due(pool: &PgPool, id: Uuid, now: DateTime<Utc>) -> Result<
         Some(id) => crate::leads::repo::get(&mut tx, id).await?,
         None => None,
     };
-    let defs = crate::leads::fields::FieldDefs::load(&mut tx).await?;
-    let live = crate::leads::vars::render_variables(&e.variables, lead.as_ref(), &defs);
-    let vars = match build_vars(&live, &e.to_email, &sender_name_of(&display_name, &account_email), &account_email) {
-        Ok(v) => v,
-        Err(msg) => return fail_render(tx, &e, "invalid_variables", &msg, now).await,
+    // A saved email of this lead and step wins (UI update map v2, section 4.4). Only a step with an AI part,
+    // or a sequence with no campaign, uses the old path below.
+    let saved = match (seq.campaign_id, lead.as_ref()) {
+        (Some(cid), Some(l)) => crate::campaigns::emails::for_send(&mut tx, cid, l, &step, now).await?,
+        _ => crate::campaigns::emails::ForSend::Old,
     };
-    let templates = match StepTemplates::parse(&step.subject, step.body_text.as_deref(), step.body_html.as_deref()) {
-        Ok(t) => t,
-        Err(err) => return fail_render(tx, &e, "invalid_template", &err.message, now).await,
-    };
-    // The AI slots: the text the generator wrote, or the fallback, or hold the step.
-    let mut vars = vars;
-    if !templates.ai_keys().is_empty() {
-        match crate::generator::hooks::ai_text(&mut tx, &e, &step, &templates, now).await? {
-            AiOutcome::Texts { vars: ai, fallback_keys } => {
-                vars.extend(ai);
-                if !fallback_keys.is_empty() {
-                    lifecycle::log(&mut tx, e.id, "generation_fallback", Some(step.step_number), json!({ "slots": fallback_keys }), now).await?;
-                }
+    let rendered: Rendered = match saved {
+        crate::campaigns::emails::ForSend::Use(b) => {
+            let name = sender_name_of(&display_name, &account_email);
+            use crate::campaigns::emails::fill_sender as fill;
+            Rendered {
+                subject: fill(&b.subject, &name, &account_email, false).replace(['\r', '\n'], " "),
+                body_text: b.body_text.map(|t| fill(&t, &name, &account_email, false)),
+                body_html: b.body_html.map(|t| fill(&t, &name, &account_email, true)),
             }
-            AiOutcome::Hold { reason } => {
-                let first = e.wait_reason.as_deref() != Some(reason);
-                sqlx::query("UPDATE enrollments SET wait_reason = $2, wait_since = COALESCE(wait_since, $3) WHERE id = $1").bind(e.id).bind(reason).bind(now).execute(&mut *tx).await?;
-                if first {
-                    lifecycle::log(&mut tx, e.id, "step_waiting", Some(step.step_number), json!({ "reason": reason }), now).await?;
-                }
-                tx.commit().await?;
-                return Ok(DueOutcome::Waiting(reason));
-            }
-            AiOutcome::Fail { message } => return fail_render(tx, &e, "generation_failed", &message, now).await,
         }
-    }
-    let rendered = match templates.render(&vars) {
-        Ok(r) => r,
-        Err(missing) => {
-            return fail_render(tx, &e, "missing_variable", &format!("step {} needs: {}", step.step_number, missing.join(", ")), now).await;
+        crate::campaigns::emails::ForSend::Hold(reason) => {
+            let first = e.wait_reason.as_deref() != Some(reason);
+            sqlx::query("UPDATE enrollments SET wait_reason = $2, wait_since = COALESCE(wait_since, $3) WHERE id = $1").bind(e.id).bind(reason).bind(now).execute(&mut *tx).await?;
+            if first {
+                lifecycle::log(&mut tx, e.id, "step_waiting", Some(step.step_number), json!({ "reason": reason }), now).await?;
+            }
+            tx.commit().await?;
+            return Ok(DueOutcome::Waiting(reason));
+        }
+        crate::campaigns::emails::ForSend::Fail(msg) => return fail_render(tx, &e, "missing_variable", &msg, now).await,
+        crate::campaigns::emails::ForSend::Old => {
+        let defs = crate::leads::fields::FieldDefs::load(&mut tx).await?;
+        let live = crate::leads::vars::render_variables(&e.variables, lead.as_ref(), &defs);
+        let vars = match build_vars(&live, &e.to_email, &sender_name_of(&display_name, &account_email), &account_email) {
+            Ok(v) => v,
+            Err(msg) => return fail_render(tx, &e, "invalid_variables", &msg, now).await,
+        };
+        let templates = match StepTemplates::parse(&step.subject, step.body_text.as_deref(), step.body_html.as_deref()) {
+            Ok(t) => t,
+            Err(err) => return fail_render(tx, &e, "invalid_template", &err.message, now).await,
+        };
+        // The AI slots: the text the generator wrote, or the fallback, or hold the step.
+        let mut vars = vars;
+        if !templates.ai_keys().is_empty() {
+            match crate::generator::hooks::ai_text(&mut tx, &e, &step, &templates, now).await? {
+                AiOutcome::Texts { vars: ai, fallback_keys } => {
+                    vars.extend(ai);
+                    if !fallback_keys.is_empty() {
+                        lifecycle::log(&mut tx, e.id, "generation_fallback", Some(step.step_number), json!({ "slots": fallback_keys }), now).await?;
+                    }
+                }
+                AiOutcome::Hold { reason } => {
+                    let first = e.wait_reason.as_deref() != Some(reason);
+                    sqlx::query("UPDATE enrollments SET wait_reason = $2, wait_since = COALESCE(wait_since, $3) WHERE id = $1").bind(e.id).bind(reason).bind(now).execute(&mut *tx).await?;
+                    if first {
+                        lifecycle::log(&mut tx, e.id, "step_waiting", Some(step.step_number), json!({ "reason": reason }), now).await?;
+                    }
+                    tx.commit().await?;
+                    return Ok(DueOutcome::Waiting(reason));
+                }
+                AiOutcome::Fail { message } => return fail_render(tx, &e, "generation_failed", &message, now).await,
+            }
+        }
+        let rendered = match templates.render(&vars) {
+            Ok(r) => r,
+            Err(missing) => {
+                return fail_render(tx, &e, "missing_variable", &format!("step {} needs: {}", step.step_number, missing.join(", ")), now).await;
+            }
+        };
+            rendered
         }
     };
 
@@ -381,6 +411,9 @@ pub async fn process_due(pool: &PgPool, id: Uuid, now: DateTime<Utc>) -> Result<
     .execute(&mut *tx)
     .await?;
     lifecycle::log(&mut tx, e.id, "step_queued", Some(step.step_number), json!({ "job_id": job.id }), now).await?;
+    if let (Some(cid), Some(lead_id)) = (seq.campaign_id, e.lead_id) {
+        crate::campaigns::emails::mark_sent(&mut tx, cid, lead_id, step.step_number, job.id, now).await?;
+    }
     tx.commit().await?;
     Ok(DueOutcome::Queued(job.id))
 }

@@ -4,7 +4,7 @@ use serde_json::{Map, Value};
 use sqlx::PgConnection;
 use std::collections::HashMap;
 
-pub const MAX_FIELDS: i64 = 50;
+pub const MAX_FIELDS: i64 = 200;
 pub const MAX_VALUE_CHARS: usize = 1000;
 
 /// All field definitions, by key.

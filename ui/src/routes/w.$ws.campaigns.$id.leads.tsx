@@ -1,6 +1,6 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { MoreHorizontal } from "lucide-react";
+import { MoreHorizontal, Pencil } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { messageOf } from "@/api/errors";
@@ -20,11 +20,23 @@ import {
   TD,
 } from "@/components/ui";
 import { campaignQuery } from "@/features/campaigns/hooks";
+import { EmailDrawer, StatusChip, stepName } from "@/features/campaigns/EmailDrawer";
 import { ImportModal } from "@/features/leads/ImportModal";
-import { fmtDateTime, fullName } from "@/lib/format";
+import { AddColumn, ColumnHeader, ColumnsMenu, EditableCell, type GridCol, useColumns } from "@/features/leads/grid";
+import { fmtDateTime } from "@/lib/format";
 import { say } from "@/lib/words";
 
 export const Route = createFileRoute("/w/$ws/campaigns/$id/leads")({ component: CampaignLeads });
+
+const BASE_COLS: GridCol[] = [
+  { id: "email", label: "Email" },
+  { id: "first_name", label: "First name" },
+  { id: "last_name", label: "Last name" },
+  { id: "company_name", label: "Company" },
+  { id: "state", label: "State" },
+  { id: "follow", label: "Follow-up" },
+  { id: "interest", label: "Interest" },
+];
 
 const STATES = ["pending", "enrolled", "skipped"] as const;
 
@@ -44,6 +56,12 @@ function CampaignLeads() {
   const qc = useQueryClient();
   const camp = useQuery(campaignQuery(id));
   const lists = useQuery(q.lists);
+  const stepCols: GridCol[] = (camp.data?.steps ?? []).map((st) => ({
+    id: `email:${st.step_number}`,
+    label: stepName(st.step_number),
+  }));
+  const cols = useColumns("campaign_leads", [...BASE_COLS, ...stepCols]);
+  const [openEmail, setOpenEmail] = useState<null | { lead: string; email: string; step: number }>(null);
   const [state, setState] = useState<string>("");
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [menu, setMenu] = useState<null | "list" | "import">(null);
@@ -126,6 +144,7 @@ function CampaignLeads() {
               Remove {picked.size} pending
             </Button>
           )}
+          <ColumnsMenu cols={cols} />
           <Button variant="secondary" onClick={() => setMenu("list")}>
             Add from a list
           </Button>
@@ -148,7 +167,13 @@ function CampaignLeads() {
       )}
       {rows.length > 0 && (
         <Table>
-          <Head cols={["", "Email", "Name", "Company", "State", "Follow-up", "Interest", ""]} />
+          <Head
+            cols={[
+              "",
+              ...cols.visible.map((c) => <ColumnHeader key={c.id} col={c} />),
+              <AddColumn key="add" />,
+            ]}
+          />
           <tbody>
             {rows.map((r) => (
               <tr key={r.lead_id} className="border-t border-border">
@@ -166,23 +191,50 @@ function CampaignLeads() {
                     />
                   )}
                 </td>
-                <td className={TD}>
-                  <a
-                    className="font-medium hover:underline"
-                    href={`/w/${ws}/leads?lead=${r.lead_id}`}
-                  >
-                    {r.email}
-                  </a>
-                </td>
-                <td className={TD}>{fullName(r)}</td>
-                <td className={TD}>{r.company_name}</td>
-                <td className={TD}>
-                  <Pill>{say("campaignLead", r.state)}</Pill>
-                </td>
-                <td className={TD}>{followText(r)}</td>
-                <td className={TD}>
-                  {r.interest ? <Pill tone="accent">{say("interest", r.interest)}</Pill> : ""}
-                </td>
+                {cols.visible.map((c) => (
+                  <td key={c.id} className={TD}>
+                    {c.id.startsWith("email:") ? (
+                      <EmailCell
+                        cell={r.emails.find((x) => `email:${x.step_number}` === c.id)}
+                        onOpen={() =>
+                          setOpenEmail({ lead: r.lead_id, email: r.email, step: Number(c.id.slice(6)) })
+                        }
+                      />
+                    ) : c.id === "state" ? (
+                      <Pill>{say("campaignLead", r.state)}</Pill>
+                    ) : c.id === "follow" ? (
+                      followText(r)
+                    ) : c.id === "interest" ? (
+                      r.interest ? (
+                        <Pill tone="accent">{say("interest", r.interest)}</Pill>
+                      ) : (
+                        ""
+                      )
+                    ) : (
+                      <div className="flex items-center gap-1">
+                        <EditableCell
+                          lead={{ ...r, id: r.lead_id }}
+                          col={c}
+                          inCampaign
+                          locked={
+                            !!r.enrollment_id &&
+                            ["active", "waiting_send", "paused"].includes(r.enrollment_status ?? "")
+                          }
+                        />
+                        {c.id === "email" && (
+                          <a
+                            aria-label={`Open ${r.email}`}
+                            title="Open lead"
+                            className="rounded p-1 text-muted hover:bg-surface-2"
+                            href={`/w/${ws}/leads?lead=${r.lead_id}`}
+                          >
+                            <Pencil size={13} />
+                          </a>
+                        )}
+                      </div>
+                    )}
+                  </td>
+                ))}
                 <td className={TD}>
                   {r.enrollment_id && (
                     <MenuRoot>
@@ -270,6 +322,27 @@ function CampaignLeads() {
         }}
         campaignId={id}
       />
+      <EmailDrawer
+        campaignId={id}
+        leadId={openEmail?.lead ?? null}
+        email={openEmail?.email ?? ""}
+        step={openEmail?.step ?? 1}
+        onClose={() => setOpenEmail(null)}
+      />
     </div>
+  );
+}
+
+function EmailCell({ cell, onOpen }: { cell: S["EmailCell"] | undefined; onOpen: () => void }) {
+  return (
+    <button type="button" onClick={onOpen} className="flex max-w-56 flex-col items-start gap-0.5 text-left">
+      <StatusChip status={cell?.status ?? "none"} hint={cell?.error_code} />
+      {cell && (
+        <span className="max-w-full truncate text-xs text-muted">
+          {cell.variant_key ? `${cell.variant_key}: ` : ""}
+          {cell.subject_preview}
+        </span>
+      )}
+    </button>
   );
 }

@@ -67,8 +67,8 @@ test("a CSV with odd headers is mapped, imported and shown in Leads", async ({ p
   await page.getByRole("button", { name: "Import", exact: true }).click();
   await expect(page.getByText("The import is done.")).toBeVisible({ timeout: 20_000 });
   await page.keyboard.press("Escape");
-  await expect(page.getByRole("button", { name: "ana@acme.test" })).toBeVisible();
-  await page.getByRole("button", { name: "ana@acme.test" }).click();
+  await expect(page.getByText("ana@acme.test")).toBeVisible();
+  await page.getByRole("button", { name: "Open ana@acme.test" }).click();
   await expect(page.getByRole("tab", { name: "Timeline" })).toBeVisible();
 });
 

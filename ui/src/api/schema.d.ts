@@ -424,6 +424,106 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/campaigns/{id}/email-runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The runs of a campaign, newest first (up to 50).
+         * @description Scope: `campaigns`.
+         */
+        get: operations["list_runs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/campaigns/{id}/email-runs/{run}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One run with its progress.
+         * @description Scope: `campaigns`.
+         */
+        get: operations["get_run"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/campaigns/{id}/email-runs/{run}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stop a run that is not finished.
+         * @description Scope: `campaigns`. A template run is done when the call returns, so it can not be cancelled.
+         */
+        post: operations["cancel_run"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/campaigns/{id}/emails/estimate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * What Save would do. Writes nothing.
+         * @description Scope: `campaigns`. Template mode: `emails` is how many emails Save would write, `edited_by_hand` how many hand edits exist (Save with `all` would replace them). Tokens and cost are 0.
+         */
+        post: operations["estimate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/campaigns/{id}/emails/render": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Save: write the emails of every lead from the templates.
+         * @description Scope: `campaigns`. Template mode. Variants of step 1 are split evenly in the order the leads were added. Steps with an AI part are left to the Email Generator. Sent emails never change. After the first Save, leads added later get their emails at once.
+         */
+        post: operations["render"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/campaigns/{id}/launch": {
         parameters: {
             query?: never;
@@ -470,6 +570,30 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/v1/campaigns/{id}/leads/{lead_id}/emails/{step}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One saved email.
+         * @description Scope: `campaigns`. Step 1 is the primary email, step 2 is Follow up 1, and so on.
+         */
+        get: operations["get_email"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Edit an email by hand.
+         * @description Scope: `campaigns`. The email becomes `manual`, `edited_by_hand` and `ready`. A later Save keeps it unless it asks to replace all. The text is saved as written: write real values, or the tokens `{{sender_name}}` and `{{sender_email}}`, which are filled when the email is sent.
+         */
+        patch: operations["patch_email"];
         trace?: never;
     };
     "/v1/campaigns/{id}/pause": {
@@ -2930,8 +3054,12 @@ export interface components {
             account_pick: components["schemas"]["AccountPick"];
             /** @description `false`: leads with `no_mx` or `invalid` are skipped. */
             allow_unverified: boolean;
+            /** @description AI mode: the worker writes missing emails before they are due. */
+            auto_write: boolean;
             /** Format: date-time */
             completed_at?: string | null;
+            /** @description `template` (default): the emails come from the step templates. `ai`: the model writes them from prompts. */
+            content_mode: string;
             /** Format: date-time */
             created_at: string;
             /**
@@ -2939,6 +3067,13 @@ export interface components {
              * @description 1 to 5000. How many leads the feeder enrolls per day.
              */
             daily_new_leads: number;
+            /**
+             * Format: date-time
+             * @description When the emails were last saved with Save. After that, new leads get their emails at once.
+             */
+            emails_saved_at?: string | null;
+            /** @description Text added under every email of the campaign (a signature or an opt-out line). Variables allowed. */
+            footer?: string | null;
             /** Format: uuid */
             id: string;
             /** Format: uuid */
@@ -2967,6 +3102,8 @@ export interface components {
             counts: components["schemas"]["Counts"];
             sequence: components["schemas"]["Sequence"];
             steps: components["schemas"]["SequenceStep"][];
+            /** @description Variants B to E of step 1. */
+            variants: components["schemas"]["StepVariant"][];
             /** @description Things to look at: the feeder is stuck, an account is not healthy, the plan is bigger than the pool can send. */
             warnings: string[];
         };
@@ -2996,7 +3133,11 @@ export interface components {
              * @description The step the enrollment is on: the one that is queued, or goes next (1-based). Empty if the lead is not enrolled.
              */
             current_step?: number | null;
+            /** @description Values of the custom fields of this lead (one lead, the same everywhere). */
+            custom_fields: unknown;
             email: string;
+            /** @description The saved emails of this lead in this campaign, one per step that has one. */
+            emails: components["schemas"]["EmailCell"][];
             /** Format: date-time */
             enrolled_at?: string | null;
             /** Format: uuid */
@@ -3373,6 +3514,44 @@ export interface components {
              */
             steps?: number | null;
         };
+        EmailCell: {
+            edited_by_hand: boolean;
+            error_code?: string | null;
+            /** @description `none`, `writing`, `review`, `ready`, `stale`, `failed` or `sent`. */
+            status: string;
+            /** Format: int32 */
+            step_number: number;
+            /** @description The first words of the subject (or of the body for a follow up with no subject). */
+            subject_preview: string;
+            variant_key?: string | null;
+        };
+        EmailRun: {
+            /** Format: uuid */
+            campaign_id: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: int32 */
+            done: number;
+            /** Format: int32 */
+            failed: number;
+            /** Format: date-time */
+            finished_at?: string | null;
+            /** Format: uuid */
+            id: string;
+            /** @description `template` or `ai`. */
+            kind: string;
+            /** @description `skip`, `keep_edited` or `all`. */
+            overwrite: string;
+            /** Format: date-time */
+            started_at?: string | null;
+            /** @description `queued`, `running`, `done`, `cancelled` or `failed`. */
+            status: string;
+            steps: number[];
+            /** Format: int64 */
+            tokens: number;
+            /** Format: int32 */
+            total: number;
+        };
         EnginePauseReply: {
             paused: boolean;
         };
@@ -3478,6 +3657,12 @@ export interface components {
              * @description Open enrollments that were stopped.
              */
             stopped_enrollments: number;
+        };
+        Estimate: components["schemas"]["Plan"] & {
+            /** Format: double */
+            cost_usd: number;
+            /** Format: int64 */
+            tokens: number;
         };
         EventRow: {
             /** Format: uuid */
@@ -4075,6 +4260,41 @@ export interface components {
             /** @description The address or its domain is blocked in the suppression list. It will never be enrolled or sent to. */
             suppressed: boolean;
         };
+        LeadEmail: {
+            body_html?: string | null;
+            body_text?: string | null;
+            /** Format: uuid */
+            campaign_id: string;
+            /** Format: date-time */
+            created_at: string;
+            edited_by_hand: boolean;
+            error_code?: string | null;
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            job_id?: string | null;
+            /** Format: uuid */
+            lead_id: string;
+            /** Format: uuid */
+            run_id?: string | null;
+            /** @description `template`, `ai` or `manual`. */
+            source: string;
+            /** @description `none`, `writing`, `review`, `ready`, `stale`, `failed` or `sent`. */
+            status: string;
+            /**
+             * Format: int32
+             * @description 1 is the primary email. 2 and later are the follow ups.
+             */
+            step_number: number;
+            subject: string;
+            /** Format: int32 */
+            tokens_in: number;
+            /** Format: int32 */
+            tokens_out: number;
+            /** Format: date-time */
+            updated_at: string;
+            variant_key?: string | null;
+        };
         LeadEvent: {
             /** Format: date-time */
             at: string;
@@ -4477,6 +4697,11 @@ export interface components {
             /** @description `connect-email`, `sending-basics`, `ai`, `import` or `done`. */
             step: string;
         };
+        /**
+         * @description How `write` treats an email that exists.
+         * @enum {string}
+         */
+        Overwrite: "skip" | "keep_edited" | "all";
         PatchAccount: {
             display_name?: string | null;
             imap?: components["schemas"]["ServerPatch"] | null;
@@ -4492,6 +4717,11 @@ export interface components {
             name?: string | null;
             stop_company_on_reply?: boolean | null;
             timezone?: string | null;
+        };
+        PatchEmail: {
+            body_html?: string | null;
+            body_text?: string | null;
+            subject?: string | null;
         };
         PatchField: {
             /** @description `null` removes the fallback. */
@@ -4586,6 +4816,20 @@ export interface components {
         PausedReply: {
             paused: boolean;
         };
+        Plan: {
+            /**
+             * Format: int64
+             * @description Emails edited by hand that `overwrite: all` would replace.
+             */
+            edited_by_hand: number;
+            /**
+             * Format: int64
+             * @description Emails that would be written (or are written).
+             */
+            emails: number;
+            /** @description Steps with an AI part. Save leaves them to the generator. */
+            skipped_ai_steps: number[];
+        };
         PoolAccount: {
             email: string;
             /** @description Connected, not paused, not in a bounce-rate pause. Only healthy accounts get new leads. */
@@ -4671,6 +4915,8 @@ export interface components {
         PutSteps: {
             /** @description The whole list of steps (1 to 10). The order gives the step numbers. */
             steps: components["schemas"]["StepInput"][];
+            /** @description Variants of step 1, up to 4 (keys `B` to `E` in the order given). Leave out to keep the saved ones; `[]` removes them. */
+            variants?: components["schemas"]["VariantInput"][] | null;
         };
         /** @description A lead as a caller sends it. Only `email` is required. */
         RawLead: {
@@ -4715,6 +4961,10 @@ export interface components {
         };
         RemovedReply: {
             removed: boolean;
+        };
+        RenderBody: {
+            /** @description `skip`, `keep_edited` (default) or `all`. */
+            overwrite?: components["schemas"]["Overwrite"];
         };
         ReplyEngineStatus: {
             /** @description Accounts per `read_status`. `unchecked` = not looked at yet. */
@@ -5051,6 +5301,8 @@ export interface components {
             };
             sequence: components["schemas"]["Sequence"];
             steps: components["schemas"]["SequenceStep"][];
+            /** @description Variants B to E of step 1 (variant A is step 1 itself). */
+            variants: components["schemas"]["StepVariant"][];
         };
         /** @enum {string} */
         SequenceStatus: "active" | "paused" | "archived";
@@ -5209,6 +5461,18 @@ export interface components {
             /** Format: int32 */
             step_number: number;
         };
+        StepVariant: {
+            active: boolean;
+            ai_slots: components["schemas"]["AiSlot"][];
+            body_html?: string | null;
+            body_text?: string | null;
+            /** @description `B` to `E`. Variant `A` is step 1 itself. */
+            key: string;
+            name: string;
+            /** Format: int32 */
+            position: number;
+            subject: string;
+        };
         /** @enum {string} */
         StopScope: "email" | "domain";
         Suppression: {
@@ -5341,6 +5605,16 @@ export interface components {
             role: components["schemas"]["Role"];
             /** @description `active` or `disabled`. */
             status: string;
+        };
+        VariantInput: {
+            /** @description `false`: the variant gets no new leads. Default `true`. */
+            active?: boolean | null;
+            ai_slots?: components["schemas"]["AiSlot"][] | null;
+            body_html?: string | null;
+            body_text?: string | null;
+            /** @description A short name for the tab. Default: the key. */
+            name?: string | null;
+            subject: string;
         };
         /** @enum {string} */
         Verification: "unknown" | "syntax_ok" | "mx_ok" | "no_mx" | "invalid";
@@ -6079,6 +6353,170 @@ export interface operations {
             };
         };
     };
+    list_runs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailRun"][];
+                };
+            };
+            /** @description No such campaign */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_run: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                run: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailRun"];
+                };
+            };
+            /** @description No such run */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    cancel_run: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                run: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailRun"];
+                };
+            };
+            /** @description No such run */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description run_finished */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    estimate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RenderBody"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Estimate"];
+                };
+            };
+            /** @description No such campaign */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    render: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RenderBody"];
+            };
+        };
+        responses: {
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailRun"];
+                };
+            };
+            /** @description No such campaign */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description wrong_mode: the campaign is in AI mode */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     launch: {
         parameters: {
             query?: never;
@@ -6241,6 +6679,84 @@ export interface operations {
                 content?: never;
             };
             /** @description Bad selection */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_email: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                lead_id: string;
+                step: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LeadEmail"];
+                };
+            };
+            /** @description No such campaign, or no email saved for this lead and step */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    patch_email: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                lead_id: string;
+                step: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PatchEmail"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LeadEmail"];
+                };
+            };
+            /** @description No such campaign, lead or step */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description email_sent: the email was sent */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The text is not valid */
             422: {
                 headers: {
                     [name: string]: unknown;

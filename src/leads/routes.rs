@@ -509,6 +509,8 @@ async fn patch_lead(State(st): State<AppState>, ApiPath(id): ApiPath<Uuid>, ApiJ
         verify::verify_domains(&st, std::slice::from_ref(&lead.email_domain), false, MX_BUDGET_REQUEST).await?;
     }
     let mut conn = st.pool.acquire().await?;
+    // Saved emails that used this lead's values are now out of date.
+    crate::campaigns::emails::lead_changed(&mut conn, id).await?;
     let lead = repo::get(&mut conn, id).await?.ok_or_else(lead_not_found)?;
     Ok(ApiJson(repo::detail(&mut conn, lead).await?))
 }

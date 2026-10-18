@@ -1216,7 +1216,7 @@ The campaigns that use leads are in [section 19](#19-campaigns-campaigns).
 - **The email is the key.** It is trimmed and lower-cased when saved (`  John@Example.COM ` becomes `john@example.com`). Syntax is checked: one `@`, a valid domain, 254 characters.
 - **`contact_state` is the system's. `interest` is a person's.** `contact_state` (`new`, `in_sequence`, `contacted`, `replied`, `bounced`, `unsubscribed`, `completed`) is never set through the API.
   `interest` (`interested`, `meeting_booked`, `won`, `not_interested`, `wrong_person`, `lost`) is set by you. A system event never overwrites it.
-- **Custom fields.** Up to 50 definitions (`/v1/leads/fields`). A lead holds a value (text, up to 1000 characters) for a field key. The key becomes the template variable `{{key}}`.
+- **Custom fields.** Up to 200 definitions (`/v1/leads/fields`). A lead holds a value (text, up to 1000 characters) for a field key. The key becomes the template variable `{{key}}`.
   Kinds: `text`, `number`, `url` (`http://` or `https://`), `date` (`YYYY-MM-DD`). An unknown key is refused. An empty value means "no value".
 - **Tags**: short labels, lower-cased, up to 20 per lead, 50 characters each, no commas.
 - **Suppressed** leads are saved like the others. The `suppressed` flag shows that the address (or its domain) is blocked. A suppressed lead is never enrolled.
@@ -1735,3 +1735,27 @@ A key of any scope, or a session, can read. `PATCH` needs an owner, an admin, or
 - Inbound messages (`GET /v1/replies/messages`) already carry what a threaded answer needs: `message_id_header`, `references_ids`, `provider_thread_id`, `account_id`, `lead_id`. Send the answer with `POST /v1/sending/jobs` (`kind: "manual"`, `in_reply_to` = the `message_id_header`, `references` = the `references_ids` plus that id, joined by spaces, `provider_thread_id`, `priority: 100`, `lead_id`).
 - `429` answers have `Retry-After` and `error.retry_after_secs`.
 - The web app is served at `/` (embedded from `ui/dist`; `cargo build --no-default-features` makes an API-only server). Any path that is not `/v1/*`, `/docs`, `/openapi.json` or `/health` and is not a file returns `index.html`. An unknown `/v1/...` path is always a JSON `404 not_found`. App pages carry `Content-Security-Policy`, `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy`, and `Strict-Transport-Security` when `AIKIDO_PUBLIC_URL` is `https`.
+
+## 22. Emails saved per lead (`campaigns`): UI update map v2, template mode
+
+Each campaign has `content_mode` (`template` or `ai`), `auto_write` and `footer`. The footer is added under every email.
+`lead_emails` holds one saved email per lead and step (step 1 = Primary email, step 2 = Follow up 1, ...). Status: `none`, `writing`, `review`, `ready`, `stale`, `failed`, `sent`.
+
+| Route | What it does |
+| --- | --- |
+| `PATCH /v1/campaigns/{id}` | Also takes `content_mode`, `auto_write`, `footer`. A new footer marks unsent emails `stale`. |
+| `PUT /v1/followups/sequences/{id}/steps` | Also takes `variants`: up to 4 (keys `B` to `E`) of step 1, each `{ name, subject, body_text, body_html, ai_slots, active }`. Leave out to keep them. A change marks unsent emails `stale`. |
+| `GET /v1/campaigns/{id}/leads` | Each row has `emails: [{ step_number, status, variant_key, subject_preview, edited_by_hand, error_code }]` and `custom_fields`. |
+| `GET`, `PATCH /v1/campaigns/{id}/leads/{lead_id}/emails/{step}` | Read, or edit by hand (`manual`, `edited_by_hand`, `ready`). `409 email_sent`. |
+| `POST /v1/campaigns/{id}/emails/estimate` | Body `{ overwrite }`. Answer: `emails`, `edited_by_hand`, `skipped_ai_steps`, `tokens`, `cost_usd`. Writes nothing. |
+| `POST /v1/campaigns/{id}/emails/render` | Template mode Save. `overwrite`: `skip`, `keep_edited` (default), `all`. Answer `202` with a run (already `done`). `422 wrong_mode` in AI mode. |
+| `GET /v1/campaigns/{id}/email-runs`, `GET .../{run}`, `POST .../{run}/cancel` | Runs. A template run is done when the call returns. |
+
+Rules:
+- **Variants** are split evenly in the order the leads were added (A, B, C, A, ...). Leads added in one call share a time, so the lead id breaks the tie. Variant A is step 1 itself.
+- **Sender tokens.** The account is chosen later by the feeder, so Save leaves `{{sender_name}}` and `{{sender_email}}` in the saved text. They are filled when the email is queued.
+- **Steps with an AI part** are not saved by Save. The Email Generator writes them when the step is due (the old path).
+- **Staleness (D7).** `input_hash` hashes the template, the footer and the rendered text. A lead edit, a template change or a footer change marks unsent `ready` template emails whose hash changed as `stale`. At send time a stale email that was not edited by hand is rendered again; one edited by hand, or written by AI, is sent as saved.
+- **Send time.** The scheduler uses the saved email. Template mode with no saved email renders and saves it. AI mode holds the step with `wait_reason: email_not_ready` (or `email_review`).
+- **After the first Save**, leads added to the campaign get their emails at once (template mode).
+- The email becomes `sent` when the send job is made, and keeps `job_id`.

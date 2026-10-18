@@ -11,3 +11,5 @@ pub mod company;
 pub mod feeder;
 pub mod model;
 pub mod routes;
+pub mod emails;
+pub mod email_routes;

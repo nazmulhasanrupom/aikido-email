@@ -195,6 +195,8 @@ pub struct CreateSequence {
 pub struct SequenceDetail {
     pub sequence: Sequence,
     pub steps: Vec<SequenceStep>,
+    /// Variants B to E of step 1 (variant A is step 1 itself).
+    pub variants: Vec<crate::campaigns::emails::StepVariant>,
     /// Enrollments per status.
     pub counts: BTreeMap<String, i64>,
 }
@@ -205,7 +207,11 @@ async fn sequence_detail(st: &AppState, id: Uuid) -> ApiResult<SequenceDetail> {
     let steps = repo::get_steps(&mut conn, id).await?;
     let counts: Vec<(String, i64)> =
         sqlx::query_as("SELECT status::text, count(*) FROM enrollments WHERE sequence_id = $1 GROUP BY 1").bind(id).fetch_all(&mut *conn).await?;
-    Ok(SequenceDetail { sequence, steps, counts: counts.into_iter().collect() })
+    let variants = sqlx::query_as(&format!("SELECT {} FROM step_variants WHERE sequence_id = $1 ORDER BY position, key", crate::campaigns::emails::VARIANT_COLS))
+        .bind(id)
+        .fetch_all(&mut *conn)
+        .await?;
+    Ok(SequenceDetail { sequence, steps, variants, counts: counts.into_iter().collect() })
 }
 
 pub(crate) async fn write_steps(conn: &mut sqlx::PgConnection, sequence_id: Uuid, steps: &[ValidStep], now: DateTime<Utc>) -> Result<(), sqlx::Error> {
@@ -393,6 +399,20 @@ async fn patch_sequence(State(st): State<AppState>, ApiPath(id): ApiPath<Uuid>, 
 pub struct PutSteps {
     /// The whole list of steps (1 to 10). The order gives the step numbers.
     pub steps: Vec<StepInput>,
+    /// Variants of step 1, up to 4 (keys `B` to `E` in the order given). Leave out to keep the saved ones; `[]` removes them.
+    pub variants: Option<Vec<VariantInput>>,
+}
+
+#[derive(Deserialize, ToSchema, Clone, Debug)]
+pub struct VariantInput {
+    /// A short name for the tab. Default: the key.
+    pub name: Option<String>,
+    pub subject: String,
+    pub body_text: Option<String>,
+    pub body_html: Option<String>,
+    pub ai_slots: Option<Vec<AiSlot>>,
+    /// `false`: the variant gets no new leads. Default `true`.
+    pub active: Option<bool>,
 }
 
 /// Replace the steps of a sequence.
@@ -451,7 +471,44 @@ async fn put_steps(State(st): State<AppState>, ApiPath(id): ApiPath<Uuid>, ApiJs
     }
     write_steps(&mut tx, id, &steps, now).await?;
     sqlx::query("DELETE FROM sequence_steps WHERE sequence_id = $1 AND step_number > $2").bind(id).bind(steps.len() as i32).execute(&mut *tx).await?;
+    if let Some(variants) = &body.variants {
+        if variants.len() > 4 {
+            return Err(invalid_steps("Step 1 can have up to 5 variants: A and 4 more."));
+        }
+        sqlx::query("DELETE FROM step_variants WHERE sequence_id = $1").bind(id).execute(&mut *tx).await?;
+        for (i, v) in variants.iter().enumerate() {
+            let key = ["B", "C", "D", "E"][i];
+            // Same checks as step 1.
+            let checked = validate_steps(&[StepInput {
+                delay_amount: None,
+                delay_type: None,
+                subject: Some(v.subject.clone()),
+                body_text: v.body_text.clone(),
+                body_html: v.body_html.clone(),
+                ai_slots: v.ai_slots.clone(),
+            }])
+            .map_err(|e| ApiError::unprocessable("invalid_steps", format!("Variant {key}: {}", e.message)))?;
+            let c = &checked[0];
+            sqlx::query(
+                "INSERT INTO step_variants (id, sequence_id, key, name, subject, body_text, body_html, ai_slots, active, position) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
+            )
+            .bind(Uuid::now_v7())
+            .bind(id)
+            .bind(key)
+            .bind(v.name.clone().unwrap_or_default().chars().take(40).collect::<String>())
+            .bind(&c.subject)
+            .bind(&c.body_text)
+            .bind(&c.body_html)
+            .bind(serde_json::to_value(&c.ai_slots).unwrap_or_default())
+            .bind(v.active.unwrap_or(true))
+            .bind(i as i32 + 1)
+            .execute(&mut *tx)
+            .await?;
+        }
+    }
     sqlx::query("UPDATE sequences SET updated_at = $2 WHERE id = $1").bind(id).bind(now).execute(&mut *tx).await?;
+    // Saved emails that came from the old text are now out of date.
+    crate::campaigns::emails::sequence_changed(&mut tx, id).await?;
     tx.commit().await?;
     Ok(ApiJson(sequence_detail(&st, id).await?))
 }

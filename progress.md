@@ -766,3 +766,17 @@ You said "build from phase 3 to the end, all at once, and do not test too much".
 - Dev services: `docker compose -f docker-compose.dev.yml up -d` (Postgres on `127.0.0.1:55432`, Mailpit SMTP on `1025`, web page on `http://127.0.0.1:8025`, GreenMail SMTP `3025` and IMAP `3143`). If tests fail with `PoolTimedOut`, the containers are down. Two containers named `aikido-pg` and `aikido-mailpit` from earlier testing may still be running. Remove them first: `docker rm -f aikido-pg aikido-mailpit`.
 - `./data/` holds `encryption.key` and `initial_keys.txt`. It is git-ignored. **Back up `encryption.key`.**
 - API reference: `docs/API.md`. Live docs: `/docs` and `/openapi.json` on the running server.
+
+## UI Update Map v2 (started 2026-10-18)
+
+- **U1 done:** B12 (custom field limit 200; confirm body already kept `label`). "Create column" in the mapping popup (`ui/src/features/leads/ImportFlow.tsx`, key rule `ui/src/lib/fieldKey.ts`), with a toast that lists new columns.
+- Shared table parts in `ui/src/features/leads/grid.tsx`: inline cell edit (double-click or Enter), "+" add column (opens a dialog, not a popover), Columns menu (saved in `users.preferences.tables.<id>`), custom column header menu (rename, value when empty, delete). Used on Leads and the campaign Leads tab.
+- API change: `CampaignLeadRow` now has `custom_fields` (hand-edited in `schema.d.ts`; rerun `pnpm gen:api` later).
+- Edit button on a row opens the lead drawer (it already edits every field). It is a pencil next to the email.
+- Tests: cargo `leads`, `lead_imports`, `campaigns`; vitest 65; e2e 22 pass (`phase9_u1.spec.ts` is new).
+- **Not done in U1:** column header menu for built-in columns; the drawer does not show "Saved for all campaigns" toast; Biome not run (it crashes here).
+- **U2 done (template mode):** migration `0009_lead_emails.sql` (all of B13, including the AI columns for U3). `src/campaigns/emails.rs` (render, plan, write, staleness, send-time lookup), `src/campaigns/email_routes.rs` (routes), scheduler hook in `src/followups/scheduler.rs`, variants in `PUT .../steps`, `variants` in the campaign and sequence detail. API is in `docs/API.md` section 22.
+- UI: Editor has variant tabs (A to E), Save button + Ctrl/Cmd+S, the "replace hand edits?" dialog and a Footer box. The campaign Leads tab has a column per email with a status chip. Clicking one opens `EmailDrawer.tsx`.
+- Tests: 667 cargo tests pass (4 new in `tests/campaigns.rs`, 2 old table-list tests updated, `docs.rs` route list updated); e2e 23 pass (`phase9_u2.spec.ts`).
+- **Deviations from the map:** (1) Variant A has no row, so it cannot be turned off. (2) Staleness is found by hashing in Rust, not by one SQL. (3) `sent` is set when the send job is made, not when the mail leaves. (4) A lead changed by a CSV import or a bulk action does not mark emails stale yet (only `PATCH /v1/leads/{id}`). (5) The AI mode switch is not in the UI yet (U3). (6) `POST .../emails/actions` is not built (U3).
+- **Not started:** U3, U4.

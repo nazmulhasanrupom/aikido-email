@@ -66,7 +66,7 @@ pub enum SkipReason {
 }
 
 pub const CAMPAIGN_COLS: &str = "id, name, status, sequence_id, daily_new_leads, account_pick, stop_company_on_reply, allow_unverified, timezone, \
-    last_account_id, warning, launched_at, completed_at, created_at, updated_at";
+    last_account_id, warning, launched_at, completed_at, content_mode, auto_write, footer, emails_saved_at, created_at, updated_at";
 
 #[derive(FromRow, Serialize, Clone, Debug, ToSchema)]
 pub struct Campaign {
@@ -89,6 +89,14 @@ pub struct Campaign {
     pub warning: Option<String>,
     pub launched_at: Option<DateTime<Utc>>,
     pub completed_at: Option<DateTime<Utc>>,
+    /// `template` (default): the emails come from the step templates. `ai`: the model writes them from prompts.
+    pub content_mode: String,
+    /// AI mode: the worker writes missing emails before they are due.
+    pub auto_write: bool,
+    /// Text added under every email of the campaign (a signature or an opt-out line). Variables allowed.
+    pub footer: Option<String>,
+    /// When the emails were last saved with Save. After that, new leads get their emails at once.
+    pub emails_saved_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }

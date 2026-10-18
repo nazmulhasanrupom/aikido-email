@@ -41,6 +41,7 @@ pub fn router(state: AppState) -> OpenApiRouter<AppState> {
         .routes(routes!(feeder_pause))
         .routes(routes!(feeder_resume))
         .routes(routes!(feeder_status))
+        .merge(super::email_routes::routes())
         .route_layer(axum::middleware::from_fn_with_state((state, Scope::Campaigns), require_scope))
 }
 
@@ -178,6 +179,8 @@ pub struct CampaignDetail {
     pub accounts: Vec<PoolAccount>,
     pub sequence: Sequence,
     pub steps: Vec<SequenceStep>,
+    /// Variants B to E of step 1.
+    pub variants: Vec<super::emails::StepVariant>,
     /// Things to look at: the feeder is stuck, an account is not healthy, the plan is bigger than the pool can send.
     pub warnings: Vec<String>,
 }
@@ -189,6 +192,10 @@ async fn detail(st: &AppState, id: Uuid) -> ApiResult<CampaignDetail> {
     let steps = followup_repo::get_steps(&mut conn, campaign.sequence_id).await?;
     let accounts = pool_accounts(&mut conn, id).await?;
     let counts = counts(&mut conn, id).await?;
+    let variants = sqlx::query_as(&format!("SELECT {} FROM step_variants WHERE sequence_id = $1 ORDER BY position, key", super::emails::VARIANT_COLS))
+        .bind(campaign.sequence_id)
+        .fetch_all(&mut *conn)
+        .await?;
     let mut warnings = Vec::new();
     if let Some(w) = &campaign.warning {
         warnings.push(w.clone());
@@ -204,7 +211,7 @@ async fn detail(st: &AppState, id: Uuid) -> ApiResult<CampaignDetail> {
             warnings.push(w);
         }
     }
-    Ok(CampaignDetail { campaign, counts, accounts, sequence, steps, warnings })
+    Ok(CampaignDetail { campaign, counts, accounts, sequence, steps, variants, warnings })
 }
 
 // ---------- create ----------
@@ -424,6 +431,24 @@ async fn patch_campaign(State(st): State<AppState>, ApiPath(id): ApiPath<Uuid>, 
             "stop_company_on_reply" => c.stop_company_on_reply = v.as_bool().ok_or_else(|| bad("true or false"))?,
             "allow_unverified" => c.allow_unverified = v.as_bool().ok_or_else(|| bad("true or false"))?,
             "timezone" => c.timezone = check_tz(v.as_str().ok_or_else(|| bad("text"))?)?,
+            "content_mode" => {
+                c.content_mode = match v.as_str() {
+                    Some(m @ ("template" | "ai")) => m.to_string(),
+                    _ => return Err(bad("template or ai")),
+                }
+            }
+            "auto_write" => c.auto_write = v.as_bool().ok_or_else(|| bad("true or false"))?,
+            "footer" => {
+                c.footer = match v {
+                    Value::Null => None,
+                    Value::String(t) if t.trim().is_empty() => None,
+                    Value::String(t) if t.chars().count() <= 2000 => {
+                        crate::followups::template::Template::parse(t).map_err(|e| ApiError::unprocessable("invalid_template", format!("footer: {}", e.message)))?;
+                        Some(t.clone())
+                    }
+                    _ => return Err(bad("text up to 2000 characters, or null")),
+                }
+            }
             "account_ids" => {
                 let ids: Vec<Uuid> = serde_json::from_value(v.clone()).map_err(|_| bad("a list of account ids"))?;
                 let ids = dedupe(&ids);
@@ -434,7 +459,7 @@ async fn patch_campaign(State(st): State<AppState>, ApiPath(id): ApiPath<Uuid>, 
         }
     }
     sqlx::query(
-        "UPDATE campaigns SET name = $2, daily_new_leads = $3, account_pick = $4, stop_company_on_reply = $5, allow_unverified = $6, timezone = $7, updated_at = $8 WHERE id = $1",
+        "UPDATE campaigns SET name = $2, daily_new_leads = $3, account_pick = $4, stop_company_on_reply = $5, allow_unverified = $6, timezone = $7, updated_at = $8, content_mode = $9, auto_write = $10, footer = $11 WHERE id = $1",
     )
     .bind(id)
     .bind(&c.name)
@@ -444,8 +469,14 @@ async fn patch_campaign(State(st): State<AppState>, ApiPath(id): ApiPath<Uuid>, 
     .bind(c.allow_unverified)
     .bind(&c.timezone)
     .bind(st.now())
+    .bind(&c.content_mode)
+    .bind(c.auto_write)
+    .bind(&c.footer)
     .execute(&mut *tx)
     .await?;
+    if patch.contains_key("footer") {
+        super::emails::mark_stale(&mut tx, id, None).await?;
+    }
     if let Some(ids) = accounts {
         sqlx::query("DELETE FROM campaign_accounts WHERE campaign_id = $1 AND NOT account_id = ANY($2)").bind(id).bind(&ids).execute(&mut *tx).await?;
         sqlx::query("INSERT INTO campaign_accounts (campaign_id, account_id) SELECT $1, a FROM unnest($2::uuid[]) AS t(a) ON CONFLICT DO NOTHING").bind(id).bind(&ids).execute(&mut *tx).await?;
@@ -541,6 +572,12 @@ async fn add_leads(State(st): State<AppState>, ApiPath(id): ApiPath<Uuid>, ApiJs
     qb.push(" ORDER BY created_at, id) m ON CONFLICT DO NOTHING RETURNING lead_id), ev AS (INSERT INTO lead_events (lead_id, kind, ref_id, detail, at) SELECT lead_id, 'campaign_added', ");
     qb.push_bind(id).push(", '{}'::jsonb, ").push_bind(now).push(" FROM ins RETURNING 1) SELECT count(*) FROM ev");
     let (added,): (i64,) = qb.build_query_as().fetch_one(&mut *tx).await?;
+    // After the first Save, a new lead gets its emails at once (template mode costs nothing).
+    if added > 0 && c.emails_saved_at.is_some() && c.content_mode == "template" {
+        if let Some(ctx) = super::emails::load_ctx(&mut tx, id).await? {
+            super::emails::write(&mut tx, &ctx, super::emails::Overwrite::Skip, None, None, now).await?;
+        }
+    }
     tx.commit().await?;
     Ok(ApiJson(AddLeadsReply { matched, added, already_in_campaign: matched - added }))
 }
@@ -597,6 +634,8 @@ pub struct CampaignLeadRow {
     pub first_name: Option<String>,
     pub last_name: Option<String>,
     pub company_name: Option<String>,
+    /// Values of the custom fields of this lead (one lead, the same everywhere).
+    pub custom_fields: serde_json::Value,
     pub state: CampaignLeadState,
     pub skip_reason: Option<SkipReason>,
     pub enrollment_id: Option<Uuid>,
@@ -615,6 +654,23 @@ pub struct CampaignLeadRow {
     /// Why the lead is not moving, in a code. `waiting_delay`, `queued`, `waiting_ai_review`, `paused`,
     /// `finished`, or the stop reason (`reply`, `bounce_hard`, `unsubscribe`, `manual`, ...). Empty when the next step is due now.
     pub wait_reason: Option<String>,
+    /// The saved emails of this lead in this campaign, one per step that has one.
+    #[sqlx(skip)]
+    pub emails: Vec<EmailCell>,
+}
+
+#[derive(Serialize, ToSchema, sqlx::FromRow)]
+pub struct EmailCell {
+    #[serde(skip)]
+    pub lead_id: Uuid,
+    pub step_number: i32,
+    /// `none`, `writing`, `review`, `ready`, `stale`, `failed` or `sent`.
+    pub status: String,
+    pub variant_key: Option<String>,
+    /// The first words of the subject (or of the body for a follow up with no subject).
+    pub subject_preview: String,
+    pub edited_by_hand: bool,
+    pub error_code: Option<String>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -644,7 +700,7 @@ async fn list_campaign_leads(State(st): State<AppState>, ApiPath(id): ApiPath<Uu
         ),
     };
     let mut leads: Vec<CampaignLeadRow> = sqlx::query_as(
-        "SELECT cl.lead_id, l.email, l.first_name, l.last_name, l.company_name, cl.state, cl.skip_reason, cl.enrollment_id,
+        "SELECT cl.lead_id, l.email, l.first_name, l.last_name, l.company_name, l.custom_fields, cl.state, cl.skip_reason, cl.enrollment_id,
                 e.status AS enrollment_status, cl.added_at, cl.enrolled_at, l.interest, l.contact_state,
                 CASE WHEN e.id IS NULL THEN NULL ELSE LEAST(e.next_step, GREATEST(steps.n, 1)::int) END AS current_step,
                 steps.n AS steps_total,
@@ -680,6 +736,22 @@ async fn list_campaign_leads(State(st): State<AppState>, ApiPath(id): ApiPath<Uu
     } else {
         None
     };
+    let ids: Vec<Uuid> = leads.iter().map(|l| l.lead_id).collect();
+    let cells: Vec<EmailCell> = sqlx::query_as(
+        "SELECT lead_id, step_number, status, variant_key, left(COALESCE(NULLIF(subject, ''), body_text, ''), 60) AS subject_preview, edited_by_hand, error_code
+           FROM lead_emails WHERE campaign_id = $1 AND lead_id = ANY($2) ORDER BY step_number",
+    )
+    .bind(id)
+    .bind(&ids)
+    .fetch_all(&mut *conn)
+    .await?;
+    let mut by_lead: std::collections::HashMap<Uuid, Vec<EmailCell>> = std::collections::HashMap::new();
+    for c in cells {
+        by_lead.entry(c.lead_id).or_default().push(c);
+    }
+    for l in &mut leads {
+        l.emails = by_lead.remove(&l.lead_id).unwrap_or_default();
+    }
     Ok(ApiJson(CampaignLeadsReply { leads, next_cursor }))
 }
 

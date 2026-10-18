@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { ArrowDown, ArrowUp, Braces, Plus, Sparkles, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiProblem, messageOf } from "@/api/errors";
@@ -31,6 +32,9 @@ interface Draft {
   delay_amount: number;
   delay_type: DelayType;
   ai_slots: S["AiSlot"][];
+  /** Variants only. */
+  name?: string;
+  active?: boolean;
 }
 let counter = 0;
 const uid = () => `d${++counter}`;
@@ -43,6 +47,18 @@ const fromStep = (s: S["SequenceStep"]): Draft => ({
   delay_amount: s.delay_amount,
   delay_type: s.delay_type,
   ai_slots: s.ai_slots,
+});
+const fromVariant = (v: S["StepVariant"]): Draft => ({
+  id: uid(),
+  subject: v.subject,
+  body_text: v.body_text ?? "",
+  body_html: v.body_html ?? null,
+  html: !!v.body_html,
+  delay_amount: 0,
+  delay_type: "business_days",
+  ai_slots: v.ai_slots,
+  name: v.name,
+  active: v.active,
 });
 const fromInput = (s: S["StepInput"]): Draft => ({
   id: uid(),
@@ -80,6 +96,12 @@ export function Editor({
   const seq = campaign.sequence;
   const thread = seq.thread_followups;
   const [steps, setSteps] = useState<Draft[]>(() => campaign.steps.map(fromStep));
+  const [variants, setVariants] = useState<Draft[]>(() => campaign.variants.map(fromVariant));
+  // -1 is variant A (step 1 itself); 0 to 3 are B to E.
+  const [vsel, setVsel] = useState(-1);
+  const [saveDialog, setSaveDialog] = useState<null | { edited: number }>(null);
+  const [saving, setSaving] = useState(false);
+  const [footer, setFooter] = useState(campaign.footer ?? "");
   const [sel, setSel] = useState(0);
   const [save, setSave] = useState<"saved" | "dirty" | "saving" | "error">("saved");
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -92,12 +114,41 @@ export function Editor({
   const area = useRef<HTMLTextAreaElement>(null);
   const cursor = useRef<number | null>(null);
   const first = useRef(true);
-  const cur = steps[Math.min(sel, steps.length - 1)] ?? steps[0];
+  const onVariant = sel === 0 && vsel >= 0 && !!variants[vsel];
+  const cur = onVariant
+    ? (variants[vsel] as Draft)
+    : (steps[Math.min(sel, steps.length - 1)] ?? steps[0]);
   const slotProvider = gen.data?.settings.slot_provider_id;
   const aiReady =
     !!slotProvider && providers.data?.some((p) => p.id === slotProvider && p.status === "ok");
 
   const body = useCallback((s: Draft) => (s.html ? (s.body_html ?? "") : s.body_text), []);
+
+  const payloadOf = (d: Draft, i: number) => {
+    const html = d.html ? sanitizeHtml(d.body_html ?? "") : null;
+    return {
+      subject: i > 0 && thread ? "" : d.subject,
+      body_text: d.html ? htmlToText(html ?? "") : d.body_text,
+      body_html: html,
+      delay_amount: i === 0 ? 0 : d.delay_amount,
+      delay_type: d.delay_type,
+      ai_slots: d.ai_slots,
+    };
+  };
+  /** Save the template (the steps and the variants of step 1). */
+  const persist = useCallback(async () => {
+    await http.put(`/v1/followups/sequences/{id}/steps`, {
+      path: { id: seq.id },
+      body: {
+        steps: steps.map(payloadOf),
+        variants: variants.map((v) => {
+          const { delay_amount: _d, delay_type: _t, ...rest } = payloadOf(v, 0);
+          return { ...rest, name: v.name ?? "", active: v.active ?? true };
+        }),
+      },
+    });
+    void qc.invalidateQueries({ queryKey: ["campaigns", campaign.id] });
+  }, [steps, variants, thread]);
 
   // Autosave 1.5 s after the last change.
   useEffect(() => {
@@ -109,34 +160,82 @@ export function Editor({
     const t = setTimeout(async () => {
       setSave("saving");
       try {
-        const payload = steps.map((s, i) => {
-          const html = s.html ? sanitizeHtml(s.body_html ?? "") : null;
-          return {
-            subject: i > 0 && thread ? "" : s.subject,
-            body_text: s.html ? htmlToText(html ?? "") : s.body_text,
-            body_html: html,
-            delay_amount: i === 0 ? 0 : s.delay_amount,
-            delay_type: s.delay_type,
-            ai_slots: s.ai_slots,
-          };
-        });
-        await http.put(`/v1/followups/sequences/{id}/steps`, {
-          path: { id: seq.id },
-          body: { steps: payload },
-        });
+        await persist();
         setSave("saved");
         setSaveError(null);
-        void qc.invalidateQueries({ queryKey: ["campaigns", campaign.id] });
       } catch (e) {
         setSave("error");
         setSaveError(e instanceof ApiProblem ? (PROBLEM_WORDS[e.code] ?? e.message) : messageOf(e));
       }
     }, 1500);
     return () => clearTimeout(t);
-  }, [steps]);
+  }, [steps, variants]);
+
+  /** Save: the template, then the emails of every lead. */
+  async function saveEmails(overwrite?: "keep_edited" | "all") {
+    setSaving(true);
+    try {
+      await persist();
+      setSave("saved");
+      const body = { overwrite: overwrite ?? "keep_edited" };
+      if (!overwrite) {
+        const est = await http.post<S["Estimate"]>("/v1/campaigns/{id}/emails/estimate", {
+          path: { id: campaign.id },
+          body,
+        });
+        if (est.edited_by_hand > 0) {
+          setSaveDialog({ edited: est.edited_by_hand });
+          return;
+        }
+      }
+      const run = await http.post<S["EmailRun"]>("/v1/campaigns/{id}/emails/render", {
+        path: { id: campaign.id },
+        body,
+      });
+      setSaveDialog(null);
+      toast.success(
+        run.done === 0 && run.failed === 0
+          ? "Saved. No leads need emails yet."
+          : `${run.done} email${run.done === 1 ? "" : "s"} saved${run.failed ? `, ${run.failed} could not be written (missing values)` : ""}.`,
+      );
+      void qc.invalidateQueries({ queryKey: ["campaigns", campaign.id] });
+    } catch (e) {
+      toast.error(messageOf(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+  const saveRef = useRef(saveEmails);
+  saveRef.current = saveEmails;
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        void saveRef.current();
+      }
+    };
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, []);
 
   const patch = (p: Partial<Draft>) =>
-    setSteps((all) => all.map((s, i) => (i === sel ? { ...s, ...p } : s)));
+    onVariant
+      ? setVariants((all) => all.map((s, i) => (i === vsel ? { ...s, ...p } : s)))
+      : setSteps((all) => all.map((s, i) => (i === sel ? { ...s, ...p } : s)));
+  function addVariant(copy?: Draft) {
+    if (variants.length >= 4) return;
+    const base = copy ?? (steps[0] as Draft);
+    const key = ["B", "C", "D", "E"][variants.length];
+    setVariants([
+      ...variants,
+      { ...base, id: uid(), name: copy ? `${copy.name || "Copy"} copy` : (key ?? ""), active: true },
+    ]);
+    setVsel(variants.length);
+  }
+  function removeVariant() {
+    setVariants((all) => all.filter((_, i) => i !== vsel));
+    setVsel(-1);
+  }
   const setBody = (v: string) => patch(cur?.html ? { body_html: v } : { body_text: v });
 
   function insert(text: string) {
@@ -355,6 +454,24 @@ export function Editor({
               help="The AI reads this when it writes AI parts."
             />
           </div>
+          <div className="mt-4">
+            <TextArea
+              label="Footer"
+              maxLength={2000}
+              rows={3}
+              value={footer}
+              placeholder={"{{sender_name}}"}
+              onChange={(e) => setFooter(e.target.value)}
+              onBlur={() =>
+                footer !== (campaign.footer ?? "") &&
+                http
+                  .patch("/v1/campaigns/{id}", { path: { id: campaign.id }, body: { footer } })
+                  .then(() => qc.invalidateQueries({ queryKey: ["campaigns", campaign.id] }))
+                  .catch((e) => toast.error(messageOf(e)))
+              }
+              help="Added under every email: a signature or an opt-out line. Save writes it into the emails."
+            />
+          </div>
         </aside>
 
         {/* editor */}
@@ -371,6 +488,9 @@ export function Editor({
                       ? "Not saved"
                       : "Saved"}
               </span>
+              <Button onClick={() => void saveEmails()} busy={saving} title="Ctrl/Cmd + S">
+                Save
+              </Button>
               <div
                 role="group"
                 aria-label="Body type"
@@ -398,6 +518,65 @@ export function Editor({
             </div>
           </div>
           {save === "error" && saveError && <Notice tone="danger">{saveError}</Notice>}
+          {sel === 0 && (
+            <div className="flex flex-wrap items-center gap-2" role="tablist" aria-label="Variants of the first email">
+              {["A", ...variants.map((_, i) => ["B", "C", "D", "E"][i] as string)].map((k, idx) => {
+                const v = idx === 0 ? null : variants[idx - 1];
+                return (
+                  <button
+                    key={k}
+                    type="button"
+                    role="tab"
+                    aria-selected={vsel === idx - 1}
+                    onClick={() => setVsel(idx - 1)}
+                    className={cn(
+                      "rounded-full border px-3 py-1 text-sm",
+                      vsel === idx - 1 ? "border-accent bg-accent-soft font-medium" : "border-border",
+                      v && v.active === false && "opacity-60",
+                    )}
+                  >
+                    {k}
+                    {v?.name && v.name !== k ? ` ${v.name}` : ""}
+                    {v && v.active === false ? " (off)" : ""}
+                  </button>
+                );
+              })}
+              {variants.length < 4 && (
+                <button
+                  type="button"
+                  aria-label="Add a variant"
+                  className="rounded-full border border-dashed border-border px-3 py-1 text-sm"
+                  onClick={() => addVariant()}
+                >
+                  +
+                </button>
+              )}
+            </div>
+          )}
+          {onVariant && (
+            <div className="flex flex-wrap items-end gap-2">
+              <div className="w-48">
+                <Field
+                  label="Variant name"
+                  value={cur.name ?? ""}
+                  maxLength={40}
+                  onChange={(e) => patch({ name: e.target.value })}
+                />
+              </div>
+              <Button variant="secondary" onClick={() => addVariant(cur)} disabled={variants.length >= 4}>
+                Duplicate
+              </Button>
+              <Button variant="secondary" onClick={() => patch({ active: !(cur.active ?? true) })}>
+                {cur.active === false ? "Turn on" : "Turn off"}
+              </Button>
+              <Button variant="secondary" onClick={removeVariant}>
+                Delete
+              </Button>
+              <p className="text-xs text-muted">
+                {cur.active === false ? "Off: gets no new leads." : "Leads are split evenly between the variants."}
+              </p>
+            </div>
+          )}
           {showSubject ? (
             <Field
               label="Subject"
@@ -596,6 +775,27 @@ export function Editor({
           if (isNew) insert(`{{ai:${slot.key}}}`);
         }}
       />
+      <Modal
+        open={!!saveDialog}
+        onClose={() => setSaveDialog(null)}
+        size="sm"
+        title="Save emails"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => void saveEmails("keep_edited")} busy={saving}>
+              Keep my edits
+            </Button>
+            <Button variant="danger" onClick={() => void saveEmails("all")} busy={saving}>
+              Replace them
+            </Button>
+          </>
+        }
+      >
+        <p>
+          Replace {saveDialog?.edited} email{saveDialog?.edited === 1 ? "" : "s"} you edited by
+          hand? Sent emails never change.
+        </p>
+      </Modal>
       <ConfirmDialog
         open={del !== null}
         onClose={() => setDel(null)}
