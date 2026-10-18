@@ -31,14 +31,23 @@ const TONES: Record<Tone, string> = {
   accent: "bg-accent-soft text-text",
 };
 
-export function Pill({ tone = "neutral", children }: { tone?: Tone; children: ReactNode }) {
+export function Pill({
+  tone = "neutral",
+  dot,
+  children,
+}: {
+  tone?: Tone;
+  dot?: boolean;
+  children: ReactNode;
+}) {
   return (
     <span
       className={cn(
-        "inline-flex items-center whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium",
+        "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium",
         TONES[tone],
       )}
     >
+      {dot && <span aria-hidden="true" className="size-1.5 rounded-full bg-current" />}
       {children}
     </span>
   );

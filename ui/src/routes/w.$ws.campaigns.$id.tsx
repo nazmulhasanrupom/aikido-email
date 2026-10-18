@@ -1,27 +1,26 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link, Outlet, useNavigate } from "@tanstack/react-router";
-import { MoreHorizontal } from "lucide-react";
+import { ArrowLeft, MoreVertical, Pause, Play, Rocket } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { messageOf } from "@/api/errors";
 import { http } from "@/api/http";
 import { MenuContent, MenuItem, MenuRoot, MenuTrigger } from "@/components/shell/menu";
-import {
-  Button,
-  ConfirmDialog,
-  ErrorNote,
-  LinkTabs,
-  Notice,
-  Page,
-  Pill,
-  Skeleton,
-} from "@/components/ui";
+import { Button, ConfirmDialog, ErrorNote, Notice, Page, Pill, Skeleton } from "@/components/ui";
 import { ChecklistBar } from "@/features/campaigns/ChecklistBar";
 import { campaignQuery, tone } from "@/features/campaigns/hooks";
 import { LaunchDialog } from "@/features/campaigns/Launch";
 import { say } from "@/lib/words";
 
 export const Route = createFileRoute("/w/$ws/campaigns/$id")({ component: CampaignLayout });
+
+const TABS = [
+  ["/w/$ws/campaigns/$id/editor", "Editor"],
+  ["/w/$ws/campaigns/$id/leads", "Leads"],
+  ["/w/$ws/campaigns/$id/followups", "Follow-ups"],
+  ["/w/$ws/campaigns/$id/settings", "Settings"],
+  ["/w/$ws/campaigns/$id/reports", "Reports"],
+] as const;
 
 function CampaignLayout() {
   const { ws, id } = Route.useParams();
@@ -77,33 +76,66 @@ function CampaignLayout() {
   const p = { ws, id };
   return (
     <Page wide>
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-3">
+      <div className="-mx-6 -mt-6 mb-5 flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-border px-6">
+        <div className="flex min-w-0 items-center gap-1 py-2.5">
+          <Link
+            to="/w/$ws/campaigns"
+            params={{ ws }}
+            aria-label="Back to campaigns"
+            className="rounded p-1.5 text-muted hover:bg-surface-2 hover:text-text"
+          >
+            <ArrowLeft size={18} />
+          </Link>
           <input
             aria-label="Campaign name"
             value={name}
             onChange={(e) => setName(e.target.value)}
             onBlur={() => name.trim() && name !== c.name && rename.mutate(name.trim())}
             onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
-            className="min-w-0 rounded-(--radius-control) border border-transparent bg-transparent px-2 py-1 text-xl font-semibold hover:border-border focus:border-border"
+            className="min-w-0 max-w-72 rounded-(--radius-control) border border-transparent bg-transparent px-2 py-1 text-lg font-semibold hover:border-border focus:border-border"
           />
-          <Pill tone={tone(c.status)}>{say("campaign", c.status)}</Pill>
         </div>
-        <div className="flex items-center gap-2">
-          {c.status === "draft" && <Button onClick={() => setLaunch(true)}>Launch</Button>}
+        <nav
+          aria-label="Campaign pages"
+          className="order-last flex w-full gap-1 self-stretch overflow-x-auto lg:order-none lg:w-auto lg:flex-1 lg:justify-center lg:border-l lg:border-border lg:pl-4"
+        >
+          {TABS.map(([to, label]) => (
+            <Link
+              key={to}
+              to={to}
+              params={p}
+              className="flex items-center whitespace-nowrap border-b-2 border-transparent px-3 py-3 text-sm text-muted hover:text-text"
+              activeProps={{ className: "border-accent! font-medium text-text!" }}
+            >
+              {label}
+            </Link>
+          ))}
+        </nav>
+        <div className="ml-auto flex items-center gap-2 py-2.5">
+          <Pill dot tone={tone(c.status)}>
+            {say("campaign", c.status)}
+          </Pill>
+          {c.status === "draft" && (
+            <Button onClick={() => setLaunch(true)}>
+              <Rocket size={15} aria-hidden="true" /> Launch
+            </Button>
+          )}
           {c.status === "active" && (
             <Button variant="secondary" busy={act.isPending} onClick={() => act.mutate("pause")}>
-              Pause
+              <Pause size={15} aria-hidden="true" /> Pause
             </Button>
           )}
           {c.status === "paused" && (
             <Button busy={act.isPending} onClick={() => act.mutate("resume")}>
-              Resume
+              <Play size={15} aria-hidden="true" /> Resume
             </Button>
           )}
           <MenuRoot>
-            <MenuTrigger aria-label="More actions" className="rounded p-1.5 hover:bg-surface-2">
-              <MoreHorizontal size={18} />
+            <MenuTrigger
+              aria-label="More actions"
+              className="flex size-9 items-center justify-center rounded-(--radius-control) border border-border hover:bg-surface-2"
+            >
+              <MoreVertical size={17} />
             </MenuTrigger>
             <MenuContent align="end">
               <MenuItem onSelect={() => copy.mutate()}>Duplicate</MenuItem>
@@ -117,17 +149,9 @@ function CampaignLayout() {
           <Notice tone="warning">{c.warning}</Notice>
         </div>
       )}
-      {(c.status === "draft" || c.status === "active" || c.status === "paused") && <ChecklistBar campaignId={id} ws={ws} />}
-      <LinkTabs
-        label="Campaign pages"
-        items={[
-          { to: "/w/$ws/campaigns/$id/editor", params: p, label: "Editor" },
-          { to: "/w/$ws/campaigns/$id/leads", params: p, label: "Leads" },
-          { to: "/w/$ws/campaigns/$id/followups", params: p, label: "Follow-ups" },
-          { to: "/w/$ws/campaigns/$id/settings", params: p, label: "Settings" },
-          { to: "/w/$ws/campaigns/$id/reports", params: p, label: "Reports" },
-        ]}
-      />
+      {(c.status === "draft" || c.status === "active" || c.status === "paused") && (
+        <ChecklistBar campaignId={id} ws={ws} />
+      )}
       <Outlet />
       <LaunchDialog open={launch} onClose={() => setLaunch(false)} campaign={c} ws={ws} />
       <ConfirmDialog

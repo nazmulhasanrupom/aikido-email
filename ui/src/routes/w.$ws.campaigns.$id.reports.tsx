@@ -2,9 +2,10 @@ import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { http, type S } from "@/api/http";
 import { Card, ErrorNote, Head, Skeleton, Table, TD } from "@/components/ui";
-import { statsQuery } from "@/features/campaigns/hooks";
+import { campaignQuery, statsQuery } from "@/features/campaigns/hooks";
+import { ProgressBar, progressOf } from "@/features/campaigns/Progress";
 import { VariantResults } from "@/features/campaigns/VariantResults";
-import { DailyChart } from "@/features/reports/DailyChart";
+import { DailyTrend } from "@/features/reports/DailyChart";
 import { RangePicker, StatCard, useRange } from "@/features/reports/parts";
 import { fmtInt, fmtPct } from "@/lib/format";
 
@@ -16,6 +17,7 @@ function CampaignReports() {
   const { id, ws } = Route.useParams();
   const [range, setRange] = useRange("30");
   const stats = useQuery(statsQuery(id));
+  const campaign = useQuery(campaignQuery(id));
   const usage = useQuery({
     queryKey: ["generator", "usage", range.from, range.to],
     queryFn: () =>
@@ -26,25 +28,41 @@ function CampaignReports() {
   if (stats.isPending) return <Skeleton />;
   if (stats.isError) return <ErrorNote error={stats.error} />;
   const s = stats.data;
+  const progress =
+    campaign.data && campaign.data.status !== "draft" ? progressOf(campaign.data.counts) : null;
   const mine = usage.data?.by_campaign.find((r) => r.key === id);
   return (
     <div className="flex flex-col gap-6">
-      <RangePicker value={range} onChange={setRange} />
+      <div className="flex flex-wrap items-center gap-4">
+        <RangePicker value={range} onChange={setRange} />
+        {progress != null && <ProgressBar value={progress} />}
+      </div>
       <p className="-mt-3 text-xs text-muted">
-        The cards show the whole life of the campaign. The chart follows the range.
+        The cards show the whole life of the campaign. The charts follow the range.
       </p>
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <StatCard label="Sent" value={fmtInt(s.sent)} />
-        <StatCard label="Leads contacted" value={fmtInt(s.leads_contacted)} />
-        <StatCard label="Replies" value={fmtInt(s.replied)} />
-        <StatCard label="Reply rate" value={fmtPct(s.reply_rate)} />
-        <StatCard label="Bounces" value={fmtInt(s.bounced)} />
-        <StatCard label="Unsubscribes" value={fmtInt(s.unsubscribed)} />
-        <StatCard label="Spam complaints" value={fmtInt(s.complained)} />
-        <StatCard label="Out of office" value={fmtInt(s.auto_replied)} />
+        <StatCard color="var(--accent)" label="Leads contacted" value={fmtInt(s.leads_contacted)} />
+        <StatCard color="var(--info)" label="Sent" value={fmtInt(s.sent)} />
+        <StatCard color="var(--success)" label="Replies" value={fmtInt(s.replied)} />
+        <StatCard color="var(--success)" label="Reply rate" value={fmtPct(s.reply_rate)} />
+        <StatCard
+          color="var(--danger)"
+          label="Bounces"
+          value={fmtInt(s.bounced)}
+          sub={s.sent ? fmtPct(s.bounced / s.sent) : undefined}
+        />
+        <StatCard color="var(--warning)" label="Unsubscribes" value={fmtInt(s.unsubscribed)} />
+        <StatCard color="var(--danger)" label="Spam complaints" value={fmtInt(s.complained)} />
+        <StatCard color="var(--ai)" label="Out of office" value={fmtInt(s.auto_replied)} />
       </div>
       <Card>
-        <DailyChart range={range} extra={{ campaign_id: id }} keys={["sent", "replied"]} />
+        <h2 className="font-semibold">Performance trend</h2>
+        <p className="mb-5 text-sm text-muted">Campaign numbers per day in the range.</p>
+        <DailyTrend
+          range={range}
+          extra={{ campaign_id: id }}
+          keys={["sent", "replied", "bounced", "new_leads_enrolled"]}
+        />
       </Card>
       <VariantResults campaignId={id} stats={s} />
       <div className="grid gap-5 lg:grid-cols-2">

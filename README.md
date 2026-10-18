@@ -259,7 +259,7 @@ If you set none, they are made on first boot. To use your own (for Docker or clo
 
 `AIKIDO_ADMIN_API_KEY`, `AIKIDO_ACCOUNTS_API_KEY`, `AIKIDO_SENDING_API_KEY`, `AIKIDO_REPLIES_API_KEY`, `AIKIDO_FOLLOWUPS_API_KEY`, `AIKIDO_LEADS_API_KEY`, `AIKIDO_CAMPAIGNS_API_KEY`, `AIKIDO_GENERATOR_API_KEY`
 
-Each key has one scope. A wrong scope gets `403`. Only the SHA-256 hash is stored.
+Simplest way: in the web app, open **Settings → API** and press **Generate master key**. The master key (scope `admin`) works on every route. Section keys are optional. A section key has one scope. A wrong scope gets `403`. Only the SHA-256 hash is stored.
 
 ## 🧰 Using the engines
 

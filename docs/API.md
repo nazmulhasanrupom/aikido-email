@@ -98,7 +98,9 @@ Authorization: Bearer <key>
 X-API-Key: <key>
 ```
 
-Each step has its own key. A key works only on routes of its own scope. A key with scope `admin` works on every route.
+**Master key:** one key for every action. It is the `admin` key. In the web app, go to **Settings → API** and press **Generate master key**. Use it on every route. You do not need the section keys.
+
+Section keys are optional. A section key works only on routes of its own scope.
 
 | Scope | Routes it opens | Made on first boot |
 | --- | --- | --- |
