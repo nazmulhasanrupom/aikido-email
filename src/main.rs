@@ -160,6 +160,13 @@ async fn serve() -> anyhow::Result<()> {
     }
 
     let state = AppState::new(pool, crypto, cfg.clone());
+    state.load_site_url().await?;
+    if cfg.public_url.is_none() {
+        match state.site_url() {
+            Some(u) => tracing::info!(site_url = %u, "unsubscribe links use the address the app was last opened at"),
+            None => tracing::warn!("no web address yet: unsubscribe links are mailto: links until someone uses the app in a browser"),
+        }
+    }
     let cleanup_pool = state.pool.clone();
     tokio::spawn(async move {
         loop {

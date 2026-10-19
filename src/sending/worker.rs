@@ -274,11 +274,12 @@ pub async fn process_account(engine: &Engine, account_id: Uuid) -> anyhow::Resul
     };
     let job_id = claimed.job.id;
     let mut msg = build_outgoing(&claimed);
-    let cfg = &engine.state.config;
-    let web = super::unsubscribe::web_link(cfg.public_url.as_deref(), &engine.state.crypto, job_id);
+    let site = engine.state.site_url();
+    let web = super::unsubscribe::web_link(site.as_deref(), &engine.state.crypto, job_id);
     let link = web.clone().unwrap_or_else(|| super::unsubscribe::mailto_link(&claimed.account.email));
     super::unsubscribe::finish(&mut msg, &claimed.settings, &link);
-    msg.list_unsubscribe = super::unsubscribe::header(&claimed.settings, web.as_deref(), cfg.https());
+    let https = site.as_deref().is_some_and(|u| u.starts_with("https://"));
+    msg.list_unsubscribe = super::unsubscribe::header(&claimed.settings, web.as_deref(), https);
     let result = attempt_send(engine, &claimed.account, &msg, now).await;
 
     let finished = engine.now();

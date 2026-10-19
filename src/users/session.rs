@@ -123,6 +123,10 @@ pub async fn resolve(state: &AppState, method: &Method, headers: &HeaderMap) -> 
         if !origin_matches(&state.config, headers) {
             return Err(csrf_failed());
         }
+        // The origin is our own page: the unsubscribe links can use it.
+        if let Some(origin) = sender_origin(headers) {
+            state.learn_site_url(&origin).await;
+        }
         let sent = headers.get("x-csrf-token").and_then(|v| v.to_str().ok()).unwrap_or("");
         if sent.is_empty() || !bool::from(repo::sha256(sent).ct_eq(&s.csrf_token_hash)) {
             return Err(csrf_failed());

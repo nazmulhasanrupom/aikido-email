@@ -352,8 +352,9 @@ async fn send_test(State(st): State<AppState>, ApiPath(id): ApiPath<Uuid>, ApiJs
         list_unsubscribe: None,
         thread_id: None,
     };
-    // The signature and the unsubscribe text, as a real email has them. No job, so the link is a mailto.
-    crate::sending::unsubscribe::finish(&mut msg, &settings, &crate::sending::unsubscribe::mailto_link(&acc.email));
+    // The signature and the unsubscribe text, as a real email has them. No job, so the link goes to a test page.
+    let link = crate::sending::unsubscribe::test_link(st.site_url().as_deref()).unwrap_or_else(|| crate::sending::unsubscribe::mailto_link(&acc.email));
+    crate::sending::unsubscribe::finish(&mut msg, &settings, &link);
     let receipt = worker::send_direct(&st, &acc, &msg).await.map_err(|e| {
         let why = match &e {
             SendError::AuthFailed(_) => format!("{}. Connect the account again.", e.describe()),

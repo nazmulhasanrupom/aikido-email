@@ -4,9 +4,10 @@
 //! them in the text as they are (see `followups::template::build_vars`). Just before a send, the worker
 //! adds the signature of the account and puts the real link of that one email in their place.
 //!
-//! The link is `<public url>/v1/unsubscribe/<token>`. The token is the send job id and an HMAC of it, so a
-//! token cannot be made up or changed to another email. With no public URL, the link is a `mailto:` to the
-//! sending account: the Reply Check labels that reply `unsubscribe`.
+//! The link is `<site url>/v1/unsubscribe/<token>`. The site url is `AIKIDO_PUBLIC_URL`, else the address the
+//! app was last opened at (`AppState::site_url`). The token is the send job id and an HMAC of it, so a
+//! token cannot be made up or changed to another email. A test email has no job: its link opens a test page.
+//! Only before anyone has used the app is the link a `mailto:` to the sending account.
 use super::senders::OutgoingMessage;
 use super::settings::{ListUnsubscribe, SendingSettings};
 use crate::crypto::Crypto;
@@ -132,6 +133,13 @@ pub fn header(settings: &SendingSettings, web: Option<&str>, https: bool) -> Opt
     web.filter(|_| https).map(|u| ListUnsubscribe { mailto: None, url: Some(u.to_string()) })
 }
 
+/// The link of a test email: a page that unsubscribes no one.
+pub fn test_link(site_url: Option<&str>) -> Option<String> {
+    site_url.map(|base| format!("{base}/v1/unsubscribe/{TEST_TOKEN}"))
+}
+
+const TEST_TOKEN: &str = "test";
+
 /// The `mailto:` link to use when the server has no public URL.
 pub fn mailto_link(account_email: &str) -> String {
     format!("mailto:{account_email}?subject=Unsubscribe")
@@ -153,6 +161,10 @@ fn page(title: &str, body: &str) -> String {
     )
 }
 
+fn test_page() -> Response {
+    Html(page("Unsubscribe link works", "<p>This is a test email. In a real email, this link unsubscribes the receiver.</p>")).into_response()
+}
+
 fn bad_link() -> Response {
     (StatusCode::NOT_FOUND, Html(page("Link not valid", "<p>This unsubscribe link is not valid.</p>"))).into_response()
 }
@@ -162,17 +174,24 @@ async fn job_email(st: &AppState, token: &str) -> Result<Option<(Uuid, Uuid, Str
     sqlx::query_as("SELECT id, account_id, to_email::text FROM send_jobs WHERE id = $1").bind(job_id).fetch_optional(&st.pool).await
 }
 
-/// The page behind the link. It asks first: mail scanners open links, and must not unsubscribe anyone.
+/// The page behind the link. A script on the page sends the POST at once, so a click is enough.
+/// Mail scanners open links but do not run scripts, so they do not unsubscribe anyone.
+/// With scripts off, the person clicks the button.
 #[utoipa::path(get, path = "/v1/unsubscribe/{token}", tag = "sending",
     params(("token" = String, Path)),
     responses((status = 200, description = "A page with an Unsubscribe button.", content_type = "text/html")),
     description = "No key needed. The signed token names one sent email.")]
 async fn show(State(st): State<AppState>, axum::extract::Path(token): axum::extract::Path<String>) -> Response {
+    if token == TEST_TOKEN {
+        return test_page();
+    }
     match job_email(&st, &token).await {
         Ok(Some((_, _, email))) => Html(page(
             "Unsubscribe",
             &format!(
-                "<p>Stop all emails to <b>{}</b>?</p><form method=post><button type=submit>Unsubscribe</button></form>",
+                "<form id=f method=post><p>Unsubscribing <b>{}</b>...</p>\
+                 <noscript><p>Click the button to stop all emails to this address.</p></noscript>\
+                 <button type=submit>Unsubscribe</button></form><script>document.getElementById('f').submit()</script>",
                 escape_html(&email)
             ),
         ))
@@ -191,6 +210,9 @@ async fn show(State(st): State<AppState>, axum::extract::Path(token): axum::extr
     responses((status = 200, description = "The address is unsubscribed.", content_type = "text/html")),
     description = "No key needed. Adds the address to the suppression list, cancels its queued emails and stops its sequences. A second call does nothing new.")]
 async fn confirm(State(st): State<AppState>, axum::extract::Path(token): axum::extract::Path<String>) -> Response {
+    if token == TEST_TOKEN {
+        return test_page();
+    }
     let found = match job_email(&st, &token).await {
         Ok(Some(f)) => f,
         Ok(None) => return bad_link(),
@@ -201,7 +223,11 @@ async fn confirm(State(st): State<AppState>, axum::extract::Path(token): axum::e
     };
     let (job_id, account_id, email) = found;
     match unsubscribe(&st, job_id, account_id, &email, st.now()).await {
-        Ok(()) => Html(page("Unsubscribed", &format!("<p><b>{}</b> gets no more emails from us.</p>", escape_html(&email)))).into_response(),
+        Ok(()) => Html(page(
+            "Successfully unsubscribed",
+            &format!("<p><b>{}</b> is unsubscribed. You get no more emails from us.</p>", escape_html(&email)),
+        ))
+        .into_response(),
         Err(e) => {
             tracing::error!(error = %e, "unsubscribe failed");
             (StatusCode::INTERNAL_SERVER_ERROR, Html(page("Error", "<p>Try again later.</p>"))).into_response()
@@ -274,6 +300,13 @@ mod tests {
         assert_eq!(verify(&c, &forged), None);
         assert_eq!(verify(&c, "nope"), None);
         assert_eq!(verify(&Crypto::from_key_bytes(&[8u8; 32]).unwrap(), &t), None);
+    }
+
+    #[test]
+    fn test_link_is_not_a_token() {
+        assert_eq!(test_link(Some("https://x.com")).as_deref(), Some("https://x.com/v1/unsubscribe/test"));
+        assert_eq!(test_link(None), None);
+        assert_eq!(verify(&crypto(), TEST_TOKEN), None);
     }
 
     #[test]
