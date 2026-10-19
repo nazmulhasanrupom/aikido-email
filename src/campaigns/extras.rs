@@ -246,7 +246,7 @@ pub struct SendTestReply {
     responses((status = 202, body = SendTestReply), (status = 404, description = "No such campaign, lead or step"),
         (status = 422, description = "no_healthy_account, email_not_ready (AI mode, nothing written), missing_variable or an address that is not valid")),
     security(("api_key" = ["campaigns"])),
-    description = "Scope: `campaigns`. The job is `manual` and is not counted in the campaign numbers. The subject starts with \"[Test] \". It goes out through the normal sending engine (window, gap, cap).")]
+    description = "Scope: `campaigns`. The job is `manual` and is not counted in the campaign numbers. The subject starts with \"[Test] \". It goes out at once: the sending window, gap and caps do not apply, and it does not count as a send.")]
 async fn send_test(State(st): State<AppState>, ApiPath(id): ApiPath<Uuid>, ApiJson(b): ApiJson<SendTestBody>) -> ApiResult<(StatusCode, ApiJson<SendTestReply>)> {
     let mut tx = st.pool.begin().await?;
     let ctx = emails::load_ctx(&mut tx, id).await?.ok_or_else(no_campaign)?;
@@ -297,7 +297,7 @@ async fn send_test(State(st): State<AppState>, ApiPath(id): ApiPath<Uuid>, ApiJs
         idempotency_key: None,
         lead_id: None,
         campaign_id: None,
-        metadata: Some(json!({ "campaign_test": id.to_string() })),
+        metadata: Some(json!({ "campaign_test": id.to_string(), "test": true })),
         kind: Some(crate::replies::model::JobKind::Manual),
     };
     let (to_email, domain) = queue::check_new_job(&job).map_err(|e| ApiError::unprocessable(e.code, e.message))?;

@@ -78,6 +78,16 @@ pub struct Job {
     pub step_number: Option<i32>,
 }
 
+/// SQL test for a test email: `metadata.test = true`.
+const IS_TEST_SQL: &str = "(metadata->>'test') = 'true'";
+
+impl Job {
+    /// A test email (`metadata.test = true`) goes out at once: no window, cap or gap. It does not count as a send.
+    pub fn is_test(&self) -> bool {
+        self.metadata.get("test").and_then(Value::as_bool) == Some(true)
+    }
+}
+
 #[derive(Clone, Debug, FromRow, Serialize, ToSchema)]
 pub struct EventRow {
     pub id: i64,
@@ -137,6 +147,7 @@ pub struct NewJob {
     pub metadata: Option<Value>,
     /// `automated` (default) or `manual`. A manual job is still sent to an address that replied;
     /// it is blocked by every other suppression.
+    /// Set `metadata.test = true` for a test email: it goes out at once, outside the window and caps.
     pub kind: Option<JobKind>,
 }
 
@@ -509,17 +520,20 @@ pub async fn engine_paused(pool: &PgPool) -> Result<bool, sqlx::Error> {
 }
 
 /// Accounts that may be ready to send: active, not paused, has a due queued job, gap is over.
+/// A due test email makes the account ready even when the gap is not over.
 pub async fn ready_accounts(pool: &PgPool, now: DateTime<Utc>, limit: i64) -> Result<Vec<Uuid>, sqlx::Error> {
-    let rows: Vec<(Uuid,)> = sqlx::query_as(
+    let rows: Vec<(Uuid,)> = sqlx::query_as(&format!(
         "SELECT a.id FROM email_accounts a
          JOIN account_send_state s ON s.account_id = a.id
          WHERE a.status = 'active' AND a.deleted_at IS NULL AND NOT s.paused
-           AND (s.next_send_at IS NULL OR s.next_send_at <= $1)
+           AND (s.next_send_at IS NULL OR s.next_send_at <= $1
+                OR EXISTS (SELECT 1 FROM send_jobs j WHERE j.account_id = a.id AND j.status = 'queued'
+                           AND (j.send_after IS NULL OR j.send_after <= $1) AND j.{IS_TEST_SQL}))
            AND EXISTS (SELECT 1 FROM send_jobs j WHERE j.account_id = a.id AND j.status = 'queued'
                        AND (j.send_after IS NULL OR j.send_after <= $1))
          ORDER BY s.next_send_at NULLS FIRST, a.id
-         LIMIT $2",
-    )
+         LIMIT $2"
+    ))
     .bind(now)
     .bind(limit)
     .fetch_all(pool)
@@ -605,6 +619,33 @@ pub async fn claim_next(pool: &PgPool, account_id: Uuid, now: DateTime<Utc>) -> 
     }
 
     let settings = load_settings(&mut tx, account_id).await?;
+
+    // 0. A test email goes out now. It skips the window, caps and gap, and leaves the counters alone.
+    let test: Option<Job> = sqlx::query_as(&format!(
+        "SELECT {JOB_COLS} FROM send_jobs
+         WHERE account_id = $1 AND status = 'queued' AND (send_after IS NULL OR send_after <= $2) AND {IS_TEST_SQL}
+         ORDER BY created_at, id LIMIT 1 FOR UPDATE SKIP LOCKED"
+    ))
+    .bind(account_id)
+    .bind(now)
+    .fetch_optional(&mut *tx)
+    .await?;
+    if let Some(job) = test {
+        let message_id = job.message_id_header.clone().unwrap_or_else(|| new_message_id(&account.email));
+        let claimed: Job = sqlx::query_as(&format!(
+            "UPDATE send_jobs SET status = 'sending', claimed_at = $2, attempts = attempts + 1,
+                    message_id_header = $3, updated_at = $2
+             WHERE id = $1 RETURNING {JOB_COLS}"
+        ))
+        .bind(job.id)
+        .bind(now)
+        .bind(message_id)
+        .fetch_one(&mut *tx)
+        .await?;
+        log_event(&mut tx, Some(job.id), account_id, "claimed", json!({ "attempt": claimed.attempts, "test": true }), now).await?;
+        tx.commit().await?;
+        return Ok(ClaimOutcome::Claimed(Box::new(Claimed { job: claimed, account, settings })));
+    }
 
     // 1. Day rollover.
     let before = state.rules_state();
@@ -936,14 +977,16 @@ pub async fn apply_plan(pool: &PgPool, claimed: &Claimed, plan: &Plan, now: Date
         FailureChange::Add => state.consecutive_failures + 1,
         FailureChange::Keep => state.consecutive_failures,
     };
+    // A test email does not move the gap or the daily count.
+    let test = job.is_test();
     sqlx::query(
         "UPDATE account_send_state SET next_send_at = $2, sent_today = sent_today + $3,
                 last_sent_at = CASE WHEN $3 = 1 THEN $4 ELSE last_sent_at END, consecutive_failures = $5
          WHERE account_id = $1",
     )
     .bind(account_id)
-    .bind(plan.next_send_at)
-    .bind(i32::from(plan.count_sent))
+    .bind(if test { state.next_send_at } else { Some(plan.next_send_at) })
+    .bind(i32::from(plan.count_sent && !test))
     .bind(now)
     .bind(failures)
     .execute(&mut *tx)

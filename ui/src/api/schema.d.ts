@@ -655,7 +655,7 @@ export interface paths {
         put?: never;
         /**
          * Send the email of one lead to yourself, from the first healthy account of the pool.
-         * @description Scope: `campaigns`. The job is `manual` and is not counted in the campaign numbers. The subject starts with "[Test] ". It goes out through the normal sending engine (window, gap, cap).
+         * @description Scope: `campaigns`. The job is `manual` and is not counted in the campaign numbers. The subject starts with "[Test] ". It goes out at once: the sending window, gap and caps do not apply, and it does not count as a send.
          */
         post: operations["send_test"];
         delete?: never;

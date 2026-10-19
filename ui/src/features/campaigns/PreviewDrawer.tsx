@@ -103,7 +103,7 @@ export function PreviewDrawer({
     const first = steps?.[0];
     if (!first || !account) return;
     try {
-      const st = await http.post<{ jobs: S["Job"][] }>("/v1/sending/jobs", {
+      await http.post<{ jobs: S["Job"][] }>("/v1/sending/jobs", {
         body: {
           jobs: [
             {
@@ -114,19 +114,12 @@ export function PreviewDrawer({
               body_html: first.body_html ?? null,
               kind: "manual",
               priority: 100,
+              metadata: { test: true },
             },
           ],
         },
       });
-      const a = await http.get<{ next_send_at?: string; wait?: { until: string } }>(
-        "/v1/sending/accounts/{id}/status",
-        { path: { id: account } },
-      );
-      const at = a.next_send_at ?? a.wait?.until;
-      toast.success(
-        `Queued. It follows the account's sending hours.${at ? ` Expected at ${new Date(at).toLocaleString()}.` : ""}`,
-      );
-      void st;
+      toast.success("Test sent. It arrives in a minute or two.");
     } catch (e) {
       toast.error(messageOf(e));
     }
@@ -242,7 +235,7 @@ export function PreviewDrawer({
                 Send to me
               </Button>
             </div>
-            <Notice>A test follows the account's sending hours.</Notice>
+            <Notice>A test goes out now. Sending hours and limits do not apply.</Notice>
           </div>
         )}
       </div>
