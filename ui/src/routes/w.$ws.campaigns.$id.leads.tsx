@@ -37,6 +37,7 @@ import {
   type GridCol,
   useColumns,
 } from "@/features/leads/grid";
+import { ListToCampaign } from "@/features/leads/ImportFlow";
 import { ImportModal } from "@/features/leads/ImportModal";
 import { STATUSES, useReoon } from "@/features/reoon/api";
 import { VerifyPill } from "@/features/reoon/parts";
@@ -103,6 +104,7 @@ function CampaignLeads() {
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [menu, setMenu] = useState<null | "list" | "import">(null);
   const [listId, setListId] = useState("");
+  const pickedList = lists.data?.find((l) => l.id === listId);
   const leads = useInfiniteQuery({
     queryKey: ["campaigns", id, "leads", state, onlyMissing, vstatus, byRule],
     initialPageParam: undefined as string | undefined,
@@ -421,35 +423,55 @@ function CampaignLeads() {
       )}
       <Modal
         open={menu === "list"}
-        onClose={() => setMenu(null)}
-        size="sm"
+        onClose={() => {
+          setMenu(null);
+          setListId("");
+          refresh();
+        }}
+        size="md"
         title="Add leads from a list"
         footer={
-          <>
-            <Button variant="secondary" onClick={() => setMenu(null)}>
-              Cancel
-            </Button>
-            <Button disabled={!listId} busy={addList.isPending} onClick={() => addList.mutate()}>
-              Add leads
-            </Button>
-          </>
+          pickedList && pickedList.row_count === 0 && pickedList.member_count > 0 ? (
+            <>
+              <Button variant="secondary" onClick={() => setMenu(null)}>
+                Cancel
+              </Button>
+              <Button busy={addList.isPending} onClick={() => addList.mutate()}>
+                Add leads
+              </Button>
+            </>
+          ) : undefined
         }
       >
-        <Select
-          label="List"
-          value={listId}
-          onChange={setListId}
-          options={[
-            { value: "", label: "Choose..." },
-            ...(lists.data ?? []).map((l) => ({
-              value: l.id,
-              label: `${l.name} (${l.member_count})`,
-            })),
-          ]}
-        />
-        <p className="mt-3 text-xs text-muted">
-          To add leads by filter, use Leads, select them and choose Add to campaign.
-        </p>
+        <div className="flex flex-col gap-4">
+          <Select
+            label="List"
+            value={listId}
+            onChange={setListId}
+            options={[
+              { value: "", label: "Choose..." },
+              ...(lists.data ?? []).map((l) => ({
+                value: l.id,
+                label: `${l.name} (${l.row_count || l.member_count})`,
+              })),
+            ]}
+          />
+          {pickedList && pickedList.row_count > 0 && (
+            <>
+              <p className="text-xs text-muted">
+                Next you match the list columns to lead columns. You can make new columns. The list
+                does not change.
+              </p>
+              <ListToCampaign key={listId} listId={listId} campaignId={id} onFinished={refresh} />
+            </>
+          )}
+          {pickedList && pickedList.row_count === 0 && pickedList.member_count === 0 && (
+            <p className="text-sm text-muted">This list is empty.</p>
+          )}
+          <p className="text-xs text-muted">
+            To add leads by filter, use Leads, select them and choose Add to campaign.
+          </p>
+        </div>
       </Modal>
       <ImportModal
         open={menu === "import"}

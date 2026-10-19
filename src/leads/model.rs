@@ -150,6 +150,11 @@ pub struct LeadList {
     pub updated_at: DateTime<Utc>,
     /// How many leads are in the list.
     pub member_count: i64,
+    /// The column names of the list's own rows, in order.
+    #[schema(value_type = Vec<String>)]
+    pub columns: serde_json::Value,
+    /// How many own rows the list holds (imported into the list, not leads).
+    pub row_count: i64,
 }
 
 #[derive(FromRow, Serialize, Clone, Debug, ToSchema)]

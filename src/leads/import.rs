@@ -31,7 +31,7 @@ pub const LEASE_SECS: i64 = 120;
 const MAX_ATTEMPTS: i32 = 5;
 const MAX_ERRORS: usize = 1000;
 /// The biggest file the setting `import_max_bytes` can allow, plus room for the form fields.
-const BODY_LIMIT: usize = 201 * 1024 * 1024;
+pub(crate) const BODY_LIMIT: usize = 201 * 1024 * 1024;
 const PREVIEW_BYTES: usize = 512 * 1024;
 
 pub fn router() -> OpenApiRouter<AppState> {
@@ -257,9 +257,9 @@ pub struct StartQuery {
 }
 
 #[derive(Default)]
-struct Form {
-    file: Option<(Option<String>, Vec<u8>)>,
-    fields: BTreeMap<String, String>,
+pub(crate) struct Form {
+    pub file: Option<(Option<String>, Vec<u8>)>,
+    pub fields: BTreeMap<String, String>,
 }
 
 fn multipart_error(e: impl std::fmt::Display) -> ApiError {
@@ -267,7 +267,7 @@ fn multipart_error(e: impl std::fmt::Display) -> ApiError {
 }
 
 /// Read the form. The file part stops at `max_file` bytes (413), or at `prefix_only` bytes (for the preview).
-async fn read_form(mut mp: Multipart, max_file: usize, prefix_only: Option<usize>) -> ApiResult<Form> {
+pub(crate) async fn read_form(mut mp: Multipart, max_file: usize, prefix_only: Option<usize>) -> ApiResult<Form> {
     let mut form = Form::default();
     while let Some(mut field) = mp.next_field().await.map_err(multipart_error)? {
         let name = field.name().unwrap_or_default().to_string();
@@ -298,7 +298,7 @@ async fn read_form(mut mp: Multipart, max_file: usize, prefix_only: Option<usize
     Ok(form)
 }
 
-fn require_file(form: &mut Form) -> ApiResult<(Option<String>, Vec<u8>)> {
+pub(crate) fn require_file(form: &mut Form) -> ApiResult<(Option<String>, Vec<u8>)> {
     match form.file.take() {
         Some((n, d)) if !d.is_empty() => Ok((n, d)),
         _ => Err(ApiError::unprocessable("file_required", "Send the CSV as the multipart field 'file'.")),

@@ -25,7 +25,7 @@ import { say } from "@/lib/words";
 import { ImportModal } from "./ImportModal";
 
 /* ---------- Lists ---------- */
-export function ListsTab() {
+export function ListsTab({ onOpen }: { onOpen: (id: string) => void }) {
   const qc = useQueryClient();
   const lists = useQuery(q.lists);
   const [edit, setEdit] = useState<S["LeadList"] | "new" | null>(null);
@@ -40,9 +40,11 @@ export function ListsTab() {
             path: { id: edit.id },
             body: { name, description: desc || null },
           }),
-    onSuccess: () => {
+    onSuccess: (made) => {
+      const wasNew = edit === "new";
       setEdit(null);
       void qc.invalidateQueries({ queryKey: q.lists.queryKey });
+      if (wasNew && made && typeof made === "object" && "id" in made) onOpen(String(made.id));
     },
   });
   const open = (l: S["LeadList"] | "new") => {
@@ -57,17 +59,31 @@ export function ListsTab() {
       </div>
       {lists.isPending && <Skeleton rows={3} />}
       {lists.isError && <ErrorNote error={lists.error} />}
-      {lists.data?.length === 0 && <EmptyState text="Lists group your leads. Make one to start." />}
+      {lists.data?.length === 0 && (
+        <EmptyState text="A list holds its own rows. Make one, open it and import a CSV with any columns." />
+      )}
       {lists.data && lists.data.length > 0 && (
         <Table>
-          <Head cols={["Name", "Leads", "Description", ""]} />
+          <Head cols={["Name", "Rows", "Leads", "Description", ""]} />
           <tbody>
             {lists.data.map((l) => (
               <tr key={l.id} className="border-t border-border">
-                <td className={`${TD} font-medium`}>{l.name}</td>
+                <td className={`${TD} font-medium`}>
+                  <button
+                    type="button"
+                    className="text-left hover:text-accent hover:underline"
+                    onClick={() => onOpen(l.id)}
+                  >
+                    {l.name}
+                  </button>
+                </td>
+                <td className={TD}>{l.row_count}</td>
                 <td className={TD}>{l.member_count}</td>
                 <td className={TD}>{l.description}</td>
                 <td className={TD}>
+                  <Button variant="ghost" className="h-7" onClick={() => onOpen(l.id)}>
+                    Open
+                  </Button>
                   <Button variant="ghost" className="h-7" onClick={() => open(l)}>
                     Rename
                   </Button>
@@ -110,7 +126,7 @@ export function ListsTab() {
         open={!!del}
         onClose={() => setDel(null)}
         title="Delete this list?"
-        text="The leads stay."
+        text="Its rows are deleted. Leads stay."
         danger
         confirmLabel="Delete list"
         onConfirm={async () => {

@@ -2,10 +2,11 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Page, PageHeader, Tabs } from "@/components/ui";
 import { AllLeads, type LeadSearch } from "@/features/leads/AllLeads";
 import { LeadDrawer } from "@/features/leads/LeadDrawer";
+import { ListView } from "@/features/leads/ListView";
 import { BlocklistTab, FieldsTab, ImportsTab, ListsTab } from "@/features/leads/Tabs";
 
 type TabId = "all" | "lists" | "fields" | "imports" | "blocklist";
-type Search = LeadSearch & { tab?: TabId; lead?: string };
+type Search = LeadSearch & { tab?: TabId; lead?: string; list?: string };
 const str = (v: unknown) => (typeof v === "string" && v ? v : undefined);
 
 export const Route = createFileRoute("/w/$ws/leads")({
@@ -27,6 +28,7 @@ export const Route = createFileRoute("/w/$ws/leads")({
           "suppressed",
           "verification_status",
           "lead",
+          "list",
         ]
           .map((k) => [k, str(s[k])])
           .filter(([, v]) => v),
@@ -59,7 +61,19 @@ function Leads() {
         ]}
       />
       {tab === "all" && <AllLeads search={search} ws={ws} />}
-      {tab === "lists" && <ListsTab />}
+      {tab === "lists" && !search.list && (
+        <ListsTab
+          onOpen={(id) =>
+            navigate({ to: "/w/$ws/leads", params: { ws }, search: { tab: "lists", list: id } })
+          }
+        />
+      )}
+      {tab === "lists" && search.list && (
+        <ListView
+          id={search.list}
+          onBack={() => navigate({ to: "/w/$ws/leads", params: { ws }, search: { tab: "lists" } })}
+        />
+      )}
       {tab === "fields" && <FieldsTab />}
       {tab === "imports" && <ImportsTab />}
       {tab === "blocklist" && <BlocklistTab />}

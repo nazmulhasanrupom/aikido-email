@@ -271,6 +271,119 @@ export function ImportFlow({
   );
 }
 
+/**
+ * Send the rows of a list to a campaign. The list columns are matched like the columns of a CSV.
+ * The list does not change.
+ */
+export function ListToCampaign({
+  listId,
+  campaignId,
+  rowIds,
+  onFinished,
+}: {
+  listId: string;
+  campaignId: string;
+  rowIds?: string[] | undefined;
+  onFinished?: (imp: Import) => void;
+}) {
+  const qc = useQueryClient();
+  const settings = useQuery(q.leadSettings);
+  const [dedupe, setDedupe] = useState<S["DedupeMode"]>("fill_empty");
+  const [phase, setPhase] = useState<"start" | "map" | "run" | "done">("start");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  const [imp, setImp] = useState<Import | null>(null);
+  const [proposal, setProposal] = useState<Proposal | null>(null);
+
+  useEffect(() => {
+    if (settings.data) setDedupe(settings.data.settings.default_dedupe_mode);
+  }, [settings.data]);
+
+  async function start() {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await http.post<Import & { proposal?: Proposal }>(
+        "/v1/leads/lists/{id}/send-to-campaign",
+        {
+          path: { id: listId },
+          body: {
+            campaign_id: campaignId,
+            dedupe_mode: dedupe,
+            ...(rowIds && rowIds.length > 0 ? { row_ids: rowIds } : {}),
+          },
+        },
+      );
+      setImp(res);
+      if (res.proposal) {
+        setProposal(res.proposal);
+        setPhase("map");
+      }
+    } catch (e) {
+      setError(e);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      {phase === "start" && (
+        <>
+          <Select
+            label="If we already have the lead"
+            value={dedupe}
+            options={DEDUPE.map((d) => ({ value: d.value, label: d.label }))}
+            onChange={(v) => setDedupe(v as S["DedupeMode"])}
+            help={DEDUPE.find((d) => d.value === dedupe)?.help}
+          />
+          {error != null && <ErrorNote error={error} />}
+          <div>
+            <Button onClick={start} busy={busy}>
+              Match columns
+            </Button>
+          </div>
+        </>
+      )}
+      {phase === "map" && imp && proposal && (
+        <MappingDialog
+          imp={imp}
+          proposal={proposal}
+          onProposal={setProposal}
+          listId=""
+          campaignId={campaignId}
+          dedupe={dedupe}
+          tags=""
+          onCancel={async () => {
+            await http
+              .post("/v1/leads/imports/{id}/cancel", { path: { id: imp.id } })
+              .catch(() => {});
+            setPhase("start");
+            setImp(null);
+          }}
+          onConfirmed={(next) => {
+            setImp(next);
+            setPhase("run");
+          }}
+        />
+      )}
+      {phase === "run" && imp && (
+        <Progress
+          id={imp.id}
+          onDone={(final) => {
+            setImp(final);
+            setPhase("done");
+            void qc.invalidateQueries({ queryKey: ["leads"] });
+            void qc.invalidateQueries({ queryKey: ["campaigns"] });
+            onFinished?.(final);
+          }}
+        />
+      )}
+      {phase === "done" && imp && <Summary imp={imp} />}
+    </div>
+  );
+}
+
 export function Summary({ imp }: { imp: Import }) {
   const failed = imp.status === "failed" || imp.status === "cancelled";
   return (

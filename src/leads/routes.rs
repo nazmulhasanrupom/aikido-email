@@ -44,6 +44,7 @@ pub fn router(state: AppState) -> OpenApiRouter<AppState> {
         .routes(routes!(lead_context))
         .routes(routes!(add_note))
         .merge(super::import::router())
+        .merge(super::list_rows::router())
         .merge(super::mapping::routes::router())
         .merge(super::export::router())
         .route_layer(axum::middleware::from_fn_with_state((state, Scope::Leads), require_scope))
@@ -258,7 +259,8 @@ async fn delete_field(State(st): State<AppState>, ApiPath(key): ApiPath<String>)
 
 // ---------- lists ----------
 
-const LIST_COLS: &str = "l.id, l.name, l.description, l.created_at, l.updated_at, (SELECT count(*) FROM lead_list_members m WHERE m.list_id = l.id) AS member_count";
+pub(crate) const LIST_COLS: &str = "l.id, l.name, l.description, l.created_at, l.updated_at, (SELECT count(*) FROM lead_list_members m WHERE m.list_id = l.id) AS member_count, \
+    l.columns, (SELECT count(*) FROM lead_list_rows r WHERE r.list_id = l.id) AS row_count";
 
 /// All lists, with the number of leads in each.
 #[utoipa::path(get, path = "/v1/leads/lists", tag = "leads",
@@ -287,7 +289,7 @@ fn clean_description(d: Option<&str>) -> ApiResult<Option<String>> {
     super::input::clean_text("description", d, 1000).map_err(|m| ApiError::unprocessable("invalid_description", m))
 }
 
-async fn get_list(st: &AppState, id: Uuid) -> ApiResult<LeadList> {
+pub(crate) async fn get_list(st: &AppState, id: Uuid) -> ApiResult<LeadList> {
     sqlx::query_as(&format!("SELECT {LIST_COLS} FROM lead_lists l WHERE l.id = $1"))
         .bind(id)
         .fetch_optional(&st.pool)

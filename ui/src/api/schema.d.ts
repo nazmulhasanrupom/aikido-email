@@ -5344,6 +5344,13 @@ export interface components {
              * @description How many leads are in the list.
              */
             member_count: number;
+            /** @description The column names of the list's own rows, in order. */
+            columns: string[];
+            /**
+             * Format: int64
+             * @description How many own rows the list holds (imported into the list, not leads).
+             */
+            row_count: number;
             name: string;
             /** Format: date-time */
             updated_at: string;
