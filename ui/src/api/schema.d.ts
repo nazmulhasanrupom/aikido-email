@@ -655,7 +655,7 @@ export interface paths {
         put?: never;
         /**
          * Send the email of one lead to yourself, from the first healthy account of the pool.
-         * @description Scope: `campaigns`. The job is `manual` and is not counted in the campaign numbers. The subject starts with "[Test] ". It goes out at once: the sending window, gap and caps do not apply, and it does not count as a send.
+         * @description Scope: `campaigns`. The job is `manual` and is not counted in the campaign numbers. The subject starts with "[Test] ". It goes out at once, outside the queue: no sending window, gap or cap, no job row, and it does not count as a send. The reply comes after the mail provider answers.
          */
         post: operations["send_test"];
         delete?: never;
@@ -6252,6 +6252,15 @@ export interface components {
         SendTestBody: {
             /**
              * Format: uuid
+             * @description The account to send from. It must be in the pool. Default: the first healthy account of the pool.
+             */
+            account_id?: string | null;
+            /** @description Send this HTML body instead of the saved or built one. */
+            body_html?: string | null;
+            /** @description Send this text body instead of the saved or built one. */
+            body_text?: string | null;
+            /**
+             * Format: uuid
              * @description The lead whose email is shown. Default: the first lead of the campaign.
              */
             lead_id?: string | null;
@@ -6260,12 +6269,17 @@ export interface components {
              * @description 1 = Primary email (default).
              */
             step?: number | null;
+            /** @description Send this subject instead of the saved or built one (what the preview shows). */
+            subject?: string | null;
             /** @description Where to send it: your own address. */
             to: string;
         };
         SendTestReply: {
-            /** Format: uuid */
-            job_id: string;
+            /** @description The account it went from. */
+            from: string;
+            provider_message_id?: string | null;
+            /** @description The address the test went to. */
+            to: string;
         };
         /** @description The nine fields a person edits. Used for the save body and for a draft from the AI. */
         SenderFields: {
@@ -8050,7 +8064,7 @@ export interface operations {
             };
         };
         responses: {
-            202: {
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -8065,8 +8079,15 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description no_healthy_account, email_not_ready (AI mode, nothing written), missing_variable or an address that is not valid */
+            /** @description no_healthy_account, account_not_in_pool, email_not_ready (AI mode, nothing written), missing_variable or an address that is not valid */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description send_failed: the mail provider said no. The message says why. */
+            502: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -267,6 +267,7 @@ impl Harness {
         let clock = Arc::new(Mutex::new(start));
         let c = clock.clone();
         state.clock = Arc::new(move || *c.lock().unwrap());
+        state.senders = Arc::new(FakeSenders(sender.clone()));
         let engine = Engine::new(state.clone(), Arc::new(FakeSenders(sender.clone())));
         Self { state, engine: Arc::new(engine), sender, clock }
     }

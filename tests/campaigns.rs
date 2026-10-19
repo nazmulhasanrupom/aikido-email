@@ -1561,20 +1561,17 @@ async fn the_checklist_counts_what_is_ready_and_a_test_email_ticks_the_last_item
     // Save writes the emails of day 1
     c.save(&camp, None).await;
     assert!(ok(&c.ok("GET", &format!("/v1/campaigns/{camp}/checklist"), None).await, "emails"));
-    // a test email goes out through the engine and ticks the last item
+    // a test email goes out at once, outside the queue, and ticks the last item
     let t = c.ok("POST", &format!("/v1/campaigns/{camp}/emails/send-test"), Some(json!({ "to": "me@example.com" }))).await;
-    assert!(t["job_id"].is_string());
-    assert!(!ok(&c.ok("GET", &format!("/v1/campaigns/{camp}/checklist"), None).await, "test"), "queued is not sent");
-    for _ in 0..30 {
-        c.h.tick().await;
-        c.h.advance(Duration::minutes(10));
-    }
+    assert_eq!(t["to"], "me@example.com");
+    let calls = c.h.sender.calls();
+    assert_eq!(calls.len(), 1);
+    assert!(calls[0].subject.starts_with("[Test] Hello "), "{}", calls[0].subject);
     let list = c.ok("GET", &format!("/v1/campaigns/{camp}/checklist"), None).await;
     assert!(ok(&list, "test"), "{list}");
     assert_eq!(list["ready"], 6);
-    let (subject, count): (String, i64) = sqlx::query_as("SELECT subject, (SELECT count(*) FROM send_jobs WHERE campaign_id IS NOT NULL) FROM send_jobs WHERE to_email = 'me@example.com'").fetch_one(&c.h.state.pool).await.unwrap();
-    assert!(subject.starts_with("[Test] Hello "));
-    assert_eq!(count, 0, "a test job is not counted in the campaign");
+    let (jobs,): (i64,) = sqlx::query_as("SELECT count(*) FROM send_jobs").fetch_one(&c.h.state.pool).await.unwrap();
+    assert_eq!(jobs, 0, "a test is not a job");
 }
 
 #[sqlx::test]

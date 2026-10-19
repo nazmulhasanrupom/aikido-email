@@ -5,11 +5,12 @@ use super::routes::{detail, pool_accounts, CampaignDetail};
 use crate::error::{ApiError, ApiJson, ApiPath, ApiResult};
 use crate::followups::routes::{CreateSequence, StepInput, insert_sequence};
 use crate::sending::queue::{self, NewJob};
+use crate::sending::senders::{OutgoingMessage, SendError, new_message_id};
+use crate::sending::worker;
 use crate::state::AppState;
 use axum::extract::State;
 use axum::http::StatusCode;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 use utoipa::ToSchema;
 use utoipa_axum::{router::OpenApiRouter, routes};
 use uuid::Uuid;
@@ -131,7 +132,15 @@ async fn checklist(State(st): State<AppState>, ApiPath(id): ApiPath<Uuid>) -> Ap
     add("values", "No lead lacks a value the emails need", missing_n == 0, if missing_n == 0 { "All leads have their values.".into() } else { format!("{missing_n} lead(s) lack a value.") }, "leads");
 
     // 6. a test email
-    let (tests,): (i64,) = sqlx::query_as("SELECT count(*) FROM send_jobs WHERE metadata ->> 'campaign_test' = $1 AND status = 'sent'").bind(id.to_string()).fetch_one(&mut *conn).await?;
+    // Old tests went through the queue; new ones go out at once and set `test_sent_at`.
+    let (tested,): (bool,) = sqlx::query_as(
+        "SELECT COALESCE((SELECT test_sent_at IS NOT NULL FROM campaigns WHERE id = $1), false)
+             OR EXISTS (SELECT 1 FROM send_jobs WHERE metadata ->> 'campaign_test' = $1::text AND status = 'sent')",
+    )
+    .bind(id)
+    .fetch_one(&mut *conn)
+    .await?;
+    let tests = i64::from(tested);
     add("test", "A test email was sent to you", tests > 0, if tests > 0 { "A test email was sent.".into() } else { "Send one to yourself and read it.".into() }, "editor");
 
     let ready = items.iter().filter(|i| i.ok).count() as i64;
@@ -233,51 +242,73 @@ pub struct SendTestBody {
     pub lead_id: Option<Uuid>,
     /// 1 = Primary email (default).
     pub step: Option<i32>,
+    /// The account to send from. It must be in the pool. Default: the first healthy account of the pool.
+    pub account_id: Option<Uuid>,
+    /// Send this subject instead of the saved or built one (what the preview shows).
+    pub subject: Option<String>,
+    /// Send this text body instead of the saved or built one.
+    pub body_text: Option<String>,
+    /// Send this HTML body instead of the saved or built one.
+    pub body_html: Option<String>,
 }
 
 #[derive(Serialize, ToSchema)]
 pub struct SendTestReply {
-    pub job_id: Uuid,
+    /// The address the test went to.
+    pub to: String,
+    /// The account it went from.
+    pub from: String,
+    pub provider_message_id: Option<String>,
 }
 
-/// Send the email of one lead to yourself, from the first healthy account of the pool.
+/// Send the email of one lead to yourself, now, from one account of the pool.
 #[utoipa::path(post, path = "/v1/campaigns/{id}/emails/send-test", tag = "campaigns",
     params(("id" = Uuid, Path)), request_body = SendTestBody,
-    responses((status = 202, body = SendTestReply), (status = 404, description = "No such campaign, lead or step"),
-        (status = 422, description = "no_healthy_account, email_not_ready (AI mode, nothing written), missing_variable or an address that is not valid")),
+    responses((status = 200, body = SendTestReply), (status = 404, description = "No such campaign, lead or step"),
+        (status = 422, description = "no_healthy_account, account_not_in_pool, email_not_ready (AI mode, nothing written), missing_variable or an address that is not valid"),
+        (status = 502, description = "send_failed: the mail provider said no. The message says why.")),
     security(("api_key" = ["campaigns"])),
-    description = "Scope: `campaigns`. The job is `manual` and is not counted in the campaign numbers. The subject starts with \"[Test] \". It goes out at once: the sending window, gap and caps do not apply, and it does not count as a send.")]
-async fn send_test(State(st): State<AppState>, ApiPath(id): ApiPath<Uuid>, ApiJson(b): ApiJson<SendTestBody>) -> ApiResult<(StatusCode, ApiJson<SendTestReply>)> {
+    description = "Scope: `campaigns`. The job is `manual` and is not counted in the campaign numbers. The subject starts with \"[Test] \". It goes out at once, outside the queue: no sending window, gap or cap, no job row, and it does not count as a send. The reply comes after the mail provider answers.")]
+async fn send_test(State(st): State<AppState>, ApiPath(id): ApiPath<Uuid>, ApiJson(b): ApiJson<SendTestBody>) -> ApiResult<ApiJson<SendTestReply>> {
     let mut tx = st.pool.begin().await?;
     let ctx = emails::load_ctx(&mut tx, id).await?.ok_or_else(no_campaign)?;
     let step_n = b.step.unwrap_or(1);
     let step = ctx.steps.iter().find(|s| s.step_number == step_n).ok_or_else(|| ApiError::not_found("step_not_found", "The sequence has no such step."))?.clone();
-    let lead_id = match b.lead_id {
-        Some(l) => l,
-        None => sqlx::query_as::<_, (Uuid,)>("SELECT lead_id FROM campaign_leads WHERE campaign_id = $1 AND state <> 'skipped' ORDER BY added_at, lead_id LIMIT 1")
-            .bind(id)
-            .fetch_optional(&mut *tx)
-            .await?
-            .ok_or_else(|| ApiError::unprocessable("no_leads", "Add a lead first: the test shows the email of a lead."))?
-            .0,
-    };
-    let lead = crate::leads::repo::get(&mut tx, lead_id).await?.ok_or_else(|| ApiError::not_found("lead_not_found", "No lead with this id."))?;
     let accounts = pool_accounts(&mut tx, id).await?;
-    let account = accounts.iter().find(|a| a.healthy).ok_or_else(|| ApiError::unprocessable("no_healthy_account", "No account of the pool is healthy."))?;
+    let account = match b.account_id {
+        Some(a) => accounts.iter().find(|p| p.id == a).ok_or_else(|| ApiError::unprocessable("account_not_in_pool", "This account is not in the campaign."))?,
+        None => accounts.iter().find(|a| a.healthy).ok_or_else(|| ApiError::unprocessable("no_healthy_account", "No account of the pool is healthy."))?,
+    };
     let (acc_email, display) = crate::followups::repo::account_identity(&mut tx, account.id).await?.ok_or_else(ApiError::internal)?;
-    let saved: Option<LeadEmail> = sqlx::query_as(&format!("SELECT {EMAIL_COLS} FROM lead_emails WHERE campaign_id = $1 AND lead_id = $2 AND step_number = $3 AND status IN ('ready', 'stale', 'review', 'sent')"))
-        .bind(id)
-        .bind(lead_id)
-        .bind(step_n)
-        .fetch_optional(&mut *tx)
-        .await?;
-    let (subject, text, html) = match saved {
-        Some(e) => (e.subject, e.body_text, e.body_html),
-        None if !ctx.campaign.is_ai() => {
-            let built = emails::build(&ctx, &lead, &step, "A").map_err(|m| ApiError::unprocessable("missing_variable", format!("Missing: {}", m.join(", "))))?;
-            (built.subject, built.body_text, built.body_html)
+    // The preview sends the email it shows. Then no lead is needed.
+    let overridden = b.subject.is_some() || b.body_text.is_some() || b.body_html.is_some();
+    let (subject, text, html) = if overridden {
+        (b.subject.clone().unwrap_or_default(), b.body_text.clone(), b.body_html.clone())
+    } else {
+        let lead_id = match b.lead_id {
+            Some(l) => l,
+            None => sqlx::query_as::<_, (Uuid,)>("SELECT lead_id FROM campaign_leads WHERE campaign_id = $1 AND state <> 'skipped' ORDER BY added_at, lead_id LIMIT 1")
+                .bind(id)
+                .fetch_optional(&mut *tx)
+                .await?
+                .ok_or_else(|| ApiError::unprocessable("no_leads", "Add a lead first: the test shows the email of a lead."))?
+                .0,
+        };
+        let lead = crate::leads::repo::get(&mut tx, lead_id).await?.ok_or_else(|| ApiError::not_found("lead_not_found", "No lead with this id."))?;
+        let saved: Option<LeadEmail> = sqlx::query_as(&format!("SELECT {EMAIL_COLS} FROM lead_emails WHERE campaign_id = $1 AND lead_id = $2 AND step_number = $3 AND status IN ('ready', 'stale', 'review', 'sent')"))
+            .bind(id)
+            .bind(lead_id)
+            .bind(step_n)
+            .fetch_optional(&mut *tx)
+            .await?;
+        match saved {
+            Some(e) => (e.subject, e.body_text, e.body_html),
+            None if !ctx.campaign.is_ai() => {
+                let built = emails::build(&ctx, &lead, &step, "A").map_err(|m| ApiError::unprocessable("missing_variable", format!("Missing: {}", m.join(", "))))?;
+                (built.subject, built.body_text, built.body_html)
+            }
+            None => return Err(ApiError::unprocessable("email_not_ready", "No email is written for this lead yet. Generate it first.")),
         }
-        None => return Err(ApiError::unprocessable("email_not_ready", "No email is written for this lead yet. Generate it first.")),
     };
     let name = crate::followups::template::sender_name_of(&display, &acc_email);
     let subject = if subject.is_empty() { format!("[Test] (reply in the same thread) step {step_n}") } else { format!("[Test] {subject}") };
@@ -293,15 +324,43 @@ async fn send_test(State(st): State<AppState>, ApiPath(id): ApiPath<Uuid>, ApiJs
         references: None,
         provider_thread_id: None,
         send_after: None,
-        priority: Some(10),
+        priority: None,
         idempotency_key: None,
         lead_id: None,
         campaign_id: None,
-        metadata: Some(json!({ "campaign_test": id.to_string(), "test": true })),
-        kind: Some(crate::replies::model::JobKind::Manual),
+        metadata: None,
+        kind: None,
     };
-    let (to_email, domain) = queue::check_new_job(&job).map_err(|e| ApiError::unprocessable(e.code, e.message))?;
-    let inserted = queue::insert_job(&mut tx, &job, &to_email, &domain, None).await?.ok_or_else(ApiError::internal)?;
+    // Only to check the address, subject and body. The job is not queued.
+    let (to_email, _) = queue::check_new_job(&job).map_err(|e| ApiError::unprocessable(e.code, e.message))?;
+    let settings = queue::load_settings(&mut tx, account.id).await?;
     tx.commit().await?;
-    Ok((StatusCode::ACCEPTED, ApiJson(SendTestReply { job_id: inserted.id })))
+
+    let acc = crate::accounts::repo::get(&st.pool, account.id).await?.ok_or_else(ApiError::internal)?;
+    let mut msg = OutgoingMessage {
+        message_id: new_message_id(&acc.email),
+        from_email: acc.email.clone(),
+        from_name: Some(acc.display_name.clone()).filter(|n| !n.is_empty()),
+        to_email: to_email.clone(),
+        to_name: None,
+        subject: job.subject.trim().to_string(),
+        body_text: job.body_text.filter(|t| !t.trim().is_empty()),
+        body_html: job.body_html.filter(|t| !t.trim().is_empty()),
+        headers: Default::default(),
+        in_reply_to: None,
+        references: None,
+        list_unsubscribe: None,
+        thread_id: None,
+    };
+    // The signature and the unsubscribe text, as a real email has them. No job, so the link is a mailto.
+    crate::sending::unsubscribe::finish(&mut msg, &settings, &crate::sending::unsubscribe::mailto_link(&acc.email));
+    let receipt = worker::send_direct(&st, &acc, &msg).await.map_err(|e| {
+        let why = match &e {
+            SendError::AuthFailed(_) => format!("{}. Connect the account again.", e.describe()),
+            _ => e.describe(),
+        };
+        ApiError::new(StatusCode::BAD_GATEWAY, "send_failed", format!("The test was not sent: {why}"))
+    })?;
+    sqlx::query("UPDATE campaigns SET test_sent_at = $2 WHERE id = $1").bind(id).bind(st.now()).execute(&st.pool).await?;
+    Ok(ApiJson(SendTestReply { to: to_email, from: acc.email, provider_message_id: receipt.provider_message_id }))
 }

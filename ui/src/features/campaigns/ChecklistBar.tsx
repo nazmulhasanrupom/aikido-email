@@ -28,7 +28,7 @@ export function ChecklistBar({ campaignId, ws }: { campaignId: string; ws: strin
     mutationFn: () =>
       http.post<S["SendTestReply"]>("/v1/campaigns/{id}/emails/send-test", { path: { id: campaignId }, body: { to: me ?? "" } }),
     onSuccess: () => {
-      toast.success(`A test email is on its way to ${me}.`);
+      toast.success(`A test email was sent to ${me}. Check your inbox.`);
       void qc.invalidateQueries({ queryKey: ["campaigns", campaignId, "checklist"] });
     },
     onError: (e) => toast.error(messageOf(e)),

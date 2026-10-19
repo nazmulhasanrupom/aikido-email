@@ -253,6 +253,12 @@ async fn attempt_send(engine: &Engine, account: &EmailAccount, msg: &OutgoingMes
     result
 }
 
+/// Send one email now, outside the queue: no window, cap, gap, job row or counters. For test emails.
+pub async fn send_direct(state: &AppState, account: &EmailAccount, msg: &OutgoingMessage) -> Result<SendReceipt, SendError> {
+    let engine = Engine::new(state.clone(), state.senders.clone());
+    attempt_send(&engine, account, msg, engine.now()).await
+}
+
 /// What happened for one account in one tick.
 #[derive(Debug, PartialEq)]
 pub enum AccountResult {

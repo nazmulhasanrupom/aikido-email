@@ -99,29 +99,28 @@ export function PreviewDrawer({
     }
   }
 
+  const [sending, setSending] = useState(false);
   async function sendTest() {
     const first = steps?.[0];
     if (!first || !account) return;
+    setSending(true);
     try {
-      await http.post<{ jobs: S["Job"][] }>("/v1/sending/jobs", {
+      const r = await http.post<S["SendTestReply"]>("/v1/campaigns/{id}/emails/send-test", {
+        path: { id: campaignId },
         body: {
-          jobs: [
-            {
-              account_id: account,
-              to_email: testTo,
-              subject: first.subject,
-              body_text: first.body_text ?? "",
-              body_html: first.body_html ?? null,
-              kind: "manual",
-              priority: 100,
-              metadata: { test: true },
-            },
-          ],
+          to: testTo,
+          account_id: account,
+          lead_id: lead?.id ?? null,
+          subject: first.subject,
+          body_text: first.body_text ?? null,
+          body_html: first.body_html ?? null,
         },
       });
-      toast.success("Test sent. It arrives in a minute or two.");
+      toast.success(`Sent to ${r.to}. Check your inbox.`);
     } catch (e) {
       toast.error(messageOf(e));
+    } finally {
+      setSending(false);
     }
   }
 
@@ -231,11 +230,11 @@ export function PreviewDrawer({
               onChange={(e) => setTestTo(e.target.value)}
             />
             <div>
-              <Button variant="secondary" onClick={sendTest} disabled={!account || !testTo}>
+              <Button variant="secondary" busy={sending} onClick={sendTest} disabled={!account || !testTo}>
                 Send to me
               </Button>
             </div>
-            <Notice>A test goes out now. Sending hours and limits do not apply.</Notice>
+            <Notice>A test goes out now. It skips the queue, sending hours and limits.</Notice>
           </div>
         )}
       </div>

@@ -31,6 +31,8 @@ pub struct AppState {
     pub fetcher: Arc<crate::net::safe_fetch::SafeFetcher>,
     /// Limits the routes that cost tokens (10 a minute per user).
     pub ai_limiter: Arc<crate::prompting::limit::RateLimiter>,
+    /// Sends a test email at once, outside the queue. Tests replace it with a fake.
+    pub senders: Arc<dyn crate::sending::worker::SenderFactory>,
 }
 
 pub type Clock = Arc<dyn Fn() -> DateTime<Utc> + Send + Sync>;
@@ -38,6 +40,7 @@ pub type Clock = Arc<dyn Fn() -> DateTime<Utc> + Send + Sync>;
 impl AppState {
     pub fn new(pool: PgPool, crypto: Crypto, config: Config) -> Self {
         let passwords = Passwords::new(&crypto);
+        let dry_run = config.dry_run;
         Self {
             pool,
             crypto: Arc::new(crypto),
@@ -51,6 +54,7 @@ impl AppState {
             dns: Arc::new(crate::accounts::dns_check::DnsChecker::default()),
             fetcher: Arc::new(crate::net::safe_fetch::SafeFetcher::default()),
             ai_limiter: Arc::new(crate::prompting::limit::RateLimiter::default()),
+            senders: Arc::new(crate::sending::worker::RealSenders { dry_run }),
         }
     }
 
