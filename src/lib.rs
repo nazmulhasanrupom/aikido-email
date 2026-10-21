@@ -7,6 +7,7 @@ pub mod campaigns;
 pub mod config;
 pub mod crypto;
 pub mod db;
+pub mod devtools;
 pub mod docs;
 pub mod email_management;
 pub mod error;

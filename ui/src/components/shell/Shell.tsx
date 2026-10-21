@@ -6,6 +6,8 @@ import { type AuthState, logout, saveThemePreference } from "@/api/auth";
 import { messageOf } from "@/api/errors";
 import { readStored, writeStored } from "@/lib/safe-storage";
 import { applyChoice, isChoice, type ThemeChoice } from "@/theme/theme";
+import { DevPanel } from "@/features/developer/DevPanel";
+import { useDeveloperMode } from "@/features/developer/api";
 import { Banners } from "./Banners";
 import { Palette } from "./Palette";
 import { Sidebar } from "./Sidebar";
@@ -22,6 +24,7 @@ export function Shell({ ws, state }: { ws: string; state: AuthState }) {
   const [collapsed, setCollapsed] = useState(() => readStored(SIDEBAR_KEY) === "collapsed");
   const [drawer, setDrawer] = useState(false);
   const [search, setSearch] = useState(false);
+  const developer = useDeveloperMode();
 
   // The theme of the account follows the user to a new browser.
   const saved = user?.preferences?.theme;
@@ -91,6 +94,7 @@ export function Shell({ ws, state }: { ws: string; state: AuthState }) {
         <main id="content" className="min-h-0 flex-1 overflow-auto">
           <Outlet />
         </main>
+        {developer.on && <DevPanel ws={ws} />}
       </div>
       <Palette open={search} onClose={() => setSearch(false)} ws={ws} />
     </div>

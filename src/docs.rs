@@ -48,6 +48,7 @@ impl Modify for SecurityAddon {
         (name = "generator", description = "Email Generator: AI text for the slots of a step, providers, review, usage. Scope: generator"),
         (name = "integrations", description = "Apps (Reoon email verifier): install, verify leads, send rule. Scope: integrations"),
         (name = "tracking", description = "Open tracking: tracking domains, campaign settings, previews, open numbers. Scope: tracking. The image routes `/i/...` and `/p/...` need no key"),
+        (name = "dev", description = "Developer tools: live log, SQL console, tables, controls. Scope: admin (owner and admin)"),
         (name = "admin", description = "API keys. Scope: admin"),
         (name = "auth", description = "Web login, first-boot setup, invites. No key needed"),
         (name = "users", description = "Web users, sessions, team. Needs a web session"),
@@ -93,6 +94,7 @@ pub fn api_router(state: AppState) -> (axum::Router<AppState>, utoipa::openapi::
         .merge(crate::verify_reoon::routes::router(state.clone()))
         .merge(crate::prompting::routes::router(state.clone()))
         .merge(crate::tracking::routes::router(state.clone()))
+        .merge(crate::devtools::routes::router(state.clone()))
         .merge(crate::reports::routes::router(state.clone()))
         .merge(crate::admin::routes::router(state.clone()))
         .merge(crate::users::routes::public_router())
@@ -110,6 +112,7 @@ pub fn app(state: AppState) -> Router {
         .route("/openapi.json", get(move || async move { Json(spec) }))
         .merge(Scalar::with_url("/docs", api))
         .fallback(crate::web::fallback)
+        .layer(axum::middleware::from_fn(crate::devtools::log_requests))
         .layer(axum::extract::DefaultBodyLimit::max(25 * 1024 * 1024))
         .layer(tower_http::cors::CorsLayer::permissive())
         .layer(tower_http::timeout::TimeoutLayer::with_status_code(

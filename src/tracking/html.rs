@@ -376,6 +376,92 @@ pub fn find_last_text(doc: &Doc<'_>, needle: &str) -> Option<TextMatch> {
     None
 }
 
+/// The marks that can be the last character of an email.
+pub const END_MARKS: [char; 7] = ['.', ',', '!', '?', ';', ':', '…'];
+
+/// What `find_end_mark` found.
+#[derive(Debug, PartialEq)]
+pub struct EndMark {
+    /// The mark to draw: the last character of the email if it is a mark, else a full stop.
+    pub mark: char,
+    /// The place to cut (the old mark) or to insert at (a full stop that is added).
+    pub at: TextMatch,
+    /// The text node the mark sits in or follows. Its style is the style of the mark.
+    pub style_node: usize,
+    /// `true` when the email already ended with this mark and it is replaced.
+    pub replaces: bool,
+}
+
+/// Cut trailing white space and `&nbsp;` off a piece of raw text. Returns the length that is left.
+fn trimmed_len(raw: &str) -> usize {
+    let mut s = raw;
+    loop {
+        let t = s.trim_end();
+        let t = t.strip_suffix("&nbsp;").unwrap_or(t);
+        if t.len() == s.len() {
+            return t.len();
+        }
+        s = t;
+    }
+}
+
+/// The very end of the email. If the last visible character is a mark (`. , ! ? ; : …`), that mark is the place to put
+/// the tracker. If it is anything else, a full stop is added right after it (after the link, when the end of the
+/// email is the text of a link, so the dot is not part of the link).
+pub fn find_end_mark(doc: &Doc<'_>) -> Option<EndMark> {
+    let (idx, start, stop) = last_text(doc)?;
+    let last = doc.html[start..stop].chars().next_back()?;
+    if END_MARKS.contains(&last) {
+        let from = stop - last.len_utf8();
+        return Some(EndMark { mark: last, at: TextMatch { spans: vec![(idx, from, stop)] }, style_node: idx, replaces: true });
+    }
+    Some(append_at_end(doc, idx, stop, '.'))
+}
+
+/// Always add `mark` at the very end of the email, right after the last visible text (after the link, when the email
+/// ends with the text of a link). An existing mark at the end is left as it is.
+pub fn find_end_append(doc: &Doc<'_>, mark: char) -> Option<EndMark> {
+    let (idx, _, stop) = last_text(doc)?;
+    Some(append_at_end(doc, idx, stop, mark))
+}
+
+/// The last visible text node that holds something besides white space: `(token, start, end of its last visible character)`.
+fn last_text(doc: &Doc<'_>) -> Option<(usize, usize, usize)> {
+    for idx in visible_text_nodes(doc).into_iter().rev() {
+        let Tok::Text { start, end } = doc.toks[idx] else { continue };
+        let len = trimmed_len(&doc.html[start..end]);
+        if len > 0 {
+            return Some((idx, start, start + len));
+        }
+    }
+    None
+}
+
+fn append_at_end(doc: &Doc<'_>, idx: usize, stop: usize, mark: char) -> EndMark {
+    let pos = outermost_link_end(doc, idx).unwrap_or(stop);
+    EndMark { mark, at: TextMatch { spans: vec![(idx, pos, pos)] }, style_node: idx, replaces: false }
+}
+
+/// If the text node is inside a link, the byte position just after the end tag of the outermost link.
+fn outermost_link_end(doc: &Doc<'_>, text_idx: usize) -> Option<usize> {
+    let link = doc.ancestors(text_idx).into_iter().filter(|&a| doc.element(a).is_some_and(|(n, _)| n == "a")).last()?;
+    let mut depth = 0;
+    for (i, t) in doc.toks.iter().enumerate().skip(link) {
+        match t {
+            Tok::Open { name, self_closing: false, .. } if name == "a" => depth += 1,
+            Tok::Close { name, end, .. } if name == "a" => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(*end);
+                }
+            }
+            _ => {}
+        }
+        let _ = i;
+    }
+    None
+}
+
 /// Put `replacement` where the match starts and cut the matched text out of every node it touches.
 pub fn replace_match(html: &str, m: &TextMatch, replacement: &str) -> String {
     let mut out = String::with_capacity(html.len() + replacement.len());
@@ -445,6 +531,55 @@ mod tests {
     fn not_found_gives_none() {
         assert!(cut("<p>Hello</p>", "Nazmul Hasan").is_none());
         assert!(cut("<p>Hello</p>", "").is_none());
+    }
+
+    fn end(html: &str) -> Option<(char, bool, String)> {
+        let doc = Doc::parse(html);
+        let e = find_end_mark(&doc)?;
+        Some((e.mark, e.replaces, replace_match(html, &e.at, "[IMG]")))
+    }
+
+    #[test]
+    fn a_last_mark_is_replaced() {
+        assert_eq!(end("<p>Thanks for your time.</p>").unwrap(), ('.', true, "<p>Thanks for your time[IMG]</p>".to_string()));
+        assert_eq!(end("<p>Talk soon!</p>\n").unwrap(), ('!', true, "<p>Talk soon[IMG]</p>\n".to_string()));
+        assert_eq!(end("<p>Any questions?&nbsp; </p>").unwrap().0, '?');
+        assert_eq!(end("<div>Best,</div>").unwrap(), (',', true, "<div>Best[IMG]</div>".to_string()));
+    }
+
+    #[test]
+    fn with_no_mark_a_full_stop_is_added_at_the_end() {
+        assert_eq!(end("<p>Thanks</p>").unwrap(), ('.', false, "<p>Thanks[IMG]</p>".to_string()));
+        // the text node holds the trailing space; the dot goes right after the last letter
+        assert_eq!(end("<p>Thanks  </p>").unwrap().2, "<p>Thanks[IMG]  </p>");
+    }
+
+    #[test]
+    fn the_end_of_the_email_is_the_last_text_not_the_last_tag() {
+        let html = "<p>Hi.</p><table><tr><td>Nazmul</td></tr></table><p style=\"x\"><a href=\"u\">unsubscribe here</a></p><!-- end -->";
+        let (mark, replaces, out) = end(html).unwrap();
+        assert_eq!((mark, replaces), ('.', false));
+        // after the link, not inside it
+        assert!(out.ends_with("unsubscribe here</a>[IMG]</p><!-- end -->"), "{out}");
+    }
+
+    #[test]
+    fn a_hyphen_is_always_added_at_the_very_end() {
+        let add = |html: &str| {
+            let doc = Doc::parse(html);
+            let e = find_end_append(&doc, '-')?;
+            Some((e.mark, e.replaces, replace_match(html, &e.at, "[IMG]")))
+        };
+        assert_eq!(add("<p>Thanks.</p>").unwrap(), ('-', false, "<p>Thanks.[IMG]</p>".to_string()));
+        assert_eq!(add("<p>Thanks</p><p><a href=\"u\">unsubscribe</a></p>").unwrap().2, "<p>Thanks</p><p><a href=\"u\">unsubscribe</a>[IMG]</p>");
+        assert!(add("<html><head></head><body> </body></html>").is_none());
+    }
+
+    #[test]
+    fn the_end_mark_ignores_the_head_and_empty_text() {
+        assert_eq!(end("<html><head><title>x.</title></head><body><p>Hello</p></body></html>").unwrap().2, "<html><head><title>x.</title></head><body><p>Hello[IMG]</p></body></html>");
+        assert!(end("<html><head></head><body> </body></html>").is_none());
+        assert!(end("<img src=\"https://a.com/a.png\">").is_none());
     }
 
     #[test]

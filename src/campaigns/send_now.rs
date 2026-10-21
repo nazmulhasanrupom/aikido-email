@@ -140,6 +140,7 @@ async fn send_now(State(st): State<AppState>, ApiPath((id, lead_id)): ApiPath<(U
             }
         }
     }
+    tracing::info!(campaign_id = %id, %lead_id, %job_id, "send now clicked");
     let (job_status, step, error): (String, Option<i32>, Option<String>) =
         sqlx::query_as("SELECT status::text, step_number, last_error FROM send_jobs WHERE id = $1").bind(job_id).fetch_one(&st.pool).await?;
     let status = match job_status.as_str() {

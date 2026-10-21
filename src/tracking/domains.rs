@@ -296,6 +296,7 @@ async fn advance_inner(st: &AppState, id: Uuid, step: Step) -> anyhow::Result<()
         sqlx::query("UPDATE tracking_domains SET cname_target = $2 WHERE id = $1").bind(id).bind(&target).execute(&st.pool).await?;
     }
     let answer = st.cname.cname(&host).await;
+    tracing::debug!(%host, ?answer, status = ?row.status, "tracking domain checked");
     match verdict(&answer, &host, &target) {
         Verdict::Unknown => {
             sqlx::query("UPDATE tracking_domains SET last_checked_at = $2 WHERE id = $1").bind(id).bind(now).execute(&st.pool).await?;
@@ -308,6 +309,9 @@ async fn advance_inner(st: &AppState, id: Uuid, step: Step) -> anyhow::Result<()
                 Status::NotConnected => (Status::NotConnected, None),
             };
             let msg = if matches!(row.status, Status::Connected | Status::Checking) { format!("The CNAME record was removed or changed. {msg}") } else { msg };
+            if status != row.status {
+                tracing::warn!(%host, from = ?row.status, to = ?status, reason = %msg, "tracking domain status changed");
+            }
             sqlx::query("UPDATE tracking_domains SET status = $2, error_message = $3, last_checked_at = $4, check_until = COALESCE($5, check_until) WHERE id = $1")
                 .bind(id)
                 .bind(status)
@@ -327,6 +331,9 @@ async fn found(st: &AppState, row: &Row, host: &str, step: Step, now: DateTime<U
     let managed = st.config.tracking.https_addr.is_some();
     if !managed {
         // your own reverse proxy serves HTTPS: nothing for us to wait for
+        if row.status != Status::Connected {
+            tracing::info!(%host, "tracking domain connected (CNAME found, no certificate needed here)");
+        }
         sqlx::query("UPDATE tracking_domains SET status = 'connected', error_message = NULL, last_checked_at = $2, cert_attempts = 0 WHERE id = $1").bind(id).bind(now).execute(&st.pool).await?;
         return Ok(());
     }

@@ -34,6 +34,7 @@ import { Route as WWsCampaignsIdRouteImport } from './routes/w.$ws.campaigns.$id
 import { Route as WWsSettingsIndexRouteImport } from './routes/w.$ws.settings.index'
 import { Route as WWsSettingsAccountRouteImport } from './routes/w.$ws.settings.account'
 import { Route as WWsSettingsApiRouteImport } from './routes/w.$ws.settings.api'
+import { Route as WWsSettingsDeveloperRouteImport } from './routes/w.$ws.settings.developer'
 import { Route as WWsSettingsIntegrationsRouteImport } from './routes/w.$ws.settings.integrations'
 import { Route as WWsSettingsNotificationsRouteImport } from './routes/w.$ws.settings.notifications'
 import { Route as WWsSettingsSendingRouteImport } from './routes/w.$ws.settings.sending'
@@ -176,6 +177,11 @@ const WWsSettingsApiRoute = WWsSettingsApiRouteImport.update({
   path: '/api',
   getParentRoute: () => WWsSettingsRoute,
 } as any)
+const WWsSettingsDeveloperRoute = WWsSettingsDeveloperRouteImport.update({
+  id: '/developer',
+  path: '/developer',
+  getParentRoute: () => WWsSettingsRoute,
+} as any)
 const WWsSettingsIntegrationsRoute = WWsSettingsIntegrationsRouteImport.update({
   id: '/integrations',
   path: '/integrations',
@@ -283,6 +289,7 @@ export interface FileRoutesByFullPath {
   '/w/$ws/campaigns/$id': typeof WWsCampaignsIdRouteWithChildren
   '/w/$ws/settings/account': typeof WWsSettingsAccountRoute
   '/w/$ws/settings/api': typeof WWsSettingsApiRoute
+  '/w/$ws/settings/developer': typeof WWsSettingsDeveloperRoute
   '/w/$ws/settings/integrations': typeof WWsSettingsIntegrationsRouteWithChildren
   '/w/$ws/settings/notifications': typeof WWsSettingsNotificationsRoute
   '/w/$ws/settings/sending': typeof WWsSettingsSendingRoute
@@ -320,6 +327,7 @@ export interface FileRoutesByTo {
   '/w/$ws/apps/reoon': typeof WWsAppsReoonRoute
   '/w/$ws/settings/account': typeof WWsSettingsAccountRoute
   '/w/$ws/settings/api': typeof WWsSettingsApiRoute
+  '/w/$ws/settings/developer': typeof WWsSettingsDeveloperRoute
   '/w/$ws/settings/notifications': typeof WWsSettingsNotificationsRoute
   '/w/$ws/settings/sending': typeof WWsSettingsSendingRoute
   '/w/$ws/settings/team': typeof WWsSettingsTeamRoute
@@ -363,6 +371,7 @@ export interface FileRoutesById {
   '/w/$ws/campaigns/$id': typeof WWsCampaignsIdRouteWithChildren
   '/w/$ws/settings/account': typeof WWsSettingsAccountRoute
   '/w/$ws/settings/api': typeof WWsSettingsApiRoute
+  '/w/$ws/settings/developer': typeof WWsSettingsDeveloperRoute
   '/w/$ws/settings/integrations': typeof WWsSettingsIntegrationsRouteWithChildren
   '/w/$ws/settings/notifications': typeof WWsSettingsNotificationsRoute
   '/w/$ws/settings/sending': typeof WWsSettingsSendingRoute
@@ -408,6 +417,7 @@ export interface FileRouteTypes {
     | '/w/$ws/campaigns/$id'
     | '/w/$ws/settings/account'
     | '/w/$ws/settings/api'
+    | '/w/$ws/settings/developer'
     | '/w/$ws/settings/integrations'
     | '/w/$ws/settings/notifications'
     | '/w/$ws/settings/sending'
@@ -445,6 +455,7 @@ export interface FileRouteTypes {
     | '/w/$ws/apps/reoon'
     | '/w/$ws/settings/account'
     | '/w/$ws/settings/api'
+    | '/w/$ws/settings/developer'
     | '/w/$ws/settings/notifications'
     | '/w/$ws/settings/sending'
     | '/w/$ws/settings/team'
@@ -487,6 +498,7 @@ export interface FileRouteTypes {
     | '/w/$ws/campaigns/$id'
     | '/w/$ws/settings/account'
     | '/w/$ws/settings/api'
+    | '/w/$ws/settings/developer'
     | '/w/$ws/settings/integrations'
     | '/w/$ws/settings/notifications'
     | '/w/$ws/settings/sending'
@@ -695,6 +707,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WWsSettingsApiRouteImport
       parentRoute: typeof WWsSettingsRoute
     }
+    '/w/$ws/settings/developer': {
+      id: '/w/$ws/settings/developer'
+      path: '/developer'
+      fullPath: '/w/$ws/settings/developer'
+      preLoaderRoute: typeof WWsSettingsDeveloperRouteImport
+      parentRoute: typeof WWsSettingsRoute
+    }
     '/w/$ws/settings/integrations': {
       id: '/w/$ws/settings/integrations'
       path: '/integrations'
@@ -897,6 +916,7 @@ const WWsSettingsIntegrationsRouteWithChildren =
 interface WWsSettingsRouteChildren {
   WWsSettingsAccountRoute: typeof WWsSettingsAccountRoute
   WWsSettingsApiRoute: typeof WWsSettingsApiRoute
+  WWsSettingsDeveloperRoute: typeof WWsSettingsDeveloperRoute
   WWsSettingsIntegrationsRoute: typeof WWsSettingsIntegrationsRouteWithChildren
   WWsSettingsNotificationsRoute: typeof WWsSettingsNotificationsRoute
   WWsSettingsSendingRoute: typeof WWsSettingsSendingRoute
@@ -907,6 +927,7 @@ interface WWsSettingsRouteChildren {
 const WWsSettingsRouteChildren: WWsSettingsRouteChildren = {
   WWsSettingsAccountRoute: WWsSettingsAccountRoute,
   WWsSettingsApiRoute: WWsSettingsApiRoute,
+  WWsSettingsDeveloperRoute: WWsSettingsDeveloperRoute,
   WWsSettingsIntegrationsRoute: WWsSettingsIntegrationsRouteWithChildren,
   WWsSettingsNotificationsRoute: WWsSettingsNotificationsRoute,
   WWsSettingsSendingRoute: WWsSettingsSendingRoute,

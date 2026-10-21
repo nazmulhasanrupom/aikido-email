@@ -107,8 +107,9 @@ pub async fn record_open(st: &AppState, token: &str, job: Uuid, campaign: Option
     .bind(now)
     .execute(&st.pool)
     .await;
-    if let Err(e) = res {
-        tracing::warn!(error = %e, "could not save an open");
+    match res {
+        Ok(_) => tracing::info!(%job, proxy = ?kind.map(|k| k.as_str()), "email open saved"),
+        Err(e) => tracing::warn!(error = %e, "could not save an open"),
     }
 }
 

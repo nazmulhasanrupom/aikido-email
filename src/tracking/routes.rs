@@ -230,6 +230,38 @@ async fn text_preview(st: &AppState, id: Uuid, m: &Merged) -> ApiResult<PreviewR
     })
 }
 
+async fn end_mark_preview(st: &AppState, id: Uuid, m: &Merged, hyphen: bool) -> ApiResult<PreviewReply> {
+    let email = first_step_html(st, id).await?;
+    let found = email.as_deref().and_then(|h| if hyphen { super::send::prepare_hyphen(h, None) } else { super::send::prepare_end_mark(h, None) });
+    let (style, source) = match (m.style_mode, &m.manual) {
+        (Mode::Manual, Some(ms)) => {
+            ms.validate().map_err(|e| ApiError::unprocessable("invalid_manual_style", e))?;
+            (ms.to_style(), "manual")
+        }
+        (Mode::Manual, None) => return Err(ApiError::unprocessable("manual_style_required", "Set the font, size and color for Manual style.")),
+        (Mode::Auto, _) => match &found {
+            Some((_, s, _)) => (s.clone(), "email"),
+            None => (TextStyle::default(), "default"),
+        },
+    };
+    let mark = found.as_ref().map(|f| f.2.clone()).unwrap_or_else(|| if hyphen { "-".into() } else { ".".into() });
+    let r = render::render_text(&mark, &style).map_err(|e| ApiError::unprocessable("invalid_text", e))?;
+    Ok(PreviewReply {
+        tracker_type: Some(if hyphen { TrackerType::HyphenImage } else { TrackerType::EndMarkImage }),
+        image: Some(data_url("image/png", &r.png)),
+        width: Some(r.width),
+        height: Some(r.height),
+        style: Some(StyleView::from(&style)),
+        style_source: Some(source.into()),
+        message: Some(if hyphen {
+            "A hyphen is added at the very end of each finished email, after the footer and the signature.".to_string()
+        } else {
+            format!("The last mark of each finished email is used. In the first email it is \"{mark}\". The footer and the signature are added when the email is sent, so it can differ.")
+        }),
+        ..Default::default()
+    })
+}
+
 async fn signature_preview(st: &AppState, id: Uuid, m: &Merged, refresh: bool) -> ApiResult<PreviewReply> {
     let mut reply = PreviewReply { tracker_type: Some(TrackerType::SignatureImage), ..Default::default() };
     let Some(email) = first_step_html(st, id).await? else {
@@ -283,6 +315,8 @@ async fn preview(State(st): State<AppState>, ApiPath(id): ApiPath<Uuid>, body: a
     let reply = match m.tracker {
         Some(TrackerType::SignatureImage) => signature_preview(&st, id, &m, false).await?,
         Some(TrackerType::TextImage) => text_preview(&st, id, &m).await?,
+        Some(TrackerType::EndMarkImage) => end_mark_preview(&st, id, &m, false).await?,
+        Some(TrackerType::HyphenImage) => end_mark_preview(&st, id, &m, true).await?,
         None => return Err(ApiError::unprocessable("tracker_required", "Pick a tracker type first: text_image or signature_image.")),
     };
     Ok(ApiJson(reply))

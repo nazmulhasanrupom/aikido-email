@@ -112,8 +112,12 @@ pub async fn tick(engine: &FollowupEngine) -> anyhow::Result<TickReport> {
 pub async fn run(engine: Arc<FollowupEngine>) {
     tracing::info!("follow-up scheduler started");
     loop {
-        if let Err(e) = tick(&engine).await {
-            tracing::error!(error = %format!("{e:#}"), "follow-up tick failed");
+        match tick(&engine).await {
+            Ok(r) if r != TickReport::default() => tracing::info!(
+                queued = r.queued, finished = r.finished, stopped = r.stopped, failed = r.failed, waiting = r.waiting, resumed = r.resumed, stalled = r.stalled, "follow-up tick"
+            ),
+            Ok(_) => {}
+            Err(e) => tracing::error!(error = %format!("{e:#}"), "follow-up tick failed"),
         }
         let secs = match engine.state.pool.acquire().await {
             Ok(mut c) => repo::load_settings(&mut c).await.map(|s| s.tick_secs).unwrap_or(30),

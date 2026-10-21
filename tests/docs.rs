@@ -226,6 +226,16 @@ const EXPECTED: &[(&str, &str, Option<&str>)] = &[
     ("get", "/v1/reports/accounts", Some("campaigns")),
     // open tracking: the API (scope `tracking`) and the public image routes
     ("post", "/v1/campaigns/{id}/leads/{lead_id}/send-now", Some("campaigns")),
+    // developer tools (owner and admin)
+    ("get", "/v1/dev/logs", Some("admin")),
+    ("delete", "/v1/dev/logs", Some("admin")),
+    ("get", "/v1/dev/log-filter", Some("admin")),
+    ("put", "/v1/dev/log-filter", Some("admin")),
+    ("post", "/v1/dev/sql", Some("admin")),
+    ("get", "/v1/dev/tables", Some("admin")),
+    ("get", "/v1/dev/tables/{name}", Some("admin")),
+    ("get", "/v1/dev/info", Some("admin")),
+    ("post", "/v1/dev/actions/{name}", Some("admin")),
     ("get", "/v1/tracking/domains", Some("tracking")),
     ("put", "/v1/tracking/domains/{id}", Some("tracking")),
     ("post", "/v1/tracking/domains/{id}/check", Some("tracking")),

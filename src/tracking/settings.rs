@@ -18,6 +18,10 @@ pub enum TrackerType {
     TextImage,
     /// The first image that is not in a link is served from the tracking domain.
     SignatureImage,
+    /// The last punctuation mark at the end of the email becomes the tracker image (a full stop is added if there is none).
+    EndMarkImage,
+    /// A hyphen image is added at the very end of the email.
+    HyphenImage,
 }
 
 impl TrackerType {
@@ -25,12 +29,16 @@ impl TrackerType {
         match self {
             TrackerType::TextImage => "text_image",
             TrackerType::SignatureImage => "signature_image",
+            TrackerType::EndMarkImage => "end_mark_image",
+            TrackerType::HyphenImage => "hyphen_image",
         }
     }
     pub fn parse(s: &str) -> Option<Self> {
         match s {
             "text_image" => Some(TrackerType::TextImage),
             "signature_image" => Some(TrackerType::SignatureImage),
+            "end_mark_image" => Some(TrackerType::EndMarkImage),
+            "hyphen_image" => Some(TrackerType::HyphenImage),
             _ => None,
         }
     }
@@ -196,6 +204,11 @@ pub fn validate(b: &SettingsBody) -> ApiResult<()> {
                 if b.text_value.as_deref().is_none_or(|t| t.trim().is_empty()) {
                     return Err(bad("text_required", "Type the text to replace, for example the name in your signature."));
                 }
+                if b.style_mode == Some(Mode::Manual) && b.manual_style.is_none() {
+                    return Err(bad("manual_style_required", "Set the font, size and color for Manual style."));
+                }
+            }
+            Some(TrackerType::EndMarkImage | TrackerType::HyphenImage) => {
                 if b.style_mode == Some(Mode::Manual) && b.manual_style.is_none() {
                     return Err(bad("manual_style_required", "Set the font, size and color for Manual style."));
                 }

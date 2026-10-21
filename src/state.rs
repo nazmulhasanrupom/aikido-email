@@ -33,6 +33,8 @@ pub struct AppState {
     pub ai_limiter: Arc<crate::prompting::limit::RateLimiter>,
     /// Sends a test email at once, outside the queue. Tests replace it with a fake.
     pub senders: Arc<dyn crate::sending::worker::SenderFactory>,
+    /// The log ring and filter of the developer panel.
+    pub dev: Arc<crate::devtools::Dev>,
     /// Looks up the CNAME of a tracking domain. Tests replace it with a fake.
     pub cname: Arc<dyn crate::tracking::dns::CnameResolver>,
     /// The certificates of the tracking domains, for the HTTPS listener.
@@ -61,6 +63,7 @@ impl AppState {
             fetcher: Arc::new(crate::net::safe_fetch::SafeFetcher::default()),
             ai_limiter: Arc::new(crate::prompting::limit::RateLimiter::default()),
             senders: Arc::new(crate::sending::worker::RealSenders { dry_run }),
+            dev: crate::devtools::Dev::detached(),
             cname: Arc::new(crate::tracking::dns::SystemCname::default()),
             certs: Arc::new(crate::tracking::tls::CertStore::default()),
             learned_site_url: Arc::new(RwLock::new(None)),

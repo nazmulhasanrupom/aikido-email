@@ -251,6 +251,7 @@ All settings are environment variables. Put them in `.env` (development) or in y
 | `AIKIDO_FOLLOWUPS_ENABLED` | `true` | `false`: this copy skips the follow-up scheduler |
 | `AIKIDO_LEADS_ENABLED` | `true` | `false`: this copy skips the CSV import worker |
 | `AIKIDO_GENERATOR_ENABLED` | `true` | `false`: this copy writes no AI text |
+| `AIKIDO_DEV_TOOLS` | `true` | `false` turns the developer tools (live log, SQL console) off for everyone |
 | `AIKIDO_TRACKING_ENABLED` | `true` | `false`: this copy does not check tracking domains or renew certificates |
 
 Set the `*_ENABLED` switches to `false` on a second server copy to split the work.
@@ -351,11 +352,21 @@ Prompts take every lead variable (`{{first_name|there}}`, custom fields, `{{send
 
 1. Turn it on. The page lists one tracking domain for each sending domain (default `media.acme.com`).
 2. Add the **CNAME** record it shows (type `CNAME`, name `media`, value = your server host) in your DNS provider. The server checks every 5 minutes (for 72 hours), then gets a free HTTPS certificate.
-3. When every domain is green, pick **Text to image** (a name in your signature becomes an image of the same text) or **Signature image** (the first image that is not in a link is served from your domain).
+3. When every domain is green, pick **Full stop** (the last punctuation mark at the end of the email becomes the tracker, a full stop is added if there is none; hardly visible in dark mode), **Text to image** (a name in your signature becomes an image of the same text) a **Hyphen** (a small `-` image added at the very end), or **Signature image** (the first image that is not in a link is served from your domain).
 
 Server setup: set `AIKIDO_TRACKING_CNAME_TARGET` (default: the host of `AIKIDO_PUBLIC_URL`). To let the server get the certificates itself, set `AIKIDO_TRACKING_HTTPS_ADDR` (port 443, or a high port mapped to 443) and `AIKIDO_TRACKING_HTTP_ADDR` (port 80, for the Let's Encrypt check). Without them, your own reverse proxy must serve HTTPS for the tracking hosts, and a domain turns green when its CNAME is found. Try Let's Encrypt staging first: `AIKIDO_ACME_DIRECTORY=https://acme-staging-v02.api.letsencrypt.org/directory`. Details: `docs/API.md`, section 26.
 
+**Host the tracking domain with HTTPS.** Green in the app only means the CNAME was found. The tracking host (for example `media.yourdomain.com`) must also open over HTTPS on your server, or the image will not load and no opens are counted. Use a CNAME only, no A record. **In Coolify:** open the Aikido app, go to **Configuration → General**, and add the host to **Domains** after the ones you have, separated by a comma (`https://app.example.com,https://media.yourdomain.com`), with port `8080`. Save and redeploy. If the domain is on Cloudflare, set the record to **DNS only** (grey cloud) until the certificate works. Check with `https://media.yourdomain.com/i/test.png` (a blank page, no error). Do this once for each tracking host. Other hosting: serve the host over HTTPS and send it to the Aikido port.
+
 Opens from Apple Mail Privacy Protection, the Google image proxy and security scanners are marked. A lead with only such opens shows **Maybe opened**.
+
+### Developer mode
+
+**Settings → Developer** (owner and admin, off by default) shows a panel at the bottom of the app that you can drag to resize:
+
+- **Logs:** a live log of what the server does (requests, sends and failures, follow-ups, replies, imports, AI calls, tracking). Search, filter by level, pause, copy a line or all shown lines, and change how much detail the server writes.
+- **SQL:** run SQL on the database. Read only by default; you can preview changes (rolled back) or run and save them. Raw access: take a backup first.
+- **Tools:** version, uptime, database size, counts of queued, stuck and failed work, and buttons to run a part of the server now.
 
 ## 🌐 Deploy to production
 

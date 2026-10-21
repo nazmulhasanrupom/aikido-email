@@ -186,6 +186,7 @@ pub async fn ingest(
         .execute(&mut *tx)
         .await?;
     tx.commit().await?;
+    tracing::info!(account_id = %account.id, message_id = %id, label = ?c.label, matched = m.job.is_some(), method = ?m.method, actions = actions.len(), "inbound email stored");
     Ok(Ingested::Stored { id, label: c.label, actions: actions.len() })
 }
 

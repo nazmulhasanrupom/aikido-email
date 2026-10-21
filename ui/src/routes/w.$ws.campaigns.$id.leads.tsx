@@ -39,6 +39,7 @@ import {
 } from "@/features/leads/grid";
 import { ListToCampaign } from "@/features/leads/ImportFlow";
 import { ImportModal } from "@/features/leads/ImportModal";
+import { ManualLeadModal } from "@/features/leads/ManualLead";
 import { STATUSES, useReoon } from "@/features/reoon/api";
 import { VerifyPill } from "@/features/reoon/parts";
 import { OpenPill } from "@/features/tracking/parts";
@@ -104,7 +105,7 @@ function CampaignLeads() {
   const onlyMissing = filter === "missing";
   const byRule = reoon.installed && filter === "rule";
   const [picked, setPicked] = useState<Set<string>>(new Set());
-  const [menu, setMenu] = useState<null | "list" | "import">(null);
+  const [menu, setMenu] = useState<null | "list" | "import" | "manual">(null);
   const [listId, setListId] = useState("");
   const pickedList = lists.data?.find((l) => l.id === listId);
   const leads = useInfiniteQuery({
@@ -263,9 +264,16 @@ function CampaignLeads() {
           <Button variant="secondary" onClick={() => setMenu("list")}>
             Add from a list
           </Button>
-          <Button variant="secondary" onClick={() => setMenu("import")}>
-            Import CSV
-          </Button>
+          <MenuRoot>
+            <MenuTrigger className="inline-flex h-9 items-center gap-1.5 rounded-(--radius-control) border border-border px-3.5 text-sm font-medium hover:bg-surface-2">
+              Add Leads
+              <ChevronDown size={14} aria-hidden="true" />
+            </MenuTrigger>
+            <MenuContent align="end">
+              <MenuItem onSelect={() => setMenu("manual")}>Manual entry</MenuItem>
+              <MenuItem onSelect={() => setMenu("import")}>CSV upload</MenuItem>
+            </MenuContent>
+          </MenuRoot>
           <a
             className="inline-flex h-9 items-center rounded-(--radius-control) border border-border px-3.5 text-sm font-medium hover:bg-surface-2"
             href={`/v1/leads/export.csv?campaign_id=${id}`}
@@ -279,7 +287,7 @@ function CampaignLeads() {
       {leads.isPending && <Skeleton />}
       {leads.isError && <ErrorNote error={leads.error} />}
       {leads.data && rows.length === 0 && (
-        <EmptyState text="No leads here yet. Add leads from a list or import a CSV file." />
+        <EmptyState text="No leads here yet. Add leads from a list, import a CSV file or enter one by hand." />
       )}
       {rows.length > 0 && (
         <Table>
@@ -507,6 +515,14 @@ function CampaignLeads() {
           </p>
         </div>
       </Modal>
+      <ManualLeadModal
+        open={menu === "manual"}
+        onClose={() => {
+          setMenu(null);
+          refresh();
+        }}
+        campaignId={id}
+      />
       <ImportModal
         open={menu === "import"}
         onClose={() => {

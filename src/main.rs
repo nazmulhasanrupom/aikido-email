@@ -127,9 +127,7 @@ async fn sync_imap(email: &str) -> Res<()> {
 // ---------- the server ----------
 
 async fn serve() -> anyhow::Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
-        .init();
+    let dev = aikido_email::devtools::init_logging();
     let cfg = Config::from_env()?;
     let pool = db::connect(&cfg.database_url).await?;
     db::migrate(&pool).await?;
@@ -159,7 +157,8 @@ async fn serve() -> anyhow::Result<()> {
         tracing::warn!("AIKIDO_PUBLIC_URL is plain HTTP on another host: web logins are refused. Use HTTPS.");
     }
 
-    let state = AppState::new(pool, crypto, cfg.clone());
+    let mut state = AppState::new(pool, crypto, cfg.clone());
+    state.dev = dev;
     state.load_site_url().await?;
     if cfg.public_url.is_none() {
         match state.site_url() {

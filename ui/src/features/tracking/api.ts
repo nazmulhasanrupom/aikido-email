@@ -24,7 +24,7 @@ export interface ManualStyle {
   italic: boolean;
 }
 
-export type TrackerType = "text_image" | "signature_image";
+export type TrackerType = "text_image" | "signature_image" | "end_mark_image" | "hyphen_image";
 export type Mode = "auto" | "manual";
 
 export interface TrackingSettings {

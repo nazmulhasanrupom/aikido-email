@@ -22,6 +22,7 @@ function SettingsLayout() {
             ? [
                 { to: "/w/$ws/settings/team", params: p, label: "Team" },
                 { to: "/w/$ws/settings/sending", params: p, label: "Sending" },
+                { to: "/w/$ws/settings/developer", params: p, label: "Developer" },
               ]
             : []),
         ]}

@@ -118,7 +118,7 @@ export function TrackingSection({ campaignId }: { campaignId: string }) {
       {form.enabled && (
         <>
           <Domains domains={s.domains} campaignId={campaignId} />
-          <div className="grid gap-3 md:grid-cols-2">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             <TrackerCard
               title="Text to image"
               locked={!s.trackers_unlocked}
@@ -185,6 +185,68 @@ export function TrackingSection({ campaignId }: { campaignId: string }) {
                   previewIt.mutate({
                     tracker_type: "text_image",
                     text_value: form.text_value,
+                    style_mode: form.style_mode,
+                    manual_style: form.style_mode === "manual" ? manual : null,
+                  })
+                }
+              />
+            </TrackerCard>
+            <TrackerCard
+              title="Full stop"
+              locked={!s.trackers_unlocked}
+              active={form.tracker_type === "end_mark_image"}
+              onPick={() => pick("end_mark_image")}
+              text="The last punctuation mark at the very end of the email becomes the tracker. If the email ends with no mark, a full stop is added. It is tiny, so it hardly shows in dark mode. If it does not load, most mail apps show nothing."
+            >
+              <Select
+                label="Style"
+                value={form.style_mode}
+                onChange={(v) => set({ style_mode: v as Mode })}
+                options={[
+                  { value: "auto", label: "Auto: copy the style of the last text" },
+                  { value: "manual", label: "Manual" },
+                ]}
+              />
+              {form.style_mode === "manual" && (
+                <p className="text-xs text-muted">Uses the font, size and color set under Text to image.</p>
+              )}
+              <PreviewBox
+                shown={form.tracker_type === "end_mark_image" ? preview : null}
+                busy={previewIt.isPending}
+                onPreview={() =>
+                  previewIt.mutate({
+                    tracker_type: "end_mark_image",
+                    style_mode: form.style_mode,
+                    manual_style: form.style_mode === "manual" ? manual : null,
+                  })
+                }
+              />
+            </TrackerCard>
+            <TrackerCard
+              title="Hyphen"
+              locked={!s.trackers_unlocked}
+              active={form.tracker_type === "hyphen_image"}
+              onPick={() => pick("hyphen_image")}
+              text="A small hyphen (-) image is added at the very end of the email, after the footer. It is tiny, so it hardly shows in dark mode. If it does not load, most mail apps show nothing."
+            >
+              <Select
+                label="Style"
+                value={form.style_mode}
+                onChange={(v) => set({ style_mode: v as Mode })}
+                options={[
+                  { value: "auto", label: "Auto: copy the style of the last text" },
+                  { value: "manual", label: "Manual" },
+                ]}
+              />
+              {form.style_mode === "manual" && (
+                <p className="text-xs text-muted">Uses the font, size and color set under Text to image.</p>
+              )}
+              <PreviewBox
+                shown={form.tracker_type === "hyphen_image" ? preview : null}
+                busy={previewIt.isPending}
+                onPreview={() =>
+                  previewIt.mutate({
+                    tracker_type: "hyphen_image",
                     style_mode: form.style_mode,
                     manual_style: form.style_mode === "manual" ? manual : null,
                   })
@@ -354,6 +416,7 @@ function Domains({ domains, campaignId }: { domains: DomainView[]; campaignId: s
         Each sending domain needs its own tracking subdomain. Add the CNAME record in your DNS
         provider. We check every 5 minutes and get the HTTPS certificate for you.
       </p>
+      <HostingNote />
       <Table>
         <Head cols={["Domain", "Tracking host", "Status", ""]} />
         <tbody>
@@ -362,6 +425,41 @@ function Domains({ domains, campaignId }: { domains: DomainView[]; campaignId: s
           ))}
         </tbody>
       </Table>
+    </div>
+  );
+}
+
+/** Green here means the CNAME was found. The tracking host must also be served over HTTPS by your own hosting. */
+function HostingNote() {
+  return (
+    <div className="flex flex-col gap-2 rounded-(--radius-control) border border-warning/40 bg-warning/10 p-3 text-sm">
+      <p>
+        <strong>The tracking host must open over HTTPS on your server.</strong> Green here only means the CNAME was found. Add each tracking host (for example{" "}
+        <code>media.yourdomain.com</code>) to the place where Aikido runs, with a valid HTTPS certificate. If you skip this, the image does not load and no opens are counted. The reader sees
+        the alt text instead. Use a CNAME only, no A record.
+      </p>
+      <details>
+        <summary className="cursor-pointer font-medium">How to do it in Coolify</summary>
+        <ol className="mt-2 list-decimal space-y-1 pl-5">
+          <li>
+            Open the Aikido app, then <strong>Configuration → General</strong>.
+          </li>
+          <li>
+            In <strong>Domains</strong>, add the tracking host after the ones you have, separated by a comma. For example:{" "}
+            <code>https://app.example.com,https://media.yourdomain.com</code>
+          </li>
+          <li>
+            Keep the port at <code>8080</code>. Click <strong>Save</strong>, then <strong>Redeploy</strong>. Coolify makes the HTTPS certificate.
+          </li>
+          <li>
+            If the domain is on Cloudflare, set the <code>media</code> record to <strong>DNS only</strong> (grey cloud) until the certificate works.
+          </li>
+          <li>
+            Check: open <code>https://media.yourdomain.com/i/test.png</code>. A blank page with no error means it works.
+          </li>
+        </ol>
+        <p className="mt-2 text-muted">Do this once for each tracking host. Other hosting: serve the host over HTTPS and send it to the Aikido port (8080).</p>
+      </details>
     </div>
   );
 }

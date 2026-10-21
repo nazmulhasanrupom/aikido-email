@@ -87,8 +87,12 @@ pub async fn tick(st: &AppState) -> Result<TickReport, sqlx::Error> {
 pub async fn run(st: AppState, cancel: CancellationToken) {
     tracing::info!("campaign feeder started");
     loop {
-        if let Err(e) = tick(&st).await {
-            tracing::error!(error = %e, "feeder tick failed");
+        match tick(&st).await {
+            Ok(r) if r.enrolled + r.skipped + r.completed + r.stuck > 0 => {
+                tracing::info!(campaigns = r.campaigns, enrolled = r.enrolled, skipped = r.skipped, completed = r.completed, stuck = r.stuck, "campaign feeder tick")
+            }
+            Ok(_) => {}
+            Err(e) => tracing::error!(error = %e, "feeder tick failed"),
         }
         let secs = load_settings(&st.pool).await.map(|s| s.feeder_tick_secs).unwrap_or(60);
         tokio::select! {

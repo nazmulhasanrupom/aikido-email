@@ -33,6 +33,28 @@ pub fn prepare_text(html: &str, text: &str, manual: Option<&TextStyle>) -> Optio
     Some((m, style))
 }
 
+/// Type 3, the part that needs no database: the mark at the end of the email, the style to draw it in, and the place.
+pub fn prepare_end_mark(html: &str, manual: Option<&TextStyle>) -> Option<(html::TextMatch, TextStyle, String)> {
+    let doc = Doc::parse(html);
+    let e = html::find_end_mark(&doc)?;
+    let style = match manual {
+        Some(s) => s.clone(),
+        None => read_style(&doc, e.style_node),
+    };
+    Some((e.at, style, e.mark.to_string()))
+}
+
+/// Type 4: a hyphen added at the very end of the email, in the style of the last text.
+pub fn prepare_hyphen(html: &str, manual: Option<&TextStyle>) -> Option<(html::TextMatch, TextStyle, String)> {
+    let doc = Doc::parse(html);
+    let e = html::find_end_append(&doc, '-')?;
+    let style = match manual {
+        Some(s) => s.clone(),
+        None => read_style(&doc, e.style_node),
+    };
+    Some((e.at, style, e.mark.to_string()))
+}
+
 /// The new HTML with a tracker in it, or `None` when the email goes out as it is. `html` is the final HTML of a job
 /// that has an HTML body.
 pub async fn apply(st: &AppState, job: &Job, account: &EmailAccount, html: &str) -> Option<String> {
@@ -50,6 +72,7 @@ pub async fn apply(st: &AppState, job: &Job, account: &EmailAccount, html: &str)
     let tracker = row.tracker()?;
     match try_apply(st, job, account, html, &row, tracker, campaign_id).await {
         Ok(new_html) => {
+            tracing::info!(job_id = %job.id, %campaign_id, tracker = ?tracker.as_str(), "tracker inserted");
             if row.warning.is_some() {
                 let _ = sqlx::query("UPDATE tracking_settings SET warning = NULL, warning_at = NULL WHERE campaign_id = $1").bind(campaign_id).execute(&st.pool).await;
             }
@@ -94,6 +117,19 @@ async fn try_apply(st: &AppState, job: &Job, account: &EmailAccount, html: &str,
             let token = save_token(st, job, campaign_id, &asset.id).await?;
             let tag = render::img_tag(&format!("https://{host}/i/{token}.png"), &text, &assets::as_rendered(&asset));
             Ok(html::replace_match(html, &m, &tag))
+        }
+        TrackerType::EndMarkImage | TrackerType::HyphenImage => {
+            let manual = match row.style_mode() {
+                Mode::Manual => Some(row.manual().ok_or("the manual style is missing")?.to_style()),
+                Mode::Auto => None,
+            };
+            let prepared = if tracker == TrackerType::HyphenImage { prepare_hyphen(html, manual.as_ref()) } else { prepare_end_mark(html, manual.as_ref()) };
+            let (at, style, mark) = prepared.ok_or("the email has no text to end with")?;
+            let asset = assets::text_asset(st, &mark, &style).await?;
+            let token = save_token(st, job, campaign_id, &asset.id).await?;
+            // an empty alt (not a space) marks the image as decoration: if it does not load, most mail apps show nothing, not a broken-image icon
+            let tag = render::img_tag(&format!("https://{host}/i/{token}.png"), "", &assets::as_rendered(&asset));
+            Ok(html::replace_match(html, &at, &tag))
         }
         TrackerType::SignatureImage => {
             let found = match row.image_mode() {
@@ -147,6 +183,28 @@ mod tests {
         let out = html::replace_match(html, &m, "<img>");
         assert!(out.starts_with("<p>Hi Nazmul Hasan,</p>"), "the first match stays: {out}");
         assert!(out.ends_with("<b><img></b></div>"), "{out}");
+    }
+
+    #[test]
+    fn the_end_mark_takes_the_style_of_the_last_text() {
+        let html = r#"<p>Hi,</p><div style="font-family: Georgia; font-size: 16px; color: #333333">Best regards.</div>"#;
+        let (at, style, mark) = prepare_end_mark(html, None).unwrap();
+        assert_eq!(mark, ".");
+        assert_eq!((style.font.as_str(), style.size, style.color.as_str()), ("Georgia", 16.0, "#333333"));
+        assert_eq!(html::replace_match(html, &at, "<img>"), r#"<p>Hi,</p><div style="font-family: Georgia; font-size: 16px; color: #333333">Best regards<img></div>"#);
+        let manual = TextStyle { color: "#ff0000".into(), ..TextStyle::default() };
+        assert_eq!(prepare_end_mark(html, Some(&manual)).unwrap().1.color, "#ff0000");
+        assert!(prepare_end_mark("<img src=\"x\">", None).is_none());
+    }
+
+    #[test]
+    fn the_hyphen_is_added_after_the_last_text_even_when_it_ends_with_a_mark() {
+        let html = r#"<div style="color: #333333">See you soon.</div>"#;
+        let (at, style, mark) = prepare_hyphen(html, None).unwrap();
+        assert_eq!(mark, "-");
+        assert_eq!(style.color, "#333333");
+        assert_eq!(html::replace_match(html, &at, "<img>"), r#"<div style="color: #333333">See you soon.<img></div>"#);
+        assert!(prepare_hyphen("<img src=\"x\">", None).is_none());
     }
 
     #[test]

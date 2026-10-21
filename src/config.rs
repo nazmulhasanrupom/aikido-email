@@ -35,6 +35,8 @@ pub struct Config {
     pub trust_proxy: bool,
     /// Open tracking: the public tracking server and its certificates.
     pub tracking: TrackingConfig,
+    /// `AIKIDO_DEV_TOOLS=false` turns the developer tools (logs, SQL console) off for everyone.
+    pub dev_tools: bool,
     /// Keys set by the operator (`AIKIDO_<SCOPE>_API_KEY`).
     pub env_api_keys: HashMap<Scope, String>,
 }
@@ -124,6 +126,7 @@ impl Config {
             generator_enabled: parse_or("AIKIDO_GENERATOR_ENABLED", true)?,
             insecure_cookies: parse_or("AIKIDO_INSECURE_COOKIES", false)?,
             trust_proxy: parse_or("AIKIDO_TRUST_PROXY", false)?,
+            dev_tools: parse_or("AIKIDO_DEV_TOOLS", true)?,
             tracking: TrackingConfig {
                 cname_target: opt("AIKIDO_TRACKING_CNAME_TARGET").map(|h| h.trim_end_matches('.').to_ascii_lowercase()),
                 https_addr: opt("AIKIDO_TRACKING_HTTPS_ADDR"),
