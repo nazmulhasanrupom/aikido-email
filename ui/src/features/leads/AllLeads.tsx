@@ -23,6 +23,7 @@ import {
 } from "@/components/ui";
 import { STATUSES, useReoon } from "@/features/reoon/api";
 import { VerifyPill } from "@/features/reoon/parts";
+import { OpenPill } from "@/features/tracking/parts";
 import { fmtDate } from "@/lib/format";
 import { CONTACT_STATES, INTERESTS, say } from "@/lib/words";
 import { ImportModal } from "./ImportModal";
@@ -41,12 +42,14 @@ const BASE_COLS: GridCol[] = [
   { id: "trigger_verified", label: "Trigger verified" },
   { id: "contact_state", label: "State" },
   { id: "interest", label: "Interest" },
+  { id: "opened", label: "Opened" },
   { id: "verification", label: "Email check" },
   { id: "tags", label: "Tags" },
   { id: "created_at", label: "Created" },
 ];
 /** Columns that are not edited in the cell. */
 const STATIC: Record<string, (r: S["Lead"]) => React.ReactNode> = {
+  opened: (r) => <OpenPill status={r.open_status} count={r.open_count} />,
   reoon: (r) => <VerifyPill status={r.verification_status} score={r.verification_score} checkedAt={r.verification_checked_at} />,
   contact_state: (r) => say("contact", r.contact_state),
   interest: (r) => (r.interest ? <Pill tone="accent">{say("interest", r.interest)}</Pill> : ""),

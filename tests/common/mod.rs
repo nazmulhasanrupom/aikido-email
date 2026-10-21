@@ -44,6 +44,7 @@ pub fn test_config(env_api_keys: HashMap<Scope, String>) -> Config {
         generator_enabled: false,
         insecure_cookies: false,
         trust_proxy: false,
+        tracking: Default::default(),
         env_api_keys,
     }
 }

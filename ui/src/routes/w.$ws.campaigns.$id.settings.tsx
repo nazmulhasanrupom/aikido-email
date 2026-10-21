@@ -22,6 +22,7 @@ import {
 import { campaignQuery } from "@/features/campaigns/hooks";
 import { reoonSettingsQuery, useReoon } from "@/features/reoon/api";
 import { RuleDialog } from "@/features/reoon/dialogs";
+import { TrackingSection } from "@/features/tracking/TrackingSection";
 import { browserTimezone, timezones } from "@/lib/format";
 import { say } from "@/lib/words";
 
@@ -302,6 +303,8 @@ function Settings() {
           </Button>
         </div>
       </Card>
+
+      <TrackingSection campaignId={id} />
 
       <Card className="flex flex-col gap-2 border-danger/40">
         <h2 className="font-semibold text-danger">Danger</h2>

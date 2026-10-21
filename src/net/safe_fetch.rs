@@ -5,7 +5,7 @@
 //!   IPv6 ULA, the fetch is refused. `169.254.169.254` (cloud metadata) is link local, so it is covered.
 //! - The connection goes to the address that was checked (`resolve_to_addrs`), so there is no second DNS lookup. This stops DNS rebinding.
 //! - Redirects are followed by hand (at most 3). Each target is checked the same way.
-//! - Timeout 10 s. Body at most 2 MB. `text/html` and `text/plain` only.
+//! - Timeout 10 s. Body at most 2 MB. `text/html` and `text/plain` only. `fetch_image` takes PNG, JPEG, GIF and WebP, at most 5 MB.
 use async_trait::async_trait;
 use reqwest::Url;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
@@ -14,6 +14,8 @@ use std::time::Duration;
 
 pub const MAX_REDIRECTS: usize = 3;
 pub const MAX_BODY_BYTES: usize = 2 * 1024 * 1024;
+pub const MAX_IMAGE_BYTES: usize = 5 * 1024 * 1024;
+pub const IMAGE_TYPES: [&str; 4] = ["image/png", "image/jpeg", "image/gif", "image/webp"];
 pub const TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Debug, Clone, PartialEq)]
@@ -26,6 +28,8 @@ pub enum FetchError {
     TooLarge,
     /// Not `text/html` or `text/plain`.
     NotText(String),
+    /// Not a PNG, JPEG, GIF or WebP image.
+    NotImage(String),
     Status(u16),
     Network(String),
 }
@@ -36,8 +40,9 @@ impl std::fmt::Display for FetchError {
             Self::BadUrl(m) => write!(f, "This address can not be used: {m}"),
             Self::Blocked(m) => write!(f, "This address is not allowed: {m}"),
             Self::TooManyRedirects => write!(f, "The page redirects too many times."),
-            Self::TooLarge => write!(f, "The page is larger than 2 MB."),
+            Self::TooLarge => write!(f, "The file is too large (2 MB for a page, 5 MB for an image)."),
             Self::NotText(t) => write!(f, "The page is not text or HTML ({t})."),
+            Self::NotImage(t) => write!(f, "The file is not a PNG, JPEG, GIF or WebP image ({t})."),
             Self::Status(s) => write!(f, "The page answered with status {s}."),
             Self::Network(m) => write!(f, "The page could not be loaded: {m}"),
         }
@@ -108,6 +113,20 @@ pub struct Fetched {
     pub body: String,
 }
 
+#[derive(Debug)]
+pub struct FetchedImage {
+    /// The URL after the redirects.
+    pub url: Url,
+    pub content_type: String,
+    pub bytes: Vec<u8>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Kind {
+    Text,
+    Image,
+}
+
 pub struct SafeFetcher {
     resolver: Arc<dyn Resolver>,
     /// Decides which addresses are refused. Tests replace it to reach a local server.
@@ -155,7 +174,19 @@ impl SafeFetcher {
     }
 
     pub async fn fetch(&self, start: &str) -> Result<Fetched, FetchError> {
+        let (url, content_type, bytes) = self.fetch_raw(start, Kind::Text).await?;
+        Ok(Fetched { url, content_type, body: String::from_utf8_lossy(&bytes).into_owned() })
+    }
+
+    /// An image (PNG, JPEG, GIF or WebP, at most 5 MB), with the same safety rules as `fetch`.
+    pub async fn fetch_image(&self, start: &str) -> Result<FetchedImage, FetchError> {
+        let (url, content_type, bytes) = self.fetch_raw(start, Kind::Image).await?;
+        Ok(FetchedImage { url, content_type, bytes })
+    }
+
+    async fn fetch_raw(&self, start: &str, kind: Kind) -> Result<(Url, String, Vec<u8>), FetchError> {
         let mut url = Url::parse(start.trim()).map_err(|_| FetchError::BadUrl("not a valid address".into()))?;
+        let max = if kind == Kind::Image { MAX_IMAGE_BYTES } else { MAX_BODY_BYTES };
         for hop in 0..=MAX_REDIRECTS {
             let addr = self.vet(&url).await?;
             let host = url.host_str().unwrap_or_default().trim_start_matches('[').trim_end_matches(']').to_string();
@@ -166,7 +197,8 @@ impl SafeFetcher {
                 .user_agent("Mozilla/5.0 (compatible; AikidoEmailBot/1.0)")
                 .build()
                 .map_err(|e| FetchError::Network(e.to_string()))?;
-            let mut resp = client.get(url.clone()).header("Accept", "text/html,text/plain").send().await.map_err(|e| FetchError::Network(e.without_url().to_string()))?;
+            let accept = if kind == Kind::Image { "image/png,image/jpeg,image/gif,image/webp" } else { "text/html,text/plain" };
+            let mut resp = client.get(url.clone()).header("Accept", accept).send().await.map_err(|e| FetchError::Network(e.without_url().to_string()))?;
             let status = resp.status();
             if status.is_redirection() {
                 let loc = resp.headers().get("location").and_then(|v| v.to_str().ok()).ok_or(FetchError::Status(status.as_u16()))?;
@@ -181,20 +213,26 @@ impl SafeFetcher {
             }
             let content_type = resp.headers().get("content-type").and_then(|v| v.to_str().ok()).unwrap_or("").to_lowercase();
             let essence = content_type.split(';').next().unwrap_or("").trim().to_string();
-            if essence != "text/html" && essence != "text/plain" {
-                return Err(FetchError::NotText(if essence.is_empty() { "no content type".into() } else { essence }));
+            match kind {
+                Kind::Text if essence != "text/html" && essence != "text/plain" => {
+                    return Err(FetchError::NotText(if essence.is_empty() { "no content type".into() } else { essence }));
+                }
+                Kind::Image if !IMAGE_TYPES.contains(&essence.as_str()) => {
+                    return Err(FetchError::NotImage(if essence.is_empty() { "no content type".into() } else { essence }));
+                }
+                _ => {}
             }
-            if resp.content_length().is_some_and(|n| n as usize > MAX_BODY_BYTES) {
+            if resp.content_length().is_some_and(|n| n as usize > max) {
                 return Err(FetchError::TooLarge);
             }
             let mut bytes: Vec<u8> = Vec::new();
             while let Some(chunk) = resp.chunk().await.map_err(|e| FetchError::Network(e.without_url().to_string()))? {
-                if bytes.len() + chunk.len() > MAX_BODY_BYTES {
+                if bytes.len() + chunk.len() > max {
                     return Err(FetchError::TooLarge);
                 }
                 bytes.extend_from_slice(&chunk);
             }
-            return Ok(Fetched { url, content_type: essence, body: String::from_utf8_lossy(&bytes).into_owned() });
+            return Ok((url, essence, bytes));
         }
         Err(FetchError::TooManyRedirects)
     }

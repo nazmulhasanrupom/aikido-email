@@ -42,6 +42,8 @@ pub struct LeadContext {
     pub events: Vec<LeadEvent>,
     /// The emails sent to the lead and the messages that came back (subject and text only), oldest first. Up to 50 of each.
     pub messages: Vec<ContextMessage>,
+    /// Email opens of this lead (open tracking): `opened`, `maybe_opened` (only proxy opens) or `none`.
+    pub opens: crate::tracking::stats::OpenSummary,
 }
 
 /// How much to read. The route uses the defaults; the generator asks for less.
@@ -107,6 +109,7 @@ pub async fn build(conn: &mut PgConnection, id: Uuid, opts: &ContextOpts) -> Res
         messages.push(ContextMessage { direction: "received".into(), at, subject, text: text.as_deref().map(&cut), label: Some(label), step_number: None });
     }
     messages.sort_by_key(|m| m.at);
+    let opens = crate::tracking::stats::lead_summary(conn, id).await?;
     let lead = repo::detail(conn, lead).await?;
-    Ok(Some(LeadContext { lead, fields, events, messages }))
+    Ok(Some(LeadContext { lead, fields, events, messages, opens }))
 }

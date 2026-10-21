@@ -17,6 +17,9 @@ const PROMPT_ONLY = [
   ["lead_notes", "The last 5 notes about the lead"],
 ] as const;
 
+/** The tag of a step email: {{primary_email}}, {{follow_up1}}, {{follow_up2}}, ... */
+export const stepTag = (n: number) => (n === 1 ? "primary_email" : `follow_up${n - 1}`);
+
 const AREA =
   "w-full rounded-(--radius-control) border border-border bg-surface-2 p-3 text-sm leading-relaxed";
 
@@ -24,6 +27,7 @@ const AREA =
 export function AiPanel({
   campaign,
   stepIndex,
+  stepCount,
   userPrompt,
   system,
   onSystem,
@@ -33,6 +37,7 @@ export function AiPanel({
 }: {
   campaign: S["CampaignDetail"];
   stepIndex: number;
+  stepCount: number;
   userPrompt: string;
   system: string;
   onSystem: (v: string) => void;
@@ -132,6 +137,13 @@ export function AiPanel({
             <MenuLabel>Only in prompts</MenuLabel>
             {PROMPT_ONLY.map(([v, help]) => (
               <MenuItem key={v} onSelect={() => insert(`{{${v}}}`)} title={help}>
+                {v}
+              </MenuItem>
+            ))}
+            <MenuSeparator />
+            <MenuLabel>Saved emails of the lead</MenuLabel>
+            {Array.from({ length: stepCount }, (_, i) => stepTag(i + 1)).map((v, i) => (
+              <MenuItem key={v} onSelect={() => insert(`{{${v}}}`)} title={`The saved text of the ${stepName(i + 1)}`}>
                 {v}
               </MenuItem>
             ))}

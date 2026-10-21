@@ -50,6 +50,14 @@ services:
       - AIKIDO_LEADS_API_KEY=${AIKIDO_LEADS_API_KEY:-}
       - AIKIDO_CAMPAIGNS_API_KEY=${AIKIDO_CAMPAIGNS_API_KEY:-}
       - AIKIDO_GENERATOR_API_KEY=${AIKIDO_GENERATOR_API_KEY:-}
+      # Open tracking (README.md, "Open tracking"). To let the server get the certificates itself, publish the two ports
+      # (for example "443:8443" and "80:8081" under `ports:`) and set the two addresses below.
+      - AIKIDO_TRACKING_CNAME_TARGET=${AIKIDO_TRACKING_CNAME_TARGET:-}
+      - AIKIDO_TRACKING_HTTPS_ADDR=${AIKIDO_TRACKING_HTTPS_ADDR:-}
+      - AIKIDO_TRACKING_HTTP_ADDR=${AIKIDO_TRACKING_HTTP_ADDR:-}
+      - AIKIDO_ACME_DIRECTORY=${AIKIDO_ACME_DIRECTORY:-}
+      - AIKIDO_ACME_EMAIL=${AIKIDO_ACME_EMAIL:-}
+      - AIKIDO_TRACKING_API_KEY=${AIKIDO_TRACKING_API_KEY:-}
       # Engine speed and switches (empty means the default)
       - AIKIDO_SCHEDULER_TICK_SECS=${AIKIDO_SCHEDULER_TICK_SECS:-}
       - AIKIDO_MAX_PARALLEL_ACCOUNTS=${AIKIDO_MAX_PARALLEL_ACCOUNTS:-}

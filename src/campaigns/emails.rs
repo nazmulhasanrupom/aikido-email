@@ -542,7 +542,7 @@ pub fn required_names(ctx: &Ctx, prompts: Option<&super::email_ai::Prompts>) -> 
             }
         }
     }
-    names.into_iter().filter(|n| !BUILTINS.contains(&n.as_str()) && !super::email_ai::PROMPT_VARS.contains(&n.as_str())).collect()
+    names.into_iter().filter(|n| !BUILTINS.contains(&n.as_str()) && !super::email_ai::PROMPT_VARS.contains(&n.as_str()) && !super::email_ai::is_step_tag(n)).collect()
 }
 
 /// The names this lead has no value for (and no fallback covers).

@@ -224,11 +224,30 @@ const EXPECTED: &[(&str, &str, Option<&str>)] = &[
     ("patch", "/v1/ui/workspace", Some("admin")),
     ("get", "/v1/reports/daily", Some("campaigns")),
     ("get", "/v1/reports/accounts", Some("campaigns")),
+    // open tracking: the API (scope `tracking`) and the public image routes
+    ("get", "/v1/tracking/domains", Some("tracking")),
+    ("put", "/v1/tracking/domains/{id}", Some("tracking")),
+    ("post", "/v1/tracking/domains/{id}/check", Some("tracking")),
+    ("get", "/v1/campaigns/{id}/tracking", Some("tracking")),
+    ("put", "/v1/campaigns/{id}/tracking", Some("tracking")),
+    ("post", "/v1/campaigns/{id}/tracking/preview", Some("tracking")),
+    ("post", "/v1/campaigns/{id}/tracking/refresh-image", Some("tracking")),
+    ("get", "/v1/campaigns/{id}/opens", Some("tracking")),
+    ("get", "/v1/leads/{id}/opens", Some("tracking")),
+    ("get", "/i/{file}", None),
+    ("get", "/p/{token}", None),
+    ("get", "/.well-known/acme-challenge/{token}", None),
 ];
 
 /// Routes that need no key and no session. Every other route must refuse a call with neither.
 fn is_public(path: &str) -> bool {
-    path == "/health" || path == "/v1/accounts/oauth/{provider}/callback" || path.starts_with("/v1/auth/")
+    path == "/health"
+        || path == "/v1/accounts/oauth/{provider}/callback"
+        || path.starts_with("/v1/auth/")
+        || path.starts_with("/v1/unsubscribe/")
+        || path.starts_with("/i/")
+        || path.starts_with("/p/")
+        || path.starts_with("/.well-known/")
 }
 
 #[sqlx::test]
@@ -264,7 +283,7 @@ async fn every_route_but_the_public_ones_refuses_a_call_with_no_key_and_no_sessi
         if is_public(path) {
             continue;
         }
-        let uri = path.replace("{key}", "x").replace("{provider}", "gmail").replace("{token}", "x").replace("{id}", &uuid::Uuid::now_v7().to_string());
+        let uri = path.replace("{key}", "x").replace("{provider}", "gmail").replace("{token}", "x").replace("{file}", "x").replace("{id}", &uuid::Uuid::now_v7().to_string());
         for method in item.as_object().unwrap().keys() {
             let r = call(&state, &method.to_uppercase(), &uri, None, None).await;
             assert_eq!(r.status, axum::http::StatusCode::UNAUTHORIZED, "{method} {path} answers without any login: {}", r.body);

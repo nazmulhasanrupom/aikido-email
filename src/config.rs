@@ -33,8 +33,40 @@ pub struct Config {
     pub insecure_cookies: bool,
     /// `AIKIDO_TRUST_PROXY=true`: the client IP is the last `X-Forwarded-For` entry. Set it only behind your own proxy.
     pub trust_proxy: bool,
+    /// Open tracking: the public tracking server and its certificates.
+    pub tracking: TrackingConfig,
     /// Keys set by the operator (`AIKIDO_<SCOPE>_API_KEY`).
     pub env_api_keys: HashMap<Scope, String>,
+}
+
+pub const LETS_ENCRYPT: &str = "https://acme-v02.api.letsencrypt.org/directory";
+
+/// Open tracking settings (`AIKIDO_TRACKING_*`, `AIKIDO_ACME_*`).
+#[derive(Clone, Debug)]
+pub struct TrackingConfig {
+    /// `AIKIDO_TRACKING_CNAME_TARGET`: the host that the CNAME of a tracking domain must point to.
+    /// Default: the host of `AIKIDO_PUBLIC_URL`.
+    pub cname_target: Option<String>,
+    /// `AIKIDO_TRACKING_HTTPS_ADDR` (for example `0.0.0.0:443`): a public HTTPS listener for the tracking domains.
+    /// With it, the server gets and renews the certificates itself. Without it, your own reverse proxy must serve
+    /// HTTPS for the tracking domains, and a domain is `connected` as soon as its CNAME is found.
+    pub https_addr: Option<String>,
+    /// `AIKIDO_TRACKING_HTTP_ADDR` (for example `0.0.0.0:80`): plain HTTP. Let's Encrypt checks a domain here (HTTP-01).
+    pub http_addr: Option<String>,
+    /// `AIKIDO_ACME_DIRECTORY`: Let's Encrypt production by default. Use the staging address for tests.
+    pub acme_directory: String,
+    /// `AIKIDO_ACME_EMAIL`: where Let's Encrypt writes about an expiring certificate. Optional.
+    pub acme_email: Option<String>,
+    /// `AIKIDO_TRACKING_ENABLED=false`: this copy does not check domains or renew certificates.
+    pub enabled: bool,
+    /// `AIKIDO_TRACKING_PROXY_CIDRS`: more address ranges (comma separated) that count as Apple Mail Privacy Protection.
+    pub proxy_cidrs: Vec<String>,
+}
+
+impl Default for TrackingConfig {
+    fn default() -> Self {
+        Self { cname_target: None, https_addr: None, http_addr: None, acme_directory: LETS_ENCRYPT.into(), acme_email: None, enabled: true, proxy_cidrs: Vec::new() }
+    }
 }
 
 // A hand-written Debug, so the keys never land in a log by accident.
@@ -92,6 +124,15 @@ impl Config {
             generator_enabled: parse_or("AIKIDO_GENERATOR_ENABLED", true)?,
             insecure_cookies: parse_or("AIKIDO_INSECURE_COOKIES", false)?,
             trust_proxy: parse_or("AIKIDO_TRUST_PROXY", false)?,
+            tracking: TrackingConfig {
+                cname_target: opt("AIKIDO_TRACKING_CNAME_TARGET").map(|h| h.trim_end_matches('.').to_ascii_lowercase()),
+                https_addr: opt("AIKIDO_TRACKING_HTTPS_ADDR"),
+                http_addr: opt("AIKIDO_TRACKING_HTTP_ADDR"),
+                acme_directory: opt("AIKIDO_ACME_DIRECTORY").unwrap_or_else(|| LETS_ENCRYPT.into()),
+                acme_email: opt("AIKIDO_ACME_EMAIL"),
+                enabled: parse_or("AIKIDO_TRACKING_ENABLED", true)?,
+                proxy_cidrs: opt("AIKIDO_TRACKING_PROXY_CIDRS").map(|v| v.split(',').map(|c| c.trim().to_string()).filter(|c| !c.is_empty()).collect()).unwrap_or_default(),
+            },
             env_api_keys,
         })
     }
@@ -106,6 +147,18 @@ impl Config {
         let host = rest.split(['/', ':']).next().unwrap_or("");
         let host = if rest.starts_with('[') { "[::1]" } else { host };
         !self.insecure_cookies && !matches!(host, "localhost" | "127.0.0.1" | "[::1]")
+    }
+
+    /// The host a tracking domain must point to: `AIKIDO_TRACKING_CNAME_TARGET`, else the host of `AIKIDO_PUBLIC_URL`.
+    pub fn tracking_cname_target(&self) -> Option<String> {
+        if let Some(t) = &self.tracking.cname_target {
+            return Some(t.clone());
+        }
+        let rest = self.public_url.as_deref()?.split_once("://")?.1;
+        let authority = rest.split(['/', '?', '#']).next()?;
+        // an IP address cannot be the target of a CNAME
+        let host = authority.split(':').next()?;
+        (!host.is_empty() && !authority.starts_with('[') && host.parse::<std::net::Ipv4Addr>().is_err()).then(|| host.to_ascii_lowercase())
     }
 
     pub fn https(&self) -> bool {

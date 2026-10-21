@@ -59,6 +59,11 @@ unicode-normalization = "0.1.26"
 rust-embed = { version = "8.13.0", features = ["mime-guess", "debug-embed"], optional = true }
 zip = { version = "2", default-features = false, features = ["deflate"] }
 lopdf = "0.45.0"
+ab_glyph = "0.2.32"
+png = "0.18.1"
+instant-acme = { version = "0.8.5", default-features = false, features = ["ring", "hyper-rustls", "rcgen"] }
+x509-parser = "0.18.1"
+pem = "4.0.0"
 
 [dev-dependencies]
 tower = { version = "0.5.3", features = ["util"] }

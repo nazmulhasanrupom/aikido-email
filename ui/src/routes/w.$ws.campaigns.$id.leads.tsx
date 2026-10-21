@@ -41,6 +41,7 @@ import { ListToCampaign } from "@/features/leads/ImportFlow";
 import { ImportModal } from "@/features/leads/ImportModal";
 import { STATUSES, useReoon } from "@/features/reoon/api";
 import { VerifyPill } from "@/features/reoon/parts";
+import { OpenPill } from "@/features/tracking/parts";
 import { fmtDateTime } from "@/lib/format";
 import { say } from "@/lib/words";
 
@@ -54,6 +55,7 @@ const BASE_COLS: GridCol[] = [
   { id: "state", label: "State" },
   { id: "follow", label: "Follow-up" },
   { id: "interest", label: "Interest" },
+  { id: "opened", label: "Opened" },
 ];
 
 const STATES = ["pending", "enrolled", "skipped"] as const;
@@ -330,6 +332,8 @@ function CampaignLeads() {
                         score={r.verification_score}
                         checkedAt={r.verification_checked_at}
                       />
+                    ) : c.id === "opened" ? (
+                      <OpenPill status={r.open_status} count={r.open_count} />
                     ) : c.id === "state" ? (
                       <Pill>{say("campaignLead", r.state)}</Pill>
                     ) : c.id === "follow" ? (

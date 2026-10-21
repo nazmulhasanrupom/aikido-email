@@ -3933,6 +3933,10 @@ export interface components {
             steps_total: number;
             /** Format: date-time */
             verification_checked_at?: string | null;
+            /** @description Real opens of this lead (open tracking). */
+            open_count?: number;
+            /** @description Open tracking: `opened`, `maybe_opened` (only proxy opens) or `none`. */
+            open_status?: string | null;
             /** Format: int32 */
             verification_score?: number | null;
             /** @description The latest Reoon status of this address. Null: not verified, or Reoon is not installed. */
@@ -5210,6 +5214,10 @@ export interface components {
             verification: components["schemas"]["Verification"];
             /** Format: date-time */
             verification_checked_at?: string | null;
+            /** @description Real opens of this lead (open tracking). */
+            open_count?: number;
+            /** @description Open tracking: `opened`, `maybe_opened` (only proxy opens) or `none`. */
+            open_status?: string | null;
             /**
              * Format: int32
              * @description Reoon score 0 to 100 (power mode only).

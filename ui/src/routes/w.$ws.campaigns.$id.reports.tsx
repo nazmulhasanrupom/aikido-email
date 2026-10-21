@@ -5,6 +5,7 @@ import { Card, ErrorNote, Head, Skeleton, Table, TD } from "@/components/ui";
 import { campaignQuery, statsQuery } from "@/features/campaigns/hooks";
 import { ProgressBar, progressOf } from "@/features/campaigns/Progress";
 import { VariantResults } from "@/features/campaigns/VariantResults";
+import { opensQuery } from "@/features/tracking/api";
 import { DailyTrend } from "@/features/reports/DailyChart";
 import { RangePicker, StatCard, useRange } from "@/features/reports/parts";
 import { fmtInt, fmtPct } from "@/lib/format";
@@ -17,6 +18,7 @@ function CampaignReports() {
   const { id, ws } = Route.useParams();
   const [range, setRange] = useRange("30");
   const stats = useQuery(statsQuery(id));
+  const opens = useQuery(opensQuery(id));
   const campaign = useQuery(campaignQuery(id));
   const usage = useQuery({
     queryKey: ["generator", "usage", range.from, range.to],
@@ -54,6 +56,23 @@ function CampaignReports() {
         <StatCard color="var(--warning)" label="Unsubscribes" value={fmtInt(s.unsubscribed)} />
         <StatCard color="var(--danger)" label="Spam complaints" value={fmtInt(s.complained)} />
         <StatCard color="var(--ai)" label="Out of office" value={fmtInt(s.auto_replied)} />
+        {opens.data && opens.data.tracked_leads > 0 && (
+          <>
+            <StatCard color="var(--info)" label="Opened" value={fmtInt(opens.data.opened)} />
+            <StatCard
+              color="var(--warning)"
+              label="Maybe opened"
+              value={fmtInt(opens.data.maybe_opened)}
+              sub="Only Apple, Google proxy or scanner opens"
+            />
+            <StatCard
+              color="var(--success)"
+              label="Open rate"
+              value={fmtPct(opens.data.open_rate)}
+              sub={`${fmtInt(opens.data.repeat_opens)} repeat opens`}
+            />
+          </>
+        )}
       </div>
       <Card>
         <h2 className="font-semibold">Performance trend</h2>

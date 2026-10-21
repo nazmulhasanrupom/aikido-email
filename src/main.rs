@@ -233,6 +233,33 @@ async fn serve() -> anyhow::Result<()> {
         None
     };
 
+    // Open tracking: the domain check loop, the certificates and the public listeners of the tracking domains.
+    let tracking_cancel = tokio_util::sync::CancellationToken::new();
+    let mut tracking_tasks = Vec::new();
+    if cfg.tracking.enabled {
+        tracking_tasks.push(tokio::spawn(aikido_email::tracking::domains::run(state.clone(), tracking_cancel.clone())));
+        if let Some(addr) = cfg.tracking.https_addr.clone() {
+            let (st, c) = (state.clone(), tracking_cancel.clone());
+            tracking_tasks.push(tokio::spawn(async move {
+                if let Err(e) = aikido_email::tracking::tls::serve_https(st, addr, c).await {
+                    tracing::error!(error = %format!("{e:#}"), "the tracking HTTPS listener stopped");
+                }
+            }));
+            tracking_tasks.push(tokio::spawn(aikido_email::tracking::tls::refresh_loop(state.clone(), tracking_cancel.clone())));
+        }
+        if let Some(addr) = cfg.tracking.http_addr.clone() {
+            let (st, c) = (state.clone(), tracking_cancel.clone());
+            tracking_tasks.push(tokio::spawn(async move {
+                if let Err(e) = aikido_email::tracking::tls::serve_http(st, addr, c).await {
+                    tracing::error!(error = %format!("{e:#}"), "the tracking HTTP listener stopped");
+                }
+            }));
+        }
+        if cfg.tracking_cname_target().is_none() {
+            tracing::warn!("open tracking: no CNAME target. Set AIKIDO_TRACKING_CNAME_TARGET (or AIKIDO_PUBLIC_URL with a host name)");
+        }
+    }
+
     let listener = tokio::net::TcpListener::bind(&cfg.bind_addr).await?;
     tracing::info!(addr = %cfg.bind_addr, "listening. API docs at /docs");
     let cancel = engine.cancel.clone();
@@ -241,6 +268,7 @@ async fn serve() -> anyhow::Result<()> {
     let import_cancel_on_stop = import_cancel.clone();
     let generator_cancel = generator_engine.cancel.clone();
     let verify_cancel = verify_engine.cancel.clone();
+    let tracking_cancel_on_stop = tracking_cancel.clone();
     axum::serve(listener, docs::app(state).into_make_service_with_connect_info::<std::net::SocketAddr>())
         .with_graceful_shutdown(async move {
             shutdown_signal().await;
@@ -251,6 +279,7 @@ async fn serve() -> anyhow::Result<()> {
             import_cancel_on_stop.cancel();
             generator_cancel.cancel();
             verify_cancel.cancel();
+            tracking_cancel_on_stop.cancel();
         })
         .await?;
 
@@ -285,6 +314,9 @@ async fn serve() -> anyhow::Result<()> {
         if tokio::time::timeout(Duration::from_secs(130), v).await.is_err() {
             tracing::warn!("verify tick still running after 130 seconds: exiting anyway");
         }
+    }
+    for t in tracking_tasks {
+        let _ = tokio::time::timeout(Duration::from_secs(10), t).await;
     }
     if let Some(p) = reply_poller {
         if tokio::time::timeout(Duration::from_secs(60), p).await.is_err() {

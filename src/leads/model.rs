@@ -128,6 +128,12 @@ pub struct Lead {
     pub verification_score: Option<i32>,
     #[sqlx(skip)]
     pub verification_checked_at: Option<DateTime<Utc>>,
+    /// Open tracking: `opened`, `maybe_opened` (only proxy opens) or `none`. Filled by the list route.
+    #[sqlx(skip)]
+    pub open_status: Option<String>,
+    /// Real opens of this lead (open tracking). Filled by the list route.
+    #[sqlx(skip)]
+    pub open_count: i64,
 }
 
 #[derive(FromRow, Serialize, Clone, Debug, ToSchema)]

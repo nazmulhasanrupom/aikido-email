@@ -154,5 +154,7 @@ pub fn test_lead() -> crate::leads::model::Lead {
         verification_status: None,
         verification_score: None,
         verification_checked_at: None,
+        open_status: None,
+        open_count: 0,
     }
 }

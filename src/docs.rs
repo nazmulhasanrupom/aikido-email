@@ -47,6 +47,7 @@ impl Modify for SecurityAddon {
         (name = "campaigns", description = "Campaigns: a sequence, sender accounts and leads. Scope: campaigns"),
         (name = "generator", description = "Email Generator: AI text for the slots of a step, providers, review, usage. Scope: generator"),
         (name = "integrations", description = "Apps (Reoon email verifier): install, verify leads, send rule. Scope: integrations"),
+        (name = "tracking", description = "Open tracking: tracking domains, campaign settings, previews, open numbers. Scope: tracking. The image routes `/i/...` and `/p/...` need no key"),
         (name = "admin", description = "API keys. Scope: admin"),
         (name = "auth", description = "Web login, first-boot setup, invites. No key needed"),
         (name = "users", description = "Web users, sessions, team. Needs a web session"),
@@ -81,6 +82,7 @@ pub fn api_router(state: AppState) -> (axum::Router<AppState>, utoipa::openapi::
         .merge(crate::accounts::routes::public_router())
         .merge(crate::accounts::routes::router(state.clone()))
         .merge(crate::sending::unsubscribe::public_router())
+        .merge(crate::tracking::server::public_router())
         .merge(crate::sending::routes::router(state.clone()))
         .merge(crate::replies::routes::router(state.clone()))
         .merge(crate::followups::routes::router(state.clone()))
@@ -90,6 +92,7 @@ pub fn api_router(state: AppState) -> (axum::Router<AppState>, utoipa::openapi::
         .merge(crate::integrations::routes::router(state.clone()))
         .merge(crate::verify_reoon::routes::router(state.clone()))
         .merge(crate::prompting::routes::router(state.clone()))
+        .merge(crate::tracking::routes::router(state.clone()))
         .merge(crate::reports::routes::router(state.clone()))
         .merge(crate::admin::routes::router(state.clone()))
         .merge(crate::users::routes::public_router())

@@ -620,6 +620,7 @@ export function Editor({
           <AiPanel
             campaign={campaign}
             stepIndex={Math.min(sel, steps.length - 1)}
+            stepCount={steps.length}
             userPrompt={steps[Math.min(sel, steps.length - 1)]?.ai_user_prompt ?? ""}
             system={aiSystem}
             onSystem={setAiSystem}

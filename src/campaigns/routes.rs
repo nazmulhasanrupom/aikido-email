@@ -704,6 +704,12 @@ pub struct CampaignLeadRow {
     pub verification_score: Option<i32>,
     #[sqlx(skip)]
     pub verification_checked_at: Option<DateTime<Utc>>,
+    /// Open tracking: `opened`, `maybe_opened` (only proxy opens) or `none`.
+    #[sqlx(skip)]
+    pub open_status: Option<String>,
+    /// Real opens of this lead.
+    #[sqlx(skip)]
+    pub open_count: i64,
 }
 
 #[derive(Serialize, ToSchema, sqlx::FromRow)]
@@ -808,7 +814,10 @@ async fn list_campaign_leads(State(st): State<AppState>, ApiPath(id): ApiPath<Uu
     }
     let lead_rows = if needs.is_empty() { Default::default() } else { super::emails::load_leads(&mut conn, &ids).await? };
     let briefs = crate::verify_reoon::auto::briefs(&mut conn, &ids).await?;
+    let opens = crate::tracking::stats::briefs(&mut conn, &ids).await?;
     for l in &mut leads {
+        let (status, count) = opens.get(&l.lead_id).cloned().unwrap_or(("none".into(), 0));
+        (l.open_status, l.open_count) = (Some(status), count);
         if let Some(b) = briefs.get(&l.lead_id) {
             (l.verification_status, l.verification_score, l.verification_checked_at) = (Some(b.status.clone()), b.score, Some(b.checked_at));
         }

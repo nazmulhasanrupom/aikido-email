@@ -395,18 +395,8 @@ async fn test_email(State(st): State<AppState>, ApiPath(id): ApiPath<Uuid>, ApiJ
     if prompts.optimized.is_none() && !prompts.users.contains_key(&b.step) {
         return Err(ApiError::unprocessable("missing_prompt", format!("Step {} has no user prompt.", b.step)));
     }
-    let previous = {
-        let rows: Vec<(i32, String, Option<String>)> = sqlx::query_as(
-            "SELECT step_number, subject, body_text FROM lead_emails WHERE campaign_id = $1 AND lead_id = $2 AND step_number < $3 AND body_text IS NOT NULL AND status IN ('ready', 'review', 'stale', 'sent') ORDER BY step_number",
-        )
-        .bind(id)
-        .bind(b.lead_id)
-        .bind(b.step)
-        .fetch_all(&mut *conn)
-        .await?;
-        rows.into_iter().map(|(n, s, t)| format!("{}:\nSubject: {s}\n{}", if n == 1 { "Primary email".to_string() } else { format!("Follow up {}", n - 1) }, t.unwrap_or_default())).collect::<Vec<_>>().join("\n\n")
-    };
-    let extra = email_ai::Extra { previous_emails: previous, lead_notes: String::new() };
+    let (previous_emails, step_emails) = email_ai::saved_emails(&mut conn, id, b.lead_id, b.step).await?;
+    let extra = email_ai::Extra { previous_emails, step_emails, lead_notes: String::new() };
     let (system, user) = email_ai::build_prompts(&ctx, &prompts, &lead, b.step, &extra).map_err(|m| ApiError::unprocessable("missing_variable", format!("Missing: {}", m.join(", "))))?;
     let (cfg, _) = crate::generator::providers::load_config(&st.pool, &st.crypto, provider.id, settings.max_attempts)
         .await

@@ -451,7 +451,10 @@ async fn list_leads(State(st): State<AppState>, ApiQuery(filter): ApiQuery<LeadF
     };
     let ids: Vec<Uuid> = leads.iter().map(|l| l.id).collect();
     let briefs = crate::verify_reoon::auto::briefs(&mut conn, &ids).await?;
+    let opens = crate::tracking::stats::briefs(&mut conn, &ids).await?;
     for l in &mut leads {
+        let (status, count) = opens.get(&l.id).cloned().unwrap_or(("none".into(), 0));
+        (l.open_status, l.open_count) = (Some(status), count);
         if let Some(b) = briefs.get(&l.id) {
             (l.verification_status, l.verification_score, l.verification_checked_at) = (Some(b.status.clone()), b.score, Some(b.checked_at));
         }

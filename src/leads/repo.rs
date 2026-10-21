@@ -89,6 +89,9 @@ pub async fn detail(conn: &mut PgConnection, mut lead: Lead) -> Result<LeadDetai
     if let Some(b) = crate::verify_reoon::auto::briefs(&mut *conn, &[lead.id]).await?.remove(&lead.id) {
         (lead.verification_status, lead.verification_score, lead.verification_checked_at) = (Some(b.status), b.score, Some(b.checked_at));
     }
+    if let Some((status, count)) = crate::tracking::stats::briefs(&mut *conn, &[lead.id]).await?.remove(&lead.id) {
+        (lead.open_status, lead.open_count) = (Some(status), count);
+    }
     let lists: Vec<ListRef> = sqlx::query_as(
         "SELECT l.id, l.name FROM lead_lists l JOIN lead_list_members m ON m.list_id = l.id WHERE m.lead_id = $1 ORDER BY l.name",
     )
@@ -321,6 +324,8 @@ pub async fn erase(conn: &mut PgConnection, ids: &[Uuid], now: DateTime<Utc>) ->
     .execute(&mut *conn)
     .await?;
 
+    // open tracking: the tokens and the opens of these leads go too
+    crate::tracking::stats::erase_leads(conn, ids).await?;
     // other tables hold the id without a foreign key: do not leave it dangling
     sqlx::query("UPDATE enrollments SET lead_id = NULL WHERE lead_id = ANY($1)").bind(ids).execute(&mut *conn).await?;
     sqlx::query("UPDATE send_jobs SET lead_id = NULL WHERE lead_id = ANY($1)").bind(ids).execute(&mut *conn).await?;

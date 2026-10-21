@@ -1,6 +1,6 @@
 # AIKIDO EMAIL: Progress
 
-Last updated: 2026-10-17 (UI build map phases 1 to 8 complete)
+Last updated: 2026-10-21 (Open tracking built)
 
 ## Status in one line
 
@@ -9,6 +9,7 @@ Lead Management (leads, lists, tags, CSV import and export, email check, campaig
 The Email Generator (an AI writes the `{{ai:slot}}` parts of a step per lead, with a worker, guard, review mode, budgets, two LLM kinds, a sequence writer and a preview) is built, 8 phases.
 Auto Database part 1 (AI column mapping for CSV import: rules, then an AI on the rest, a proposal, a confirm step, saved mappings) is built, 6 phases.
 The web app backend (UI build map phase 1: users, sessions, login, CSRF, UI serving, config, onboarding, alerts, reports) is built. The web app (`ui/`): all 8 phases are built (shell, onboarding, accounts, leads and import, campaigns and editor, follow-ups, inbox, reports, settings, status, search, alerts). 663 Rust tests, 61 UI unit tests and 20 browser tests pass.
+Open tracking (own-domain tracker, Let's Encrypt, text image and signature image) is built: see "Open tracking" at the end. **Not yet tested:** open tracking against real DNS, a real certificate and real mail apps.
 **Not yet tested:** a real Gmail or Outlook send, a real Gmail or Outlook inbox read, and Outlook thread headers on a real mailbox (no live accounts yet). Only mock servers, Mailpit and GreenMail (IMAP) were used.
 **Not yet tested (Email Generator):** a real call to Anthropic, OpenAI or Ollama. Only a mock HTTP server and `FakeLlm` were used. See "Not done, or not verified (Email Generator)".
 
@@ -836,3 +837,70 @@ First built from build map v2 (blocks, checks, HOLD). Then simplified on request
   4. `trigger_verified` can be set to true by an import or the API upsert but only cleared with `PATCH /v1/leads/{id}`.
   5. The campaign Leads tab has no columns for the new lead fields (All leads and the lead drawer have them).
   6. The safe URL fetch was tested with fakes and a local server only, never a real site. The CV reader (`lopdf`) may find no text in a PDF with unusual fonts.
+
+
+## Open tracking (built 2026-10-21, all 8 phases)
+
+Counts email opens without a hidden pixel. The tracker is served from the sender's own domain (CNAME to this server, own HTTPS certificate) and is a normal visible image. Build map: "AIKIDO EMAIL: Open Tracking Build Map". You approved section 15 by asking me to build the map. API: `docs/API.md` section 26. Code: `src/tracking/`, migration `0021_tracking.sql`, UI `ui/src/features/tracking/`.
+
+### The parts
+
+| Part | What it does | Where |
+| --- | --- | --- |
+| Tables | `tracking_domains`, `tracking_settings`, `tracking_assets`, `tracking_tokens`, `email_opens`, `send_jobs.tracking_token`, plus `tracking_acme_account` and `tracking_acme_challenges` | `migrations/0021_tracking.sql` |
+| Domains | A row for each sending domain (made from the accounts), subdomain rules, CNAME check loop (5 min for 72 h, daily when connected), status, lease per row for many copies | `domains.rs`, `dns.rs` |
+| Certificates | Let's Encrypt HTTP-01 with `instant-acme`, account key and certs encrypted (AAD = row id), renew 30 days before the end, retry wait 1 h up to 24 h | `acme.rs` |
+| HTTPS listener | SNI resolver, TLS handshakes in their own tasks, plain HTTP listener for the ACME check | `tls.rs` |
+| Public routes | `/i/{token}.png`, `/p/{token}`, `/.well-known/acme-challenge/{token}`; unknown token gets a 1 px PNG; open saved in the background | `server.rs`, `proxy.rs` |
+| Type 2 | First image outside links (or the manual URL), stored copy, `src` rewrite, no redirect, refresh | `html.rs`, `assets.rs` |
+| Type 1 | Last match of the text across tags, style read (inline, tags, parents, `<style>` blocks), image drawn at 2x, cache per (text, style) | `html.rs`, `style.rs`, `render.rs` |
+| Send hook | After the unsubscribe link and signature, before the MIME. Never stops a send. Warning on the campaign when it skips | `send.rs`, `sending/worker.rs` |
+| API and stats | 9 routes (scope `tracking`), opens in lead context, `open_status` and `open_count` on lead rows | `routes.rs`, `settings.rs`, `stats.rs` |
+| UI | Campaign Settings > Email tracking (domain table with copy buttons and Check now, two tracker cards, preview, Refresh image), Opened, Maybe opened and Open rate cards on the campaign Reports tab, "Opened" column on both lead tables | `ui/src/features/tracking/` |
+
+### Changes to existing code (section 15 of the map)
+
+1. Sending worker: tracker step after `unsubscribe::finish` (so a name in the signature is found), only when the job had an HTML body.
+2. `send_jobs.tracking_token` column (not in the `Job` struct).
+3. Lead tables, lead context and lead detail show opens.
+4. `leads::repo::erase` also deletes the tracking tokens and opens.
+5. Scope `tracking`, key `AIKIDO_TRACKING_API_KEY`. First boot makes 11 keys (`tests/api_keys.rs` updated).
+6. Public listeners: `AIKIDO_TRACKING_HTTPS_ADDR` and `AIKIDO_TRACKING_HTTP_ADDR` (off unless set).
+7. Extra: `SafeFetcher::fetch_image` (PNG, JPEG, GIF, WebP, 5 MB) in `src/net/safe_fetch.rs`; `Config.tracking`; `AppState.cname` and `AppState.certs`.
+
+### Tests
+
+- 58 new pure unit tests pass (`cargo test --lib tracking`; 291 lib tests in all): HTML text match (plain, split across tags, entities, last match, not found, head and comments), style read (inline, tags, parents, `<style>`, important, em, shorthand, default), image draw and cache key, Type 2 find (skips links and 1 px), proxy marking (Google, Apple, extra ranges, fast scanner), subdomain rules, verdict, renew and retry maths, validation, unlock rule.
+- `tests/tracking.rs` (7 DB tests: CNAME found, missing and removed; blocked names; unlock rule; preview; image routes and open logging; send hook, retry keeps the token, warning, red domain, lead erase; campaign numbers) and updated `tests/api_keys.rs` and `tests/docs.rs`. **They compile but were NOT run** (you asked me not to start servers or DB runs). Run them with Docker Postgres.
+- UI: `tsc --noEmit` clean; vitest 94 pass. Biome crashes on this machine (known), not run. No browser test was written.
+
+### Decisions that differ from the map (the code wins)
+
+| Map said | Code does | Why |
+| --- | --- | --- |
+| Crates `cosmic-text` + `tiny-skia`, `lol_html`, `scraper`, `lightningcss` | `ab_glyph` + `png` for the image, a small own HTML reader (`html.rs`) and CSS reader (`style.rs`) | The text is one line, and the email must keep its exact bytes. A parse and serialize would change the HTML. Fewer crates. `instant-acme` (ring), `x509-parser`, `pem` are used as the map says. |
+| Fonts: Arial-like, Helvetica-like, Georgia-like, Verdana-like | 3 bundled families: Liberation Sans (Arial and Helvetica), DejaVu Serif (Georgia and serif), DejaVu Sans (Verdana). 12 font files (about 5 MB) in `src/tracking/fonts/` with their licenses | One file set less. Helvetica and Arial already look the same. |
+| `style="vertical-align:baseline"` | `vertical-align:-Npx` (N = how far the baseline is above the image bottom) | With `baseline` the descenders push the text up. The shift puts the drawn baseline on the text baseline. |
+| Style order: inline, tags, parents, `<style>` blocks | The nearest tag wins; on one tag: tag default, then `<style>` rules, then inline, then `!important` rules | This is what a mail app does. |
+| Tracking tracker type has a value | `tracker_type` is null until picked | The toggle shows the domains before a type is picked. A type needs all domains green. |
+| Cert and key "encrypted" | Same AES-256-GCM, stored as `version + nonce + ciphertext` in one column each | One column, not three. |
+| TLS: `rustls` SNI resolver | Also a mode with no HTTPS listener: when `AIKIDO_TRACKING_HTTPS_ADDR` is not set, a domain is `connected` as soon as the CNAME is found, and your own proxy serves HTTPS | Coolify and similar setups already hold port 443. |
+| One listener on 443 | Config addresses, off by default. HTTP-01 needs a plain HTTP listener too (`AIKIDO_TRACKING_HTTP_ADDR`) | The Docker image runs as a normal user and cannot bind 443; map a high port. |
+| Reserved names | Also blocks names with `track`, `click` or `pixel` in them, and `mail`, `www`, `smtp`, `imap`, `pop`, `mx`, `autodiscover`, `autoconfig`, `webmail` | They look like tracking, or would break mail of the domain. |
+| Scanner: "open within a few seconds of delivery" | 5 seconds after `send_jobs.sent_at`, or any open before `sent_at` is saved | We do not see delivery, only the send. |
+| Apple IP ranges | `17.0.0.0/8` and `2620:149::/32` built in, more by `AIKIDO_TRACKING_PROXY_CIDRS` | Apple Private Relay egress through Cloudflare, Akamai and Fastly is not in the list. |
+| Open rate | `opened leads / leads that got a tracked email` | The map gives no formula. |
+| Lead delete: delete token and open rows | Done in `repo::erase` | As the map says. |
+| Test emails | No tracker (they have no job) | A token needs a send job. |
+
+### Not done, or not verified (open tracking)
+
+- **Real DNS and a real certificate.** The `hickory` CNAME code and the whole ACME flow (`acme.rs`) were never run against a real resolver or a Let's Encrypt server (staging or production). Try staging first: `AIKIDO_ACME_DIRECTORY=https://acme-staging-v02.api.letsencrypt.org/directory`, a real domain, ports 80 and 443 open. Cert issue and renew tests from the map (section 17) are not written; they need a real ACME server.
+- **The HTTPS listener** (`tls.rs`) was only compiled. No client has made a TLS handshake with it. Check that `ConnectInfo` gives the real client IP on it.
+- **How the text image looks** in Gmail, Outlook and Apple Mail (sharpness, dark mode, vertical alignment, blocked images), and the **spam score** with tracking on and off: not checked. Some clients block images by default; then no open is counted.
+- **Style reading is close, not perfect.** It sees only the email HTML. Not read: web fonts, media queries, `:hover` and `[attr]` selectors, child selectors are treated like descendants, `text-transform`.
+- **DB tests were not run** (`tests/tracking.rs`, `tests/api_keys.rs`, `tests/docs.rs`). `tests/docs.rs` was already out of date for routes that came before this build (for example the unsubscribe routes were not in its list), so it may still fail for other reasons.
+- `ui/src/api/schema.d.ts` was edited by hand (`open_status`, `open_count`). The tracking pages use their own types in `features/tracking/api.ts`. Run `pnpm gen:api` when a server may run.
+- A Type 2 image is downloaded at send time the first time (up to 10 s). A failed download sends the email without a tracker.
+- The domain list is shown per campaign; there is no global page for tracking domains in the UI (the API has it: `GET /v1/tracking/domains`).
+- Not built, as the map says: click tracking, Domain Connect, open-based follow-up rules.

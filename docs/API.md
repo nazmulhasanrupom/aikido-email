@@ -1767,7 +1767,7 @@ Rules:
 
 ## 23. AI mode and helpers (`campaigns`, `accounts`, `replies`): UI update map v2, U3 and U4
 
-**AI mode.** `PATCH /v1/campaigns/{id}` with `content_mode: "ai"`. Prompts: `ai_system_prompt` on `PATCH /v1/followups/sequences/{id}` (up to 8000 characters) and `ai_user_prompt` on each step of `PUT .../steps`. A prompt that uses a name no lead field, custom field or fallback covers is refused (`422 missing_variable`). Prompt-only names: `brief`, `previous_emails`, `lead_notes`.
+**AI mode.** `PATCH /v1/campaigns/{id}` with `content_mode: "ai"`. Prompts: `ai_system_prompt` on `PATCH /v1/followups/sequences/{id}` (up to 8000 characters) and `ai_user_prompt` on each step of `PUT .../steps`. A prompt that uses a name no lead field, custom field or fallback covers is refused (`422 missing_variable`). Prompt-only names: `brief`, `previous_emails`, `lead_notes`, and one per step for the saved email of that step: `primary_email` (step 1), `follow_up1` (step 2), `follow_up2`, and so on. An email that is not written yet reads `(not written yet)`.
 
 | Route | What it does |
 | --- | --- |
@@ -1869,3 +1869,50 @@ A campaign has three modes: `template`, `ai` and `optimized` (`PATCH /v1/campaig
 - `POST /v1/campaigns/{id}/emails/generate` queues one row per lead (the first wanted step) and the worker fills all four. `estimate` counts leads. A sent or hand edited email is never replaced; a new sender profile version marks unsent emails `stale`.
 - `POST /v1/campaigns/{id}/emails/test` in this mode answers with `emails`: all four `{step, subject, body}`. Nothing is saved.
 - 10 calls a minute per user for `generate` of a profile (`429 rate_limited`).
+
+## 26. Open tracking (`tracking`)
+
+Count email opens without a hidden pixel. The tracker is a normal visible image served from the **sender's own domain**. Scope `tracking` (11 keys on first boot; an old database gets only the new key). It is off by default (`Campaign settings > Email tracking`).
+
+### How it works
+
+1. **Tracking domain.** One per sending domain (`nazmul@acme.com` gives `acme.com`), made by the server from the connected accounts. The default host is `media.acme.com`. The user adds a CNAME: type `CNAME`, name `media`, value = this server's host (`AIKIDO_TRACKING_CNAME_TARGET`, else the host of `AIKIDO_PUBLIC_URL`).
+2. **Status.** `not_connected` (no CNAME), `checking` (CNAME found, certificate in progress), `connected`, `error` (CNAME removed, or the certificate failed). The DNS is checked every 5 minutes for 72 hours, then it stops (`not_found: true`) until `check`. A connected domain is checked once a day; a certificate is renewed 30 days before it ends. Certificates and keys are encrypted (AES-256-GCM, AAD = the row id).
+3. **Certificates.** With `AIKIDO_TRACKING_HTTPS_ADDR` (for example `0.0.0.0:443`) the server runs a public HTTPS listener with an SNI certificate resolver and gets free certificates from Let's Encrypt (HTTP-01). Let's Encrypt must reach `AIKIDO_TRACKING_HTTP_ADDR` (port 80). Without `AIKIDO_TRACKING_HTTPS_ADDR`, your own reverse proxy serves HTTPS for the tracking hosts (it must send them to the server port; the image routes also answer on the main address) and a domain is `connected` as soon as its CNAME is found.
+4. **Unlock.** A tracker can be picked only when **every** sending domain of the campaign is `connected`. If a domain turns red later, its emails go out without a tracker and the campaign shows a `warning`.
+5. **Two trackers, one per campaign.** All emails of the campaign get it (first emails, follow-ups, manual emails) if they have an HTML part. Plain-text emails get none.
+   - `text_image` (Type 1): the **last** match of `text_value` in the visible text of the final HTML is replaced by `<img src="https://media.acme.com/i/{token}.png" alt="{text}" width height style="vertical-align:-Npx;border:0">`. It matches across tags (`Nazmul <b>Hasan</b>`). `style_mode: auto` copies font, size, color, bold, italic, letter spacing and line height from the HTML (inline styles, `<b>`, `<i>`, `<font>`, parent tags, `<style>` blocks; the nearest tag wins; default Arial 14px `#222222`); `manual` uses `manual_style`. The image is drawn at 2x, transparent PNG, one cached image per (text, style). Three fonts are bundled (Liberation Sans for Arial and Helvetica, DejaVu Serif for Georgia and serif fonts, DejaVu Sans for Verdana); an unknown font gets the closest. Text not found: no tracker.
+   - `signature_image` (Type 2): the `src` of the first image that is not inside a link (`image_mode: auto`) or of the image with `image_source_url` (`manual`) is changed to `https://media.acme.com/p/{token}`. The server downloads the image once (PNG, JPEG, GIF, WebP, at most 5 MB, SSRF-safe fetch) and serves the stored copy. **No redirect.** `refresh-image` downloads it again.
+6. **Order in the send pipeline.** Template, live variables, AI slots, footer, signature and unsubscribe link, then the tracker (on the final HTML), then the MIME. The token is saved in `send_jobs.tracking_token`. It never stops a send.
+
+### Public routes (no key)
+
+| Method | Path | Use |
+| --- | --- | --- |
+| GET | `/i/{token}.png` | Type 1 image |
+| GET | `/p/{token}` | Type 2 image |
+| GET | `/.well-known/acme-challenge/{token}` | Let's Encrypt check |
+
+An unknown token still gets an image (a transparent 1 pixel PNG), never an error. Headers: `Cache-Control: no-cache, no-store, must-revalidate`, `Content-Type`, `Content-Length`. The open is saved in the background (`HEAD` saves nothing). The token is 22 random letters and digits.
+
+**Proxy and scanner opens** (`is_proxy`, `proxy_kind`): `google` (user agent has `GoogleImageProxy`), `apple` (address in `17.0.0.0/8` or `2620:149::/32`, plus `AIKIDO_TRACKING_PROXY_CIDRS`), `scanner` (opened 5 seconds or less after the send, or before the send was saved). A lead's first real open is **Opened**; a lead with only proxy opens is **Maybe opened**; more real opens are **Repeat opens**. Apple Private Relay traffic that leaves through Cloudflare, Akamai or Fastly is not in the built-in list.
+
+### API
+
+| Method | Path | Use |
+| --- | --- | --- |
+| GET | `/v1/tracking/domains` | `{domains}`: each with `host`, `status`, `record {type, name, value}`, `last_checked_at`, `error_message`, `not_found` |
+| PUT | `/v1/tracking/domains/{id}` | `{subdomain}`. Not `track`, `tracking`, `click`, `open`, `pixel` (nor names with `track`, `click`, `pixel`), nor `mail`, `www`, `smtp`... `422 invalid_subdomain`. The domain starts over. |
+| POST | `/v1/tracking/domains/{id}/check` | Check the DNS now; starts the 72 hour window again. A certificate is asked for in the background. |
+| GET | `/v1/campaigns/{id}/tracking` | Settings plus the campaign's `domains` and `trackers_unlocked` |
+| PUT | `/v1/campaigns/{id}/tracking` | Replace the settings: `enabled`, `tracker_type`, `text_value`, `style_mode`, `manual_style {font,size,color,bold,italic}`, `image_mode`, `image_source_url`. `422`: `tracking_domains_not_ready`, `no_sending_domains`, `text_required`, `invalid_manual_style`, `invalid_image_url`, `image_download_failed` |
+| POST | `/v1/campaigns/{id}/tracking/preview` | Optional body (same fields). Type 1: the image as a `data:` URL, the style used and where it came from. Type 2: the image found in the first email. |
+| POST | `/v1/campaigns/{id}/tracking/refresh-image` | Download the Type 2 image again (the copy keeps its id) |
+| GET | `/v1/campaigns/{id}/opens` | `tracked_leads`, `opened`, `maybe_opened`, `open_rate`, `repeat_opens`, `total_opens`, `proxy_opens`, `recent` (`?limit` 1 to 100) |
+| GET | `/v1/leads/{id}/opens` | `{summary, opens}` (last 200) |
+
+`GET /v1/leads/{id}/context` has `opens` (`status`, `opens`, `proxy_opens`, `first_opened_at`, `last_opened_at`). Lead rows (`GET /v1/leads`, `GET /v1/campaigns/{id}/leads`, lead detail) have `open_status` and `open_count`. Deleting a lead (erase plus suppress) deletes its tokens and opens.
+
+### Settings
+
+`AIKIDO_TRACKING_CNAME_TARGET`, `AIKIDO_TRACKING_HTTPS_ADDR`, `AIKIDO_TRACKING_HTTP_ADDR`, `AIKIDO_ACME_DIRECTORY` (Let's Encrypt production by default; use the staging address to try), `AIKIDO_ACME_EMAIL`, `AIKIDO_TRACKING_ENABLED` (`false`: this copy does not check domains), `AIKIDO_TRACKING_PROXY_CIDRS`. See `.env.example`.

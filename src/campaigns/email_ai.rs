@@ -1,7 +1,8 @@
 //! AI mode (UI update map v2, section 4.2): the model writes one email per lead and step from two prompts.
 //!
 //! - The system prompt is one per campaign (`sequences.ai_system_prompt`). The user prompt is one per step
-//!   (`sequence_steps.ai_user_prompt`). Both take every lead variable, plus `{{brief}}`, `{{previous_emails}}`, `{{lead_notes}}`.
+//!   (`sequence_steps.ai_user_prompt`). Both take every lead variable, plus `{{brief}}`, `{{previous_emails}}`, `{{lead_notes}}`,
+//!   and one tag per step for the saved email of that step: `{{primary_email}}`, `{{follow_up1}}`, `{{follow_up2}}`, ...
 //! - The server adds the output rules at the end of the system prompt. The user does not write them.
 //! - The footer is not written by the model. It is added after, like in template mode.
 //! - A run (`lead_email_runs`) puts rows in `lead_emails` with status `writing`. The generator worker claims them
@@ -43,12 +44,22 @@ const MAX_PER_TICK: usize = 2000;
 
 pub const DEFAULT_SYSTEM: &str = "You write short, personal cold emails for {{sender_name}}. Write like a person, not a company. Use only facts that are in the prompt.";
 
+/// The tag of the saved email of a step: `primary_email` for step 1, `follow_up1` for step 2, and so on.
+pub fn step_tag(step: i32) -> String {
+    if step == 1 { "primary_email".into() } else { format!("follow_up{}", step - 1) }
+}
+
+/// Is this the tag of a step email (`primary_email`, `follow_up1`, `follow_up2`, ...)?
+pub fn is_step_tag(name: &str) -> bool {
+    name == "primary_email" || name.strip_prefix("follow_up").is_some_and(|d| !d.is_empty() && !d.starts_with('0') && d.bytes().all(|b| b.is_ascii_digit()))
+}
+
 /// Names a prompt uses that no lead field, custom field or fallback covers.
 pub fn unknown_names(text: &str, defs: &FieldDefs) -> Vec<String> {
     let Ok(t) = Template::parse(text) else { return vec![] };
     t.required()
         .into_iter()
-        .filter(|n| !(BUILTINS.contains(n) || PROMPT_VARS.contains(n) || TEXT_FIELDS.contains(n) || crate::prompting::optimized::is_known(n) || defs.by_key.contains_key(*n)))
+        .filter(|n| !(BUILTINS.contains(n) || PROMPT_VARS.contains(n) || is_step_tag(n) || TEXT_FIELDS.contains(n) || crate::prompting::optimized::is_known(n) || defs.by_key.contains_key(*n)))
         .map(String::from)
         .collect()
 }
@@ -103,6 +114,33 @@ pub async fn load_prompts(conn: &mut PgConnection, ctx: &Ctx) -> Result<Prompts,
 pub struct Extra {
     pub previous_emails: String,
     pub lead_notes: String,
+    /// The saved text of each step email of this lead, by step number.
+    pub step_emails: HashMap<i32, String>,
+}
+
+/// The saved emails of a lead: the text for `{{previous_emails}}` (the steps before `step`) and the text of every step.
+pub async fn saved_emails(conn: &mut PgConnection, campaign_id: Uuid, lead_id: Uuid, step: i32) -> Result<(String, HashMap<i32, String>), sqlx::Error> {
+    let rows: Vec<(i32, String, Option<String>)> = sqlx::query_as(
+        "SELECT step_number, subject, body_text FROM lead_emails
+          WHERE campaign_id = $1 AND lead_id = $2 AND status IN ('ready', 'review', 'stale', 'sent') AND body_text IS NOT NULL
+          ORDER BY step_number",
+    )
+    .bind(campaign_id)
+    .bind(lead_id)
+    .fetch_all(conn)
+    .await?;
+    let mut previous = Vec::new();
+    let mut by_step = HashMap::new();
+    for (n, subject, body) in rows {
+        let subject = if subject.is_empty() { String::new() } else { format!("Subject: {subject}\n") };
+        let text = format!("{subject}{}", body.unwrap_or_default().chars().take(1200).collect::<String>());
+        if n < step {
+            let name = if n == 1 { "Primary email".to_string() } else { format!("Follow up {}", n - 1) };
+            previous.push(format!("{name}:\n{text}"));
+        }
+        by_step.insert(n, text);
+    }
+    Ok((previous.join("\n\n"), by_step))
 }
 
 fn vars_for(ctx: &Ctx, p: &Prompts, lead: &Lead, extra: &Extra) -> Result<Vars, String> {
@@ -113,6 +151,10 @@ fn vars_for(ctx: &Ctx, p: &Prompts, lead: &Lead, extra: &Extra) -> Result<Vars, 
     v.insert("my_business".into(), p.my_business.clone());
     v.insert("previous_emails".into(), if extra.previous_emails.trim().is_empty() { "(none: this is the first email)".into() } else { extra.previous_emails.clone() });
     v.insert("lead_notes".into(), if extra.lead_notes.trim().is_empty() { "(no notes)".into() } else { extra.lead_notes.clone() });
+    for s in &ctx.steps {
+        let text = extra.step_emails.get(&s.step_number).filter(|t| !t.trim().is_empty()).cloned().unwrap_or_else(|| "(not written yet)".into());
+        v.insert(step_tag(s.step_number), text);
+    }
     Ok(v)
 }
 
@@ -513,28 +555,6 @@ pub async fn tick(
     Ok(report)
 }
 
-async fn previous_emails(conn: &mut PgConnection, campaign_id: Uuid, lead_id: Uuid, step: i32) -> Result<String, sqlx::Error> {
-    let rows: Vec<(i32, String, Option<String>)> = sqlx::query_as(
-        "SELECT step_number, subject, body_text FROM lead_emails
-          WHERE campaign_id = $1 AND lead_id = $2 AND step_number < $3 AND status IN ('ready', 'review', 'stale', 'sent') AND body_text IS NOT NULL
-          ORDER BY step_number",
-    )
-    .bind(campaign_id)
-    .bind(lead_id)
-    .bind(step)
-    .fetch_all(conn)
-    .await?;
-    Ok(rows
-        .into_iter()
-        .map(|(n, subject, body)| {
-            let name = if n == 1 { "Primary email".to_string() } else { format!("Follow up {}", n - 1) };
-            let subject = if subject.is_empty() { String::new() } else { format!("Subject: {subject}\n") };
-            format!("{name}:\n{subject}{}", body.unwrap_or_default().chars().take(1200).collect::<String>())
-        })
-        .collect::<Vec<_>>()
-        .join("\n\n"))
-}
-
 async fn lead_notes(conn: &mut PgConnection, lead: &Lead) -> Result<String, sqlx::Error> {
     let mut notes: Vec<String> = Vec::new();
     if let Some(n) = lead.notes.as_deref().map(str::trim).filter(|n| !n.is_empty()) {
@@ -589,7 +609,8 @@ async fn process(state: &crate::state::AppState, client: &dyn LlmClient, provide
                 Err(f) => failure_outcome(f, row.attempts, settings, now),
             };
         }
-        let extra = Extra { previous_emails: previous_emails(&mut conn, row.campaign_id, row.lead_id, row.step_number).await?, lead_notes: lead_notes(&mut conn, &lead).await? };
+        let (previous_emails, step_emails) = saved_emails(&mut conn, row.campaign_id, row.lead_id, row.step_number).await?;
+        let extra = Extra { previous_emails, step_emails, lead_notes: lead_notes(&mut conn, &lead).await? };
         let (system, user) = match build_prompts(&ctx, &prompts, &lead, row.step_number, &extra) {
             Ok(p) => p,
             Err(missing) if missing == ["missing_prompt"] => break 'o Outcome::failed("missing_prompt"),
@@ -718,4 +739,22 @@ async fn save(state: &crate::state::AppState, provider_id: Uuid, row: &Claimed, 
         "failed" => Done::Failed,
         _ => Done::Retry,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn step_tags() {
+        assert_eq!(step_tag(1), "primary_email");
+        assert_eq!(step_tag(2), "follow_up1");
+        assert_eq!(step_tag(5), "follow_up4");
+        for ok in ["primary_email", "follow_up1", "follow_up4", "follow_up12"] {
+            assert!(is_step_tag(ok), "{ok}");
+        }
+        for bad in ["follow_up", "follow_up0", "follow_up01", "follow_up_1", "followup1", "primary"] {
+            assert!(!is_step_tag(bad), "{bad}");
+        }
+    }
 }

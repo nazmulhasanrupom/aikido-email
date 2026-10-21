@@ -54,6 +54,7 @@ You connect your inboxes (Gmail, Outlook or any IMAP/SMTP). You import leads. Yo
 | **Campaigns** | A sequence, a pool of sender inboxes, a set of leads and a daily limit of new leads. Stops colleagues at the same company when one replies. |
 | **Email Generator (AI)** | `{{ai:opener}}` slots filled per lead by Anthropic, OpenAI-compatible APIs or a local model (Ollama). Guard checks, review mode, budgets, preview. |
 | **Optimised mode** | Third way to write emails (next to Template and AI): one prompt writes the first email and 3 follow-ups per lead in one call. A PERSONALIZATION page turns your link, CV and notes into a sender profile the prompt uses. |
+| **Open tracking** | Counts opens without a hidden pixel. The tracker is a normal image served from your own domain (a CNAME like `media.acme.com`, free Let's Encrypt certificate). Text-to-image or signature image. Apple, Google proxy and scanner opens are marked. |
 | **AI column mapping** | Upload any CSV. Rules and an AI map the columns. You confirm before anything is saved. |
 | **Web app** | Setup wizard, accounts, leads, campaigns editor, inbox, reports, settings, status page, alerts, `Ctrl K` search. |
 | **Security** | Secrets encrypted with AES-256-GCM. Scoped API keys (SHA-256 hashed). CSRF protection. Logs never hold tokens or passwords. |
@@ -250,6 +251,7 @@ All settings are environment variables. Put them in `.env` (development) or in y
 | `AIKIDO_FOLLOWUPS_ENABLED` | `true` | `false`: this copy skips the follow-up scheduler |
 | `AIKIDO_LEADS_ENABLED` | `true` | `false`: this copy skips the CSV import worker |
 | `AIKIDO_GENERATOR_ENABLED` | `true` | `false`: this copy writes no AI text |
+| `AIKIDO_TRACKING_ENABLED` | `true` | `false`: this copy does not check tracking domains or renew certificates |
 
 Set the `*_ENABLED` switches to `false` on a second server copy to split the work.
 
@@ -339,9 +341,21 @@ Supported providers: `anthropic`, and any `openai_compatible` server (OpenAI, Op
 
 A campaign has a **content mode**. In `template` mode you write the email once and **Save** fills it for every lead. In `ai` mode you write a **system prompt** (one per campaign) and a **user prompt** (one per step). **Generate** writes one email per lead and step and saves it as a column of that campaign (`Primary email`, `Follow up 1`, ...). What you read is what goes out. A lead edit marks the email **Out of date**; use **Regenerate** to write it again.
 
-Prompts take every lead variable (`{{first_name|there}}`, custom fields, `{{sender_name}}`) and three names that only prompts have: `{{brief}}` (the "About your offer" text), `{{previous_emails}}` (the saved earlier emails of this lead) and `{{lead_notes}}` (the last 5 notes). The server adds the output rules itself (JSON, plain text, no placeholders, a word limit). The campaign **footer** is added after the AI text. The AI never writes it.
+Prompts take every lead variable (`{{first_name|there}}`, custom fields, `{{sender_name}}`) and three names that only prompts have: `{{brief}}` (the "About your offer" text), `{{previous_emails}}` (the saved earlier emails of this lead) `{{lead_notes}}` (the last 5 notes), and one tag per step for the saved email of that step: `{{primary_email}}`, `{{follow_up1}}`, `{{follow_up2}}`, ... A 4th follow up gets `{{follow_up4}}`. The server adds the output rules itself (JSON, plain text, no placeholders, a word limit). The campaign **footer** is added after the AI text. The AI never writes it.
 
 > 🔒 **Privacy in AI mode.** A prompt carries whatever variables you put in it. The guard still blocks an email address or phone number in the **output**, but if you write `{{email}}` or `{{phone}}` in a prompt, that value goes to the AI company. The editor shows a warning chip when you do.
+
+### Open tracking
+
+**Campaigns → Settings → Email tracking** (off by default). Tracking runs on your own domain, so it does not hurt delivery.
+
+1. Turn it on. The page lists one tracking domain for each sending domain (default `media.acme.com`).
+2. Add the **CNAME** record it shows (type `CNAME`, name `media`, value = your server host) in your DNS provider. The server checks every 5 minutes (for 72 hours), then gets a free HTTPS certificate.
+3. When every domain is green, pick **Text to image** (a name in your signature becomes an image of the same text) or **Signature image** (the first image that is not in a link is served from your domain).
+
+Server setup: set `AIKIDO_TRACKING_CNAME_TARGET` (default: the host of `AIKIDO_PUBLIC_URL`). To let the server get the certificates itself, set `AIKIDO_TRACKING_HTTPS_ADDR` (port 443, or a high port mapped to 443) and `AIKIDO_TRACKING_HTTP_ADDR` (port 80, for the Let's Encrypt check). Without them, your own reverse proxy must serve HTTPS for the tracking hosts, and a domain turns green when its CNAME is found. Try Let's Encrypt staging first: `AIKIDO_ACME_DIRECTORY=https://acme-staging-v02.api.letsencrypt.org/directory`. Details: `docs/API.md`, section 26.
+
+Opens from Apple Mail Privacy Protection, the Google image proxy and security scanners are marked. A lead with only such opens shows **Maybe opened**.
 
 ## 🌐 Deploy to production
 
@@ -411,6 +425,7 @@ Authenticate with `Authorization: Bearer <key>`.
 | `leads` | Leads, lists, tags, imports, mapping |
 | `campaigns` | Campaigns |
 | `generator` | AI providers, settings, generations, preview |
+| `tracking` | Tracking domains, campaign tracking settings, open numbers |
 
 The web app uses cookie sessions with CSRF protection instead of keys.
 
@@ -488,6 +503,7 @@ e2e/run.sh                # browser tests (Playwright + Chrome) against a fresh 
 │   ├── leads/             Leads, import/export, MX check, AI column mapping
 │   ├── campaigns/         Campaigns, daily-limit feeder, company stop
 │   ├── generator/         AI email generator: LLM clients, guard, worker
+│   ├── tracking/          Open tracking: domains, certificates, image server, text image
 │   └── docs.rs            OpenAPI spec and /docs page
 ├── migrations/            SQL migrations (run automatically)
 ├── tests/                 Integration tests (real Postgres)
@@ -513,6 +529,7 @@ Built and tested: sending engine, Reply Check, follow-ups, lead management, camp
 - IMAP over TLS on a real server
 - A real Google or Microsoft login popup in a browser
 - Firefox and Safari (only Chrome was tried)
+- Open tracking against real DNS, a real Let's Encrypt certificate, and how the text image looks in Gmail, Outlook and Apple Mail
 
 Please try these on a test account first, and report what you find. `progress.md` lists every decision and open item.
 
