@@ -1916,3 +1916,16 @@ An unknown token still gets an image (a transparent 1 pixel PNG), never an error
 ### Settings
 
 `AIKIDO_TRACKING_CNAME_TARGET`, `AIKIDO_TRACKING_HTTPS_ADDR`, `AIKIDO_TRACKING_HTTP_ADDR`, `AIKIDO_ACME_DIRECTORY` (Let's Encrypt production by default; use the staging address to try), `AIKIDO_ACME_EMAIL`, `AIKIDO_TRACKING_ENABLED` (`false`: this copy does not check domains), `AIKIDO_TRACKING_PROXY_CIDRS`. See `.env.example`.
+
+## 27. Send now (`campaigns`)
+
+| Method | Path | Use |
+| --- | --- | --- |
+| POST | `/v1/campaigns/{id}/leads/{lead_id}/send-now` | Send the next email of the lead at once, with no rules. |
+
+- It makes the job of the next step and marks it `metadata.send_now = true`. The sending engine takes such a job before it looks at any rule (like a test email): no send window, daily cap, gap, same-recipient cooldown, inbox-read safety gate or suppression check. It does not move the account's gap or daily count.
+- It is a **real send**: the unsubscribe link, the signature and the tracker are added, it is on the lead's timeline, and the sequence goes on to the next step (its delay starts now). Clicking again sends the following step at once.
+- A lead that is **not enrolled** (pending or skipped) is enrolled first on an account of the pool (no daily limit) and gets its first email. The normal enroll call still refuses an address on the suppression list.
+- Answer: `{job_id, step_number, status: sent | failed | queued, error}`. `queued` means the account was busy with another email; the job goes out within seconds, with no rules.
+- Errors: `404 lead_not_in_campaign`; `409 no_healthy_account` (a lead to enroll and no connected, unpaused account in the pool), `sequence_ended` (the sequence is stopped, finished or failed: there is no next email), `email_not_ready` (the AI text of the step is not written), `already_sending`, `busy`; `422` (missing variable, or the email could not be made).
+- A paused or disconnected account does not send (the job stays queued until it is back).

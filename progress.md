@@ -904,3 +904,14 @@ Counts email opens without a hidden pixel. The tracker is served from the sender
 - A Type 2 image is downloaded at send time the first time (up to 10 s). A failed download sends the email without a tracker.
 - The domain list is shown per campaign; there is no global page for tracking domains in the UI (the API has it: `GET /v1/tracking/domains`).
 - Not built, as the map says: click tracking, Domain Connect, open-based follow-up rules.
+
+## Send now (2026-10-22)
+
+A "Send now" button at the end of every row of the campaign Leads tab (`ui/src/routes/w.$ws.campaigns.$id.leads.tsx`). It sends the next email of the lead at once, with no rules and no question. API: `POST /v1/campaigns/{id}/leads/{lead_id}/send-now`, `docs/API.md` section 27. Code: `src/campaigns/send_now.rs`.
+
+- How: `followups::scheduler::process_now` makes the job of the next step (it skips the due time, the active-sequence check, the suppression check and the reply/bounce guard) and marks it `metadata.send_now`. The sending queue treats a `send_now` job like a test email: claimed before any rule, and it does not move the gap or the daily count (`IS_TEST_SQL`, `Job::is_test`). Then `process_account` runs for that account. If the account is busy, the job goes out on the next tick, still with no rules.
+- A lead that is not enrolled is enrolled first (normal enroll call, account picked like the feeder does, no daily limit).
+- Real send: unsubscribe link, signature, tracker, timeline, and the sequence goes on.
+- Still refused: an address on the suppression list when the lead is not enrolled yet (the enroll call), a lead whose sequence has ended, a step with AI text not written, a paused or disconnected account.
+- No confirm dialog, as asked. A click cannot be undone.
+- Tests: `send_now_sends_the_next_email_at_once_with_no_rules` in `tests/campaigns.rs` and the route in `tests/docs.rs` compile but were **not run**. UI `tsc` is clean. No browser test.

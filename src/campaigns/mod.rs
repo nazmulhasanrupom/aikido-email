@@ -16,3 +16,4 @@ pub mod email_routes;
 pub mod email_ai;
 pub mod email_opt;
 pub mod extras;
+pub mod send_now;

@@ -78,13 +78,15 @@ pub struct Job {
     pub step_number: Option<i32>,
 }
 
-/// SQL test for a test email: `metadata.test = true`.
-const IS_TEST_SQL: &str = "(metadata->>'test') = 'true'";
+/// SQL test for a job that skips every rule: a test email (`metadata.test = true`) or a "Send now" job (`metadata.send_now = true`).
+const IS_TEST_SQL: &str = "((metadata->>'test') = 'true' OR (metadata->>'send_now') = 'true')";
 
 impl Job {
-    /// A test email (`metadata.test = true`) goes out at once: no window, cap or gap. It does not count as a send.
+    /// A test email (`metadata.test = true`) or a "Send now" job (`metadata.send_now = true`) goes out at once: no window,
+    /// cap, gap, suppression or safety gate. It does not count as a send for the daily cap and the gap.
     pub fn is_test(&self) -> bool {
-        self.metadata.get("test").and_then(Value::as_bool) == Some(true)
+        let flag = |k: &str| self.metadata.get(k).and_then(Value::as_bool) == Some(true);
+        flag("test") || flag("send_now")
     }
 }
 

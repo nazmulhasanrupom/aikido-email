@@ -185,18 +185,30 @@ async fn fail_stalled(pool: &PgPool, now: DateTime<Utc>, max_wait_days: u32) -> 
 
 /// Make the send job of the next step of one due enrollment.
 pub async fn process_due(pool: &PgPool, id: Uuid, now: DateTime<Utc>) -> Result<DueOutcome, sqlx::Error> {
+    process_due_inner(pool, id, now, false).await
+}
+
+/// "Send now": make the job of the next step at once. It does not wait for the due time, and it skips the checks of the
+/// scheduler (an active sequence, a suppressed address, a reply or bounce on an earlier step). The job is marked
+/// `send_now`, so the sending engine sends it with no rules either.
+pub async fn process_now(pool: &PgPool, id: Uuid, now: DateTime<Utc>) -> Result<DueOutcome, sqlx::Error> {
+    process_due_inner(pool, id, now, true).await
+}
+
+async fn process_due_inner(pool: &PgPool, id: Uuid, now: DateTime<Utc>, force: bool) -> Result<DueOutcome, sqlx::Error> {
     let mut tx = pool.begin().await?;
     // 1. Take the row. Another copy that has it, or a row that moved on: nothing to do.
+    let when = if force { "status IN ('active', 'paused')" } else { "status = 'active' AND next_due_at <= $2" };
     let e: Option<Enrollment> = sqlx::query_as(&format!(
         "SELECT {ENROLLMENT_COLS} FROM enrollments
-         WHERE id = $1 AND status = 'active' AND next_due_at <= $2 FOR UPDATE SKIP LOCKED"
+         WHERE id = $1 AND {when} AND ($2::timestamptz IS NOT NULL) FOR UPDATE SKIP LOCKED"
     ))
     .bind(id)
     .bind(now)
     .fetch_optional(&mut *tx)
     .await?;
     let Some(e) = e else { return Ok(DueOutcome::Skipped) };
-    let Some(seq) = repo::get_sequence(&mut tx, e.sequence_id).await?.filter(|s| s.status == SequenceStatus::Active) else {
+    let Some(seq) = repo::get_sequence(&mut tx, e.sequence_id).await?.filter(|s| force || s.status == SequenceStatus::Active) else {
         return Ok(DueOutcome::Skipped);
     };
 
@@ -208,7 +220,7 @@ pub async fn process_due(pool: &PgPool, id: Uuid, now: DateTime<Utc>) -> Result<
     };
 
     // 3. A suppressed address never gets a step.
-    if let Some(reason) = repo::suppression_of(&mut tx, &e.to_email).await? {
+    if let Some(reason) = repo::suppression_of(&mut tx, &e.to_email).await?.filter(|_| !force) {
         stop(&mut tx, &e, "suppressed", json!({ "suppression": reason }), now).await?;
         tx.commit().await?;
         return Ok(DueOutcome::Stopped("suppressed".into()));
@@ -222,7 +234,7 @@ pub async fn process_due(pool: &PgPool, id: Uuid, now: DateTime<Utc>) -> Result<
     .bind(e.id)
     .fetch_optional(&mut *tx)
     .await?;
-    if let Some((replied_at, bounce)) = marked {
+    if let Some((replied_at, bounce)) = marked.filter(|_| !force) {
         let reason = if replied_at.is_some() { Some("reply") } else if bounce.is_some() { Some("bounce_hard") } else { None };
         if let Some(reason) = reason {
             stop(&mut tx, &e, reason, json!({ "found_by": "scheduler_guard" }), now).await?;
@@ -383,7 +395,11 @@ pub async fn process_due(pool: &PgPool, id: Uuid, now: DateTime<Utc>) -> Result<
         idempotency_key: Some(idempotency_key),
         lead_id: e.lead_id,
         campaign_id: seq.campaign_id,
-        metadata: Some(json!({ "sequence_id": e.sequence_id, "enrollment_id": e.id, "step_number": step.step_number })),
+        metadata: Some(if force {
+            json!({ "sequence_id": e.sequence_id, "enrollment_id": e.id, "step_number": step.step_number, "send_now": true })
+        } else {
+            json!({ "sequence_id": e.sequence_id, "enrollment_id": e.id, "step_number": step.step_number })
+        }),
         kind: Some(crate::replies::model::JobKind::Automated),
     };
     let (to_email, domain) = match queue::check_new_job(&new_job) {

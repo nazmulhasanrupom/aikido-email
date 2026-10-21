@@ -136,6 +136,21 @@ function CampaignLeads() {
     onSuccess: refresh,
     onError: (e) => toast.error(messageOf(e)),
   });
+  // "Send now": the next email of the lead goes out at once, with no rules and no question.
+  const sendNow = useMutation({
+    mutationFn: (leadId: string) =>
+      http.post<{ status: "sent" | "failed" | "queued"; step_number: number | null; error: string | null }>(
+        "/v1/campaigns/{id}/leads/{lead_id}/send-now",
+        { path: { id, lead_id: leadId } },
+      ),
+    onSuccess: (r) => {
+      if (r.status === "sent") toast.success("Email sent.");
+      else if (r.status === "queued") toast.success("Email is on its way.");
+      else toast.error(r.error ?? "The email could not be sent.");
+      refresh();
+    },
+    onError: (e) => toast.error(messageOf(e)),
+  });
   const pendingPicked = rows
     .filter((r) => picked.has(r.lead_id) && r.state === "pending")
     .map((r) => r.lead_id);
@@ -286,6 +301,9 @@ function CampaignLeads() {
               ...cols.all.map((c) => <ColumnHeader key={c.id} col={c} />),
               ...(onlyMissing ? ["Fill in"] : []),
               <AddColumn key="add" />,
+              <span key="send" className="sr-only">
+                Send now
+              </span>,
             ]}
           />
           <tbody>
@@ -412,6 +430,18 @@ function CampaignLeads() {
                       </MenuContent>
                     </MenuRoot>
                   )}
+                </td>
+                <td className={TD}>
+                  <Button
+                    variant="secondary"
+                    className="h-7 whitespace-nowrap"
+                    aria-label={`Send now to ${r.email}`}
+                    busy={sendNow.isPending && sendNow.variables === r.lead_id}
+                    disabled={sendNow.isPending}
+                    onClick={() => sendNow.mutate(r.lead_id)}
+                  >
+                    Send now
+                  </Button>
                 </td>
               </tr>
             ))}

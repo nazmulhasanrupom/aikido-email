@@ -1693,3 +1693,37 @@ async fn the_reoon_rule_skips_without_using_the_daily_limit_and_not_installed_is
     let bad = c.api("PATCH", &format!("/v1/campaigns/{camp2}"), Some(json!({ "verification_rule": { "allowed": ["spamtrap"], "allow_not_verified": true } }))).await;
     assert_eq!((bad.status, bad.body["error"]["code"].as_str()), (StatusCode::UNPROCESSABLE_ENTITY, Some("status_not_allowed")));
 }
+
+// =====================================================================================================
+// Send now
+// =====================================================================================================
+
+#[sqlx::test]
+async fn send_now_sends_the_next_email_at_once_with_no_rules(pool: PgPool) {
+    let c = C::new(pool).await;
+    let a = c.account("a@x.test").await;
+    // a closed window: on Sunday no email goes out by the rules
+    c.h.settings(a, json!({ "send_days": [1] })).await;
+    c.h.set_time(utc(2026, 10, 25, 12, 0));
+    let camp = id(&c.campaign(&[a], json!({})).await);
+    let lead = c.lead("ana@acme.com").await;
+    c.add(&camp, &[lead]).await;
+    // a draft campaign, a pending lead, a closed day: it still goes out
+    let uri = format!("/v1/campaigns/{camp}/leads/{lead}/send-now");
+    let r = c.ok("POST", &uri, None).await;
+    assert_eq!((r["status"].as_str(), r["step_number"].as_i64()), (Some("sent"), Some(1)), "{r}");
+    assert_eq!(c.h.sender.calls().len(), 1);
+    // the lead is enrolled now, and the sequence waits for step 2
+    let rows = c.ok("GET", &format!("/v1/campaigns/{camp}/leads"), None).await;
+    assert_eq!(rows["leads"][0]["state"], "enrolled");
+    // the next click sends step 2 at once, without waiting for its delay
+    let r = c.ok("POST", &uri, None).await;
+    assert_eq!((r["status"].as_str(), r["step_number"].as_i64()), (Some("sent"), Some(2)), "{r}");
+    assert_eq!(c.h.sender.calls().len(), 2);
+    // nothing is left
+    let r = c.api("POST", &uri, None).await;
+    assert_eq!((r.status, code(&r).as_str()), (StatusCode::CONFLICT, "sequence_ended"));
+    // another campaign's lead
+    let r = c.api("POST", &format!("/v1/campaigns/{camp}/leads/{}/send-now", Uuid::now_v7()), None).await;
+    assert_eq!(r.status, StatusCode::NOT_FOUND);
+}

@@ -314,7 +314,7 @@ async fn feed_one(st: &AppState, c: &Campaign, now: DateTime<Utc>) -> Result<Ste
 
 /// `least_loaded`: the healthy account with the fewest open enrollments, a tie at random.
 /// `round_robin`: the healthy account after the last one used (by id), then around again.
-async fn pick_account(conn: &mut PgConnection, c: &Campaign, last_account_id: Option<Uuid>, accounts: &[PoolAccount]) -> Result<Option<Uuid>, sqlx::Error> {
+pub(super) async fn pick_account(conn: &mut PgConnection, c: &Campaign, last_account_id: Option<Uuid>, accounts: &[PoolAccount]) -> Result<Option<Uuid>, sqlx::Error> {
     let mut healthy: Vec<Uuid> = accounts.iter().filter(|a| a.healthy).map(|a| a.id).collect();
     if healthy.is_empty() {
         return Ok(None);

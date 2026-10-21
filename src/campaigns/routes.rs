@@ -44,6 +44,7 @@ pub fn router(state: AppState) -> OpenApiRouter<AppState> {
         .routes(routes!(feeder_status))
         .merge(super::email_routes::routes())
         .merge(super::extras::routes())
+        .merge(super::send_now::routes())
         .route_layer(axum::middleware::from_fn_with_state((state, Scope::Campaigns), require_scope))
 }
 
