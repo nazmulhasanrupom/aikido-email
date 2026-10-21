@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <title>Aikido Email</title>
+  <rect width="128" height="128" rx="28" fill="#d92d2a"/>
+  <path fill="#fff" d="M64 14 L116 112 H90 L64 62 L38 112 H12 Z"/>
+  <g stroke="#d92d2a" stroke-width="5" stroke-linejoin="round" paint-order="stroke">
+    <path fill="#14161b" d="M118 24 L40 58 L66 70 Z"/>
+    <path fill="#3a3e48" d="M118 24 L66 70 L76 100 L88 78 Z"/>
+  </g>
+</svg>

@@ -287,12 +287,4 @@ dialog[open]::backdrop {
   :root[data-design="aikido"] .ui-pill {
     box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 22%, transparent);
   }
-
-  /* The logo sits on a small paper tile, so it reads on the ink rail too. */
-  :root[data-design="aikido"] .ui-logo {
-    background: #f6f4ef;
-    padding: 2px;
-    box-shadow: 0 0 0 1px rgb(20 22 27 / 0.08);
-  }
-
 }

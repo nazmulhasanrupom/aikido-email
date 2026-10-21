@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-label="Aikido Email">
+  <title>Aikido Email</title>
+  <rect width="128" height="128" rx="28" fill="#d92d2a"/>
+  <path fill="#fff" d="M64 18 L112 108 H90 L64 58 L38 108 H16 Z"/>
+  <g stroke="#d92d2a" stroke-width="4" stroke-linejoin="round" paint-order="stroke">
+    <path fill="#14161b" d="M20 74 C26 98 56 108 80 88 C60 98 36 94 20 74 Z"/>
+    <path fill="#14161b" d="M114 28 L44 60 L68 70 Z"/>
+    <path fill="#3a3e48" d="M114 28 L68 70 L76 96 L86 78 Z"/>
+  </g>
+</svg>

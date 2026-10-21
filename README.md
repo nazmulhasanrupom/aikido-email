@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="logo.svg" alt="Aikido Email logo" width="120" height="120" />
+
 # AIKIDO EMAIL
 
 **Open source cold email automation, written in Rust.**
