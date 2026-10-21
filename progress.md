@@ -853,14 +853,14 @@ Counts email opens without a hidden pixel. The tracker is served from the sender
 | HTTPS listener | SNI resolver, TLS handshakes in their own tasks, plain HTTP listener for the ACME check | `tls.rs` |
 | Public routes | `/i/{token}.png`, `/p/{token}`, `/.well-known/acme-challenge/{token}`; unknown token gets a 1 px PNG; open saved in the background | `server.rs`, `proxy.rs` |
 | Type 2 | First image outside links (or the manual URL), stored copy, `src` rewrite, no redirect, refresh | `html.rs`, `assets.rs` |
-| Type 1 | Last match of the text across tags, style read (inline, tags, parents, `<style>` blocks), image drawn at 2x, cache per (text, style) | `html.rs`, `style.rs`, `render.rs` |
+| Type 1 | Last exact match of the text (as typed, in one piece of text; a tag in the middle means no match), style read (inline, tags, parents, `<style>` blocks), image drawn at 2x, cache per (text, style) | `html.rs`, `style.rs`, `render.rs` |
 | Send hook | After the unsubscribe link and signature, before the MIME. Never stops a send. Warning on the campaign when it skips | `send.rs`, `sending/worker.rs` |
 | API and stats | 9 routes (scope `tracking`), opens in lead context, `open_status` and `open_count` on lead rows | `routes.rs`, `settings.rs`, `stats.rs` |
 | UI | Campaign Settings > Email tracking (domain table with copy buttons and Check now, two tracker cards, preview, Refresh image), Opened, Maybe opened and Open rate cards on the campaign Reports tab, "Opened" column on both lead tables | `ui/src/features/tracking/` |
 
 ### Changes to existing code (section 15 of the map)
 
-1. Sending worker: tracker step after `unsubscribe::finish` (so a name in the signature is found), only when the job had an HTML body.
+1. Sending worker: tracker step after `unsubscribe::finish` (so a name in the signature is found). It runs whenever the email has an HTML part after that step, also when the job had only text and the account signature made the HTML (fixed 2026-10-22; first it wrongly required an HTML body in the job).
 2. `send_jobs.tracking_token` column (not in the `Job` struct).
 3. Lead tables, lead context and lead detail show opens.
 4. `leads::repo::erase` also deletes the tracking tokens and opens.
@@ -870,7 +870,7 @@ Counts email opens without a hidden pixel. The tracker is served from the sender
 
 ### Tests
 
-- 58 new pure unit tests pass (`cargo test --lib tracking`; 291 lib tests in all): HTML text match (plain, split across tags, entities, last match, not found, head and comments), style read (inline, tags, parents, `<style>`, important, em, shorthand, default), image draw and cache key, Type 2 find (skips links and 1 px), proxy marking (Google, Apple, extra ranges, fast scanner), subdomain rules, verdict, renew and retry maths, validation, unlock rule.
+- 58 new pure unit tests pass (`cargo test --lib tracking`; 291 lib tests in all): HTML text match (exact, tag in the middle gives no match, last match, not found, head and comments), style read (inline, tags, parents, `<style>`, important, em, shorthand, default), image draw and cache key, Type 2 find (skips links and 1 px), proxy marking (Google, Apple, extra ranges, fast scanner), subdomain rules, verdict, renew and retry maths, validation, unlock rule.
 - `tests/tracking.rs` (7 DB tests: CNAME found, missing and removed; blocked names; unlock rule; preview; image routes and open logging; send hook, retry keeps the token, warning, red domain, lead erase; campaign numbers) and updated `tests/api_keys.rs` and `tests/docs.rs`. **They compile but were NOT run** (you asked me not to start servers or DB runs). Run them with Docker Postgres.
 - UI: `tsc --noEmit` clean; vitest 94 pass. Biome crashes on this machine (known), not run. No browser test was written.
 

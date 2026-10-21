@@ -240,7 +240,7 @@ pub async fn save(st: &AppState, campaign_id: Uuid, b: &SettingsBody) -> ApiResu
     .bind(campaign_id)
     .bind(b.enabled)
     .bind(b.tracker_type.map(TrackerType::as_str))
-    .bind(b.text_value.as_deref().map(|t| t.split_whitespace().collect::<Vec<_>>().join(" ")).filter(|t| !t.is_empty()))
+    .bind(b.text_value.as_deref().map(str::trim).filter(|t| !t.is_empty()))
     .bind(b.style_mode.unwrap_or_default().as_str())
     .bind(manual)
     .bind(b.image_mode.unwrap_or_default().as_str())

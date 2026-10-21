@@ -203,10 +203,10 @@ async fn the_send_hook_puts_the_tracker_in_the_final_html_and_erase_removes_it(p
     let job = t.h.job(job_id).await;
     let account = t.h.account_row(a).await;
 
-    let html = "<p>Hi,</p><p>Best,<br>Nazmul <b>Hasan</b></p>";
+    let html = "<p>Hi,</p><p>Best,<br><b>Nazmul Hasan</b></p>";
     let out = aikido_email::tracking::send::apply(&t.h.state, &job, &account, html).await.expect("a tracker is inserted");
     assert!(out.contains("<img src=\"https://media.acme.test/i/") && out.contains("alt=\"Nazmul Hasan\""), "{out}");
-    assert!(!out.contains("Hasan</b>"), "the text is replaced: {out}");
+    assert!(!out.contains("Hasan"), "the text is replaced: {out}");
     let token: String = sqlx::query_scalar("SELECT tracking_token FROM send_jobs WHERE id = $1").bind(job_id).fetch_one(&t.h.state.pool).await.unwrap();
     assert!(out.contains(&token));
     // a retry of the same job keeps its token

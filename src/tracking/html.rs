@@ -344,15 +344,7 @@ pub fn replace_src(html: &str, found: &ImgFound, new_src: &str) -> String {
 
 // ---------- Type 1: the last piece of visible text ----------
 
-#[derive(Clone, Debug)]
-struct LChar {
-    ch: char,
-    node: usize,
-    a: usize,
-    b: usize,
-}
-
-/// A text node that a reader sees: not in the head, not in a comment.
+/// A text node that a reader sees: not in the head (the head holds the title and styles).
 pub fn visible_text_nodes(doc: &Doc<'_>) -> Vec<usize> {
     doc.toks
         .iter()
@@ -362,96 +354,23 @@ pub fn visible_text_nodes(doc: &Doc<'_>) -> Vec<usize> {
         .collect()
 }
 
-fn logical_chars(doc: &Doc<'_>) -> Vec<LChar> {
-    let mut out: Vec<LChar> = Vec::new();
-    for idx in visible_text_nodes(doc) {
-        let Tok::Text { start, end } = doc.toks[idx] else { continue };
-        let raw = &doc.html[start..end];
-        let mut pos = 0;
-        while pos < raw.len() {
-            let rest = &raw[pos..];
-            let (ch, used) = if rest.starts_with('&') {
-                entity(rest).unwrap_or(('&', 1))
-            } else {
-                let c = rest.chars().next().unwrap_or(' ');
-                (c, c.len_utf8())
-            };
-            let ch = if ch.is_whitespace() { ' ' } else { ch };
-            let (a, b) = (start + pos, start + pos + used);
-            // a run of white space inside one node is one character
-            match out.last_mut() {
-                Some(last) if ch == ' ' && last.ch == ' ' && last.node == idx && last.b == a => last.b = b,
-                _ => out.push(LChar { ch, node: idx, a, b }),
-            }
-            pos += used;
-        }
-    }
-    out
-}
-
-/// The needle with white space runs cut to one space.
-fn clean_needle(needle: &str) -> Vec<char> {
-    let mut out: Vec<char> = Vec::new();
-    for c in needle.trim().chars() {
-        let c = if c.is_whitespace() { ' ' } else { c };
-        if c == ' ' && out.last() == Some(&' ') {
-            continue;
-        }
-        out.push(c);
-    }
-    out
-}
-
-/// Where the last match sits: the text node and the byte range to cut, for each node it touches.
+/// Where the last match sits: the text node and the byte range to cut.
 #[derive(Debug, PartialEq)]
 pub struct TextMatch {
-    /// `(token index, start, end)` in the order of the email.
+    /// `(token index, start, end)`. One span: the text must sit in one piece of text, as typed.
     pub spans: Vec<(usize, usize, usize)>,
 }
 
-fn match_at(chars: &[LChar], start: usize, needle: &[char]) -> Option<usize> {
-    let mut i = start;
-    let mut n = 0;
-    while n < needle.len() {
-        if needle[n] == ' ' {
-            if i >= chars.len() || chars[i].ch != ' ' {
-                return None;
-            }
-            // white space in the email may be several characters (one per tag border)
-            while i < chars.len() && chars[i].ch == ' ' {
-                i += 1;
-            }
-        } else {
-            if i >= chars.len() || chars[i].ch != needle[n] {
-                return None;
-            }
-            i += 1;
-        }
-        n += 1;
-    }
-    Some(i)
-}
-
-/// The last place where `needle` appears in the visible text. It may run across tags: `Nazmul <b>Hasan</b>`.
+/// The last place where `needle` appears, exactly as typed, in the text of the email (not in tags, comments, the
+/// head, `<style>` or `<script>`). If a tag sits in the middle of the text, there is no match.
 pub fn find_last_text(doc: &Doc<'_>, needle: &str) -> Option<TextMatch> {
-    let needle = clean_needle(needle);
     if needle.is_empty() {
         return None;
     }
-    let chars = logical_chars(doc);
-    for start in (0..chars.len()).rev() {
-        if chars[start].ch != needle[0] {
-            continue;
-        }
-        if let Some(end) = match_at(&chars, start, &needle) {
-            let mut spans: Vec<(usize, usize, usize)> = Vec::new();
-            for c in &chars[start..end] {
-                match spans.last_mut() {
-                    Some(s) if s.0 == c.node => s.2 = c.b,
-                    _ => spans.push((c.node, c.a, c.b)),
-                }
-            }
-            return Some(TextMatch { spans });
+    for idx in visible_text_nodes(doc).into_iter().rev() {
+        let Tok::Text { start, end } = doc.toks[idx] else { continue };
+        if let Some(at) = doc.html[start..end].rfind(needle) {
+            return Some(TextMatch { spans: vec![(idx, start + at, start + at + needle.len())] });
         }
     }
     None
@@ -498,16 +417,16 @@ mod tests {
     }
 
     #[test]
-    fn text_split_across_tags_is_found() {
-        let r = cut("<p>Best,<br>Nazmul <b>Hasan</b></p>", "Nazmul Hasan").unwrap();
-        assert_eq!(r, "<p>Best,<br>[IMG]<b></b></p>");
+    fn text_with_a_tag_in_the_middle_is_not_found() {
+        assert!(cut("<p>Best,<br>Nazmul <b>Hasan</b></p>", "Nazmul Hasan").is_none());
+        // the same text in one piece is found, even inside a tag around it
+        assert_eq!(cut("<p>Best,<br><b>Nazmul Hasan</b></p>", "Nazmul Hasan").unwrap(), "<p>Best,<br><b>[IMG]</b></p>");
     }
 
     #[test]
-    fn white_space_between_tags_is_one_space() {
-        let r = cut("<div><b>Nazmul</b>\n  <i>Hasan</i></div>", "Nazmul Hasan").unwrap();
-        assert!(r.starts_with("<div><b>[IMG]</b>"), "{r}");
-        assert!(!r.contains("Hasan") && !r.contains("Nazmul"), "{r}");
+    fn the_text_must_match_as_typed() {
+        assert!(cut("<p>nazmul hasan</p>", "Nazmul Hasan").is_none());
+        assert!(cut("<p>Nazmul  Hasan</p>", "Nazmul Hasan").is_none());
     }
 
     #[test]
@@ -525,15 +444,7 @@ mod tests {
     #[test]
     fn not_found_gives_none() {
         assert!(cut("<p>Hello</p>", "Nazmul Hasan").is_none());
-        assert!(cut("<p>Hello</p>", "   ").is_none());
-    }
-
-    #[test]
-    fn entities_are_read_and_the_raw_bytes_are_cut() {
-        let r = cut("<p>Tom &amp; Jerry Co</p>", "Tom & Jerry").unwrap();
-        assert_eq!(r, "<p>[IMG] Co</p>");
-        // a non breaking space counts as a space
-        assert!(cut("<p>Nazmul&nbsp;Hasan</p>", "Nazmul Hasan").is_some());
+        assert!(cut("<p>Hello</p>", "").is_none());
     }
 
     #[test]

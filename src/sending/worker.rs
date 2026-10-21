@@ -282,10 +282,9 @@ pub async fn process_account(engine: &Engine, account_id: Uuid) -> anyhow::Resul
     msg.list_unsubscribe = super::unsubscribe::header(&claimed.settings, web.as_deref(), https);
     // Open tracking: the last step before the MIME is built, on the final HTML (placeholders, AI text, footer,
     // signature and unsubscribe link are all in). It never stops the send.
-    if claimed.job.body_html.as_deref().is_some_and(|h| !h.trim().is_empty()) {
-        if let Some(html) = msg.body_html.take() {
-            msg.body_html = Some(crate::tracking::send::apply(&engine.state, &claimed.job, &claimed.account, &html).await.unwrap_or(html));
-        }
+    // It runs whenever the email has an HTML part now: a text-only body gets one from the account signature.
+    if let Some(html) = msg.body_html.take().filter(|h| !h.trim().is_empty()) {
+        msg.body_html = Some(crate::tracking::send::apply(&engine.state, &claimed.job, &claimed.account, &html).await.unwrap_or(html));
     }
     let result = attempt_send(engine, &claimed.account, &msg, now).await;
 

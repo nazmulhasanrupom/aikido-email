@@ -81,7 +81,7 @@ async fn try_apply(st: &AppState, job: &Job, account: &EmailAccount, html: &str,
     let host = domain.host();
     match tracker {
         TrackerType::TextImage => {
-            let text: String = row.text_value.as_deref().unwrap_or("").split_whitespace().collect::<Vec<_>>().join(" ");
+            let text: String = row.text_value.as_deref().unwrap_or("").trim().to_string();
             if text.is_empty() {
                 return Err("no text is set for the text image".into());
             }

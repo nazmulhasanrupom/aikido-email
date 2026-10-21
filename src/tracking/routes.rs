@@ -195,7 +195,7 @@ async fn merged(st: &AppState, id: Uuid, b: &PreviewBody) -> Result<Merged, sqlx
 }
 
 async fn text_preview(st: &AppState, id: Uuid, m: &Merged) -> ApiResult<PreviewReply> {
-    let text: String = m.text.as_deref().unwrap_or("").split_whitespace().collect::<Vec<_>>().join(" ");
+    let text: String = m.text.as_deref().unwrap_or("").trim().to_string();
     if text.is_empty() {
         return Err(ApiError::unprocessable("text_required", "Type the text to replace, for example the name in your signature."));
     }
