@@ -528,7 +528,7 @@ pub async fn ready_accounts(pool: &PgPool, now: DateTime<Utc>, limit: i64) -> Re
          WHERE a.status = 'active' AND a.deleted_at IS NULL AND NOT s.paused
            AND (s.next_send_at IS NULL OR s.next_send_at <= $1
                 OR EXISTS (SELECT 1 FROM send_jobs j WHERE j.account_id = a.id AND j.status = 'queued'
-                           AND (j.send_after IS NULL OR j.send_after <= $1) AND j.{IS_TEST_SQL}))
+                           AND (j.send_after IS NULL OR j.send_after <= $1) AND {IS_TEST_SQL}))
            AND EXISTS (SELECT 1 FROM send_jobs j WHERE j.account_id = a.id AND j.status = 'queued'
                        AND (j.send_after IS NULL OR j.send_after <= $1))
          ORDER BY s.next_send_at NULLS FIRST, a.id
