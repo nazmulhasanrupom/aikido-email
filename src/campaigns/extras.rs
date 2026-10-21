@@ -150,11 +150,11 @@ async fn checklist(State(st): State<AppState>, ApiPath(id): ApiPath<Uuid>) -> Ap
 
 // ---------- duplicate (I5, B19) ----------
 
-/// Copy a campaign: the sequence, the prompts, the variants and the settings. No leads and no emails.
+/// Copy a campaign: the sequence, the prompts, the variants and the settings (also the verification rule and the open-tracking settings). No leads and no emails.
 #[utoipa::path(post, path = "/v1/campaigns/{id}/duplicate", tag = "campaigns",
     params(("id" = Uuid, Path)), responses((status = 201, body = CampaignDetail), (status = 404, description = "No such campaign")),
     security(("api_key" = ["campaigns"])),
-    description = "Scope: `campaigns`. The copy is a `draft` named \"<name> (copy)\". It keeps the account pool, the settings, the footer, the content mode, the steps, the AI prompts and the variants.")]
+    description = "Scope: `campaigns`. The copy is a `draft` named \"<name> (copy)\". It keeps the account pool, the settings, the footer, the content mode, the verification rule, the open-tracking settings, the steps, the AI prompts and the variants.")]
 async fn duplicate(State(st): State<AppState>, ApiPath(id): ApiPath<Uuid>) -> ApiResult<(StatusCode, ApiJson<CampaignDetail>)> {
     let now = st.now();
     let mut tx = st.pool.begin().await?;
@@ -228,6 +228,17 @@ async fn duplicate(State(st): State<AppState>, ApiPath(id): ApiPath<Uuid>) -> Ap
         .bind(new_id)
         .execute(&mut *tx)
         .await?;
+    sqlx::query("UPDATE campaigns SET verification_rule = $2 WHERE id = $1").bind(new_id).bind(&c.verification_rule).execute(&mut *tx).await?;
+    // the open-tracking settings travel too (not the warning)
+    sqlx::query(
+        "INSERT INTO tracking_settings (campaign_id, enabled, tracker_type, text_value, style_mode, manual_style, image_mode, image_source_url, updated_at)
+         SELECT $2, enabled, tracker_type, text_value, style_mode, manual_style, image_mode, image_source_url, $3 FROM tracking_settings WHERE campaign_id = $1",
+    )
+    .bind(id)
+    .bind(new_id)
+    .bind(now)
+    .execute(&mut *tx)
+    .await?;
     tx.commit().await?;
     Ok((StatusCode::CREATED, ApiJson(detail(&st, new_id).await?)))
 }

@@ -6,6 +6,8 @@ import { messageOf } from "@/api/errors";
 import { http, type S } from "@/api/http";
 import { q } from "@/api/queries";
 import { Button, Card, Notice, Skeleton } from "@/components/ui";
+import { AddAccount } from "@/features/accounts/AddAccount";
+import { EditLogin } from "@/features/accounts/EditLogin";
 import { HealthCard } from "@/features/accounts/Health";
 import { fmtDateTime } from "@/lib/format";
 import { say } from "@/lib/words";
@@ -42,12 +44,36 @@ function Overview() {
     onError: (e) => toast.error(messageOf(e)),
   });
   const [deleting, setDeleting] = useState(false);
+  const [reconnect, setReconnect] = useState(false);
+  const [editing, setEditing] = useState(false);
   const s = status.data;
   if (!account) return null;
+  const broken =
+    account.status === "disconnected" || account.status === "error" || !account.can_read;
   return (
     <div className="grid gap-5 lg:grid-cols-2">
       <Card className="flex flex-col gap-3">
-        <h2 className="font-semibold">Status</h2>
+        <div className="flex items-center justify-between">
+          <h2 className="font-semibold">Status</h2>
+          {(account.provider === "gmail" || account.provider === "microsoft") && (
+            <Button
+              variant={broken ? "primary" : "secondary"}
+              className="h-8"
+              onClick={() => setReconnect(true)}
+            >
+              Reconnect
+            </Button>
+          )}
+          {account.provider === "smtp" && (
+            <Button
+              variant={broken ? "primary" : "secondary"}
+              className="h-8"
+              onClick={() => setEditing(true)}
+            >
+              Edit login
+            </Button>
+          )}
+        </div>
         {account.last_error && <Notice tone="danger">{account.last_error}</Notice>}
         {s?.paused_reason && <Notice tone="warning">Paused: {s.paused_reason}</Notice>}
         {s ? (
@@ -127,6 +153,16 @@ function Overview() {
           </Button>
         </div>
       </Card>
+      {(account.provider === "gmail" || account.provider === "microsoft") && (
+        <AddAccount
+          open={reconnect}
+          onClose={() => setReconnect(false)}
+          start={account.provider}
+        />
+      )}
+      {account.provider === "smtp" && (
+        <EditLogin open={editing} onClose={() => setEditing(false)} account={account} />
+      )}
       <DeleteAccount
         open={deleting}
         onClose={() => setDeleting(false)}

@@ -73,3 +73,129 @@
   --shadow-card: 0 1px 2px rgb(10 0 2 / 0.35);
   --shadow-pop: 0 14px 34px -10px rgb(10 0 2 / 0.65), 0 2px 6px rgb(10 0 2 / 0.3);
 }
+
+/*
+ * The parts that the two designs draw differently: shapes, the menu on the left, inputs, tables, tabs.
+ * These are the Generic values, so the Generic design looks as it always did.
+ */
+:root {
+  --brand: var(--accent);
+  --radius-button: var(--radius-control);
+  --radius-dialog: var(--radius-card);
+  --radius-menu: var(--radius-card);
+  --input-bg: var(--surface-2);
+  --table-head-bg: var(--surface-2);
+  --row-hover: color-mix(in srgb, var(--surface-2) 55%, transparent);
+  --tab-indicator: var(--accent);
+  --sidebar-bg: var(--surface);
+  --sidebar-fg: var(--text);
+  --sidebar-muted: var(--text-muted);
+  --sidebar-hover: var(--surface-2);
+  --sidebar-active: var(--accent-soft);
+  --sidebar-active-fg: var(--text);
+  --sidebar-icon-active: var(--accent);
+  --sidebar-border: var(--border);
+  --sidebar-badge: var(--accent);
+  --sidebar-badge-fg: var(--accent-fg);
+  --topbar-bg: var(--bg);
+  --shadow-button: var(--shadow-card);
+  --heading-tracking: normal;
+  --app-features: normal;
+  --backdrop: rgb(0 0 0 / 0.35);
+  --chip-bg: var(--surface);
+  --sidebar-avatar: var(--accent-soft);
+  --sidebar-avatar-fg: var(--text);
+  --page-title: 1.25rem;
+  --page-title-leading: 1.75rem;
+  --th-size: 0.75rem;
+}
+
+/*
+ * The Aikido design. Ink (sumi) and paper (washi), the indigo of a hakama as the accent,
+ * and the vermilion of a seal for small brand marks. Round shapes: pill buttons, soft cards.
+ * The menu on the left is an ink rail in both themes. Every text color reaches AA (contrast.test.ts).
+ */
+:root[data-design="aikido"] {
+  color-scheme: light;
+  --bg: #f3f1ec;
+  --surface: #fcfbf8;
+  --surface-2: #ebe7de;
+  --border: #ddd8cc;
+  --text: #14161b;
+  --text-muted: #5a5f6b;
+  --accent: #2b3a78;
+  --accent-fg: #ffffff;
+  --accent-soft: #e2e6f3;
+  --success: #2e6a4c;
+  --warning: #865600;
+  --danger: #b3261e;
+  --info: #285f86;
+  --ai: #6544b5;
+  --brand: #c73a28;
+  --app-font: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+  --app-features: "cv11", "ss03";
+  --heading-tracking: -0.02em;
+  --radius-card: 16px;
+  --radius-control: 10px;
+  --radius-button: 999px;
+  --radius-dialog: 20px;
+  --radius-menu: 14px;
+  --input-bg: var(--surface);
+  --chip-bg: var(--surface-2);
+  --table-head-bg: transparent;
+  --row-hover: color-mix(in srgb, var(--accent-soft) 50%, transparent);
+  --tab-indicator: var(--brand);
+  --sidebar-bg: #14161b;
+  --sidebar-fg: #ebe8e1;
+  --sidebar-muted: #a0a5b0;
+  --sidebar-hover: #1e2128;
+  --sidebar-active: #262a34;
+  --sidebar-active-fg: #ffffff;
+  --sidebar-icon-active: #ff7a5c;
+  --sidebar-border: #262a33;
+  --sidebar-badge: #ff7a5c;
+  --sidebar-badge-fg: #14161b;
+  --sidebar-avatar: #2b3a78;
+  --sidebar-avatar-fg: #ffffff;
+  --topbar-bg: var(--bg);
+  --page-title: 1.625rem;
+  --page-title-leading: 2rem;
+  --th-size: 0.6875rem;
+  --shadow-card: 0 1px 2px rgb(20 22 27 / 0.04), 0 4px 12px -6px rgb(20 22 27 / 0.08);
+  --shadow-pop: 0 28px 56px -18px rgb(20 22 27 / 0.3), 0 10px 20px -10px rgb(20 22 27 / 0.12);
+  --shadow-button: 0 1px 2px rgb(20 22 27 / 0.14), inset 0 1px 0 rgb(255 255 255 / 0.12);
+  --backdrop: rgb(15 17 22 / 0.42);
+}
+
+:root[data-design="aikido"][data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0f1116;
+  --surface: #161920;
+  --surface-2: #1d212a;
+  --border: #2b303b;
+  --text: #ece9e2;
+  --text-muted: #a2a8b5;
+  --accent: #9db0f5;
+  --accent-fg: #0f1116;
+  --accent-soft: #252d4a;
+  --success: #6fca95;
+  --warning: #e8b75b;
+  --danger: #f4948b;
+  --info: #80b9de;
+  --ai: #bba7f6;
+  --brand: #ff6a4d;
+  --sidebar-bg: #0a0c10;
+  --sidebar-fg: #ece9e2;
+  --sidebar-muted: #9298a5;
+  --sidebar-hover: #15181e;
+  --sidebar-active: #1e222b;
+  --sidebar-active-fg: #ffffff;
+  --sidebar-icon-active: #ff7a5c;
+  --sidebar-border: #1d2129;
+  --sidebar-badge: #ff7a5c;
+  --sidebar-badge-fg: #0a0c10;
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.35);
+  --shadow-pop: 0 28px 56px -16px rgb(0 0 0 / 0.65), 0 8px 18px -8px rgb(0 0 0 / 0.4);
+  --shadow-button: 0 1px 2px rgb(0 0 0 / 0.4), inset 0 1px 0 rgb(255 255 255 / 0.14);
+  --backdrop: rgb(0 0 0 / 0.55);
+}

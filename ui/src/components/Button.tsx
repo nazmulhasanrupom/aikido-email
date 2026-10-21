@@ -5,11 +5,11 @@ type Variant = "primary" | "secondary" | "ghost" | "danger";
 
 const VARIANTS: Record<Variant, string> = {
   primary:
-    "bg-accent text-accent-fg shadow-(--shadow-card) hover:brightness-110 hover:shadow-(--shadow-pop)",
+    "bg-accent text-accent-fg shadow-(--shadow-button) hover:brightness-110 hover:shadow-(--shadow-pop)",
   secondary:
-    "border border-border bg-surface text-text shadow-(--shadow-card) hover:border-text/20 hover:bg-surface-2",
+    "border border-border bg-surface text-text shadow-(--shadow-button) hover:border-text/20 hover:bg-surface-2",
   ghost: "text-text hover:bg-surface-2",
-  danger: "bg-danger text-accent-fg shadow-(--shadow-card) hover:brightness-110",
+  danger: "bg-danger text-accent-fg shadow-(--shadow-button) hover:brightness-110",
 };
 
 interface Props extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -30,7 +30,7 @@ export function Button({
       type="button"
       disabled={disabled || busy}
       className={cn(
-        "inline-flex h-9 select-none items-center justify-center gap-2 rounded-(--radius-control) px-3.5 text-sm font-medium transition-[color,background-color,border-color,box-shadow,filter,transform] duration-150 ease-(--ease-out-soft) active:scale-[0.97] disabled:pointer-events-none disabled:opacity-60",
+        "ui-btn inline-flex h-9 select-none items-center justify-center gap-2 rounded-(--radius-button) px-3.5 text-sm font-medium transition-[color,background-color,border-color,box-shadow,filter,transform] duration-150 ease-(--ease-out-soft) active:scale-[0.97] disabled:pointer-events-none disabled:opacity-60",
         VARIANTS[variant],
         className,
       )}

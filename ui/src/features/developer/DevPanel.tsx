@@ -18,6 +18,11 @@ export function DevPanel({ ws }: { ws: string }) {
   });
   const [tab, setTab] = useState<Tab>(() => (["logs", "sql", "tools"].includes(readStored(TAB_KEY) ?? "") ? (readStored(TAB_KEY) as Tab) : "logs"));
   const [minimized, setMinimized] = useState(false);
+  // the SQL tab mounts when first opened, then stays mounted so the typed SQL and the result are kept
+  const [sqlOpened, setSqlOpened] = useState(tab === "sql");
+  useEffect(() => {
+    if (tab === "sql") setSqlOpened(true);
+  }, [tab]);
   const [errors, setErrors] = useState(0);
   const [warns, setWarns] = useState(0);
   const drag = useRef<{ y: number; h: number } | null>(null);
@@ -99,7 +104,7 @@ export function DevPanel({ ws }: { ws: string }) {
         <div className={cn("h-full", tab !== "logs" && "hidden")}>
           <LogsTab onCounts={counts} />
         </div>
-        <div className={cn("h-full", tab !== "sql" && "hidden")}>{tab === "sql" && <SqlTab />}</div>
+        <div className={cn("h-full", tab !== "sql" && "hidden")}>{(sqlOpened || tab === "sql") && <SqlTab />}</div>
         <div className={cn("h-full", tab !== "tools" && "hidden")}>
           <ToolsTab ws={ws} active={tab === "tools" && !minimized} />
         </div>

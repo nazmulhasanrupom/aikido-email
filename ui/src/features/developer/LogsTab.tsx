@@ -76,7 +76,7 @@ export function LogsTab({ onCounts }: { onCounts: (errors: number, warns: number
     const q = text.trim().toLowerCase();
     return entries.filter(
       (e) =>
-        (RANK[e.level] ?? 0) >= (RANK[level] ?? 0) &&
+        (RANK[e.level] ?? 0) >= (level === "DEBUG" ? 0 : (RANK[level] ?? 0)) &&
         (!q ||
           `${e.message} ${e.fields} ${e.target} ${e.span ?? ""}`.toLowerCase().includes(q)),
     );
@@ -113,7 +113,7 @@ export function LogsTab({ onCounts }: { onCounts: (errors: number, warns: number
           Level
           <select
             aria-label="Lowest level to show"
-            className="h-7 rounded border border-border bg-surface-2 px-1"
+            className="h-7 rounded border border-border bg-(--input-bg) px-1"
             value={level}
             onChange={(e) => setLevel(e.target.value as (typeof LEVELS)[number])}
           >
@@ -127,7 +127,7 @@ export function LogsTab({ onCounts }: { onCounts: (errors: number, warns: number
         <input
           aria-label="Search the log"
           placeholder="Search"
-          className="h-7 w-44 rounded border border-border bg-surface-2 px-2"
+          className="h-7 w-44 rounded border border-border bg-(--input-bg) px-2"
           value={text}
           onChange={(e) => setText(e.target.value)}
         />
@@ -150,7 +150,7 @@ export function LogsTab({ onCounts }: { onCounts: (errors: number, warns: number
           Detail
           <select
             aria-label="How much the server writes to this log"
-            className="h-7 max-w-52 rounded border border-border bg-surface-2 px-1"
+            className="h-7 max-w-52 rounded border border-border bg-(--input-bg) px-1"
             value={known ? filter : "custom"}
             onChange={(e) => e.target.value !== "custom" && void changeFilter(e.target.value)}
           >

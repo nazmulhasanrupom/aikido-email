@@ -393,7 +393,7 @@ function Message({
             aria-label="Wrong label?"
             value=""
             onChange={(e) => e.target.value && setRelabel(e.target.value)}
-            className="h-8 rounded-(--radius-control) border border-border bg-surface-2 px-2 text-sm"
+            className="h-8 rounded-(--radius-control) border border-border bg-(--input-bg) px-2 text-sm"
           >
             <option value="">Wrong label?</option>
             {LABELS.filter((x) => x !== m.label).map((x) => (

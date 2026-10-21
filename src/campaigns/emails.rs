@@ -392,12 +392,20 @@ pub async fn write(conn: &mut PgConnection, ctx: &Ctx, overwrite: Overwrite, onl
 /// Mark unsent emails whose inputs changed as `stale`. `lead_id` limits it to one lead (a lead edit);
 /// `None` checks the whole campaign (a template change).
 pub async fn mark_stale(conn: &mut PgConnection, campaign_id: Uuid, lead_id: Option<Uuid>) -> Result<u64, sqlx::Error> {
+    match lead_id {
+        Some(id) => mark_stale_leads(conn, campaign_id, Some(&[id])).await,
+        None => mark_stale_leads(conn, campaign_id, None).await,
+    }
+}
+
+/// Like `mark_stale`, for a group of leads. `None` checks the whole campaign. It loads the campaign once.
+pub async fn mark_stale_leads(conn: &mut PgConnection, campaign_id: Uuid, lead_ids: Option<&[Uuid]>) -> Result<u64, sqlx::Error> {
     let Some(ctx) = load_ctx(conn, campaign_id).await? else { return Ok(0) };
     let rows: Vec<LeadEmail> = sqlx::query_as(&format!(
-        "SELECT {EMAIL_COLS} FROM lead_emails WHERE campaign_id = $1 AND source IN ('template', 'ai') AND status IN ('ready', 'review') AND ($2::uuid IS NULL OR lead_id = $2)"
+        "SELECT {EMAIL_COLS} FROM lead_emails WHERE campaign_id = $1 AND source IN ('template', 'ai') AND status IN ('ready', 'review') AND ($2::uuid[] IS NULL OR lead_id = ANY($2))"
     ))
     .bind(campaign_id)
-    .bind(lead_id)
+    .bind(lead_ids)
     .fetch_all(&mut *conn)
     .await?;
     let prompts = if rows.iter().any(|r| r.source == "ai") { Some(super::email_ai::load_prompts(conn, &ctx).await?) } else { None };
@@ -423,9 +431,24 @@ pub async fn mark_stale(conn: &mut PgConnection, campaign_id: Uuid, lead_id: Opt
 
 /// A lead changed: check its emails in every campaign it has emails in.
 pub async fn lead_changed(conn: &mut PgConnection, lead_id: Uuid) -> Result<(), sqlx::Error> {
-    let ids: Vec<(Uuid,)> = sqlx::query_as("SELECT DISTINCT campaign_id FROM lead_emails WHERE lead_id = $1 AND status IN ('ready', 'review')").bind(lead_id).fetch_all(&mut *conn).await?;
-    for (c,) in ids {
-        mark_stale(conn, c, Some(lead_id)).await?;
+    leads_changed(conn, &[lead_id]).await
+}
+
+/// Several leads changed (an import or a bulk add): check their emails, one campaign at a time.
+pub async fn leads_changed(conn: &mut PgConnection, lead_ids: &[Uuid]) -> Result<(), sqlx::Error> {
+    if lead_ids.is_empty() {
+        return Ok(());
+    }
+    let pairs: Vec<(Uuid, Uuid)> = sqlx::query_as("SELECT DISTINCT campaign_id, lead_id FROM lead_emails WHERE lead_id = ANY($1) AND status IN ('ready', 'review')")
+        .bind(lead_ids)
+        .fetch_all(&mut *conn)
+        .await?;
+    let mut by_campaign: std::collections::BTreeMap<Uuid, Vec<Uuid>> = std::collections::BTreeMap::new();
+    for (c, l) in pairs {
+        by_campaign.entry(c).or_default().push(l);
+    }
+    for (c, leads) in by_campaign {
+        mark_stale_leads(conn, c, Some(&leads)).await?;
     }
     Ok(())
 }
@@ -530,7 +553,8 @@ pub fn required_names(ctx: &Ctx, prompts: Option<&super::email_ai::Prompts>) -> 
             }
         }
     }
-    if let Some(f) = ctx.campaign.footer.as_deref() {
+    // Optimised mode never adds the footer to the emails.
+    if let Some(f) = ctx.campaign.footer.as_deref().filter(|_| ctx.campaign.content_mode != "optimized") {
         if let Ok(t) = Template::parse(f) {
             names.extend(t.required().into_iter().map(String::from));
         }

@@ -12,7 +12,6 @@ use crate::state::AppState;
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::{Html, IntoResponse, Response};
-use chrono::Utc;
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
@@ -402,6 +401,9 @@ async fn patch_account(
             new_imap.as_ref().map(|h| (h, imap_user.as_str(), &imap_pass)),
         )
         .await?;
+        // The tests above passed. The IMAP login of a plain localhost server is not tested, but it is saved too.
+        changes.reconnect = new_smtp.is_some();
+        changes.read_ok = new_imap.is_some();
         changes.smtp = new_smtp;
         changes.imap = new_imap;
         changes.secrets = Some(Secrets::Password(secrets));
@@ -432,7 +434,7 @@ async fn test_account(State(st): State<AppState>, ApiPath(id): ApiPath<Uuid>) ->
     }
     let secrets = repo::load_secrets(&st.crypto, &account)?;
     let result: Result<(), String> = match secrets {
-        Secrets::OAuth(o) => tokens::refresh(&st.pool, &st.crypto, &account, &o, Utc::now())
+        Secrets::OAuth(o) => tokens::refresh(&st.pool, &st.crypto, &account, &o, st.now())
             .await
             .map(|_| ())
             .map_err(|e| e.to_string()),

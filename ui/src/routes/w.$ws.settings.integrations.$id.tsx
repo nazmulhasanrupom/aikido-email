@@ -301,7 +301,7 @@ function Rules({ s: initial }: { s: S["GeneratorSettings"] }) {
             <input
               value={s.language ?? ""}
               onChange={(e) => set({ language: e.target.value || null })}
-              className="h-9 rounded-(--radius-control) border border-border bg-surface-2 px-3"
+              className="h-9 rounded-(--radius-control) border border-border bg-(--input-bg) px-3"
               placeholder="English"
             />
           </label>

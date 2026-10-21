@@ -72,11 +72,15 @@ function followText(r: S["CampaignLeadRow"], ai: boolean): string {
       : "Waiting to start";
   }
   if (r.state === "skipped") return say("skip", r.skip_reason);
-  if (r.enrollment_status === "stopped" || r.enrollment_status === "failed") return "Stopped";
+  if (r.enrollment_status === "stopped" || r.enrollment_status === "failed") {
+    const head = r.enrollment_status === "failed" ? "Failed" : "Stopped";
+    return r.wait_reason ? `${head}: ${say("stop", r.wait_reason)}` : head;
+  }
   if (r.enrollment_status === "finished") return "Finished";
   if (r.enrollment_status === "paused") return "Paused";
-  if (r.wait_reason) return say("wait", r.wait_reason);
   const base = `Step ${r.current_step ?? 1} of ${r.steps_total}`;
+  if (r.wait_reason === "queued") return `${base}, in the send queue`;
+  if (r.wait_reason && r.wait_reason !== "waiting_delay") return say("wait", r.wait_reason);
   return r.next_due_at ? `${base}, next ${fmtDateTime(r.next_due_at)}` : base;
 }
 
@@ -265,7 +269,7 @@ function CampaignLeads() {
             Add from a list
           </Button>
           <MenuRoot>
-            <MenuTrigger className="inline-flex h-9 items-center gap-1.5 rounded-(--radius-control) border border-border px-3.5 text-sm font-medium hover:bg-surface-2">
+            <MenuTrigger className="inline-flex h-9 items-center gap-1.5 rounded-(--radius-button) border border-border px-3.5 text-sm font-medium hover:bg-surface-2">
               Add Leads
               <ChevronDown size={14} aria-hidden="true" />
             </MenuTrigger>
@@ -275,7 +279,7 @@ function CampaignLeads() {
             </MenuContent>
           </MenuRoot>
           <a
-            className="inline-flex h-9 items-center rounded-(--radius-control) border border-border px-3.5 text-sm font-medium hover:bg-surface-2"
+            className="inline-flex h-9 items-center rounded-(--radius-button) border border-border px-3.5 text-sm font-medium hover:bg-surface-2"
             href={`/v1/leads/export.csv?campaign_id=${id}`}
             download
           >
@@ -440,6 +444,7 @@ function CampaignLeads() {
                   )}
                 </td>
                 <td className={TD}>
+                  {!["stopped", "finished", "failed"].includes(r.enrollment_status ?? "") && (
                   <Button
                     variant="secondary"
                     className="h-7 whitespace-nowrap"
@@ -450,6 +455,7 @@ function CampaignLeads() {
                   >
                     Send now
                   </Button>
+                  )}
                 </td>
               </tr>
             ))}
@@ -599,7 +605,7 @@ function FilterMenu({
     <MenuRoot>
       <MenuTrigger
         aria-label={`Filter: ${filterLabel(value)}`}
-        className={`group inline-flex h-9 max-w-80 items-center gap-2 rounded-(--radius-control) border px-3 text-sm shadow-(--shadow-card) hover:bg-surface-2 data-[state=open]:bg-surface-2 ${value ? "border-accent/60 bg-accent-soft" : "border-border bg-surface"}`}
+        className={`group inline-flex h-9 max-w-80 items-center gap-2 rounded-(--radius-button) border px-3 text-sm shadow-(--shadow-card) hover:bg-surface-2 data-[state=open]:bg-surface-2 ${value ? "border-accent/60 bg-accent-soft" : "border-border bg-surface"}`}
       >
         <ListFilter size={15} aria-hidden="true" className={value ? "text-accent" : "text-muted"} />
         <span className="truncate">{filterLabel(value)}</span>

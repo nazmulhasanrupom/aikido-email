@@ -99,7 +99,7 @@ export function SqlTab() {
             }}
           />
           <div className="flex flex-wrap items-center gap-2">
-            <button type="button" disabled={busy} className={cn(BTN, "bg-accent text-white hover:bg-accent")} onClick={() => void run()}>
+            <button type="button" disabled={busy} className={cn(BTN, "bg-accent text-accent-fg hover:brightness-110")} onClick={() => void run()}>
               {busy ? "Running..." : "Run (Ctrl+Enter)"}
             </button>
             <select

@@ -145,51 +145,127 @@ pub struct SqlReply {
 const MAX_ROWS: usize = 1000;
 const MAX_CELL: usize = 5000;
 
-/// Is there more than one statement? Quotes, `$$` strings and comments are skipped.
-pub fn is_multi_statement(sql: &str) -> bool {
+/// A piece of SQL outside of strings and comments.
+#[derive(Debug, PartialEq)]
+pub enum Token {
+    /// An identifier or keyword, lower-cased.
+    Word(String),
+    /// A `;` between statements.
+    Semi,
+    /// A string, a quoted name or any other mark.
+    Other,
+}
+
+/// Split SQL into tokens. Strings (`'..'`, `E'..'`), quoted names, `$tag$..$tag$` strings
+/// and comments (`--`, nested `/* */`) are skipped, so a `;` inside them is not seen.
+pub fn sql_tokens(sql: &str) -> Vec<Token> {
     let b: Vec<char> = sql.chars().collect();
-    let (mut i, mut seen_semicolon) = (0, false);
+    let word_start = |c: char| c.is_alphabetic() || c == '_';
+    let word_part = |c: char| c.is_alphanumeric() || c == '_' || c == '$';
+    let mut out = Vec::new();
+    let mut i = 0;
     while i < b.len() {
         let c = b[i];
-        match c {
-            '\'' | '"' => {
-                i += 1;
-                while i < b.len() && b[i] != c {
-                    i += 1;
-                }
-            }
-            '$' if b.get(i + 1) == Some(&'$') => {
-                i += 2;
-                while i + 1 < b.len() && !(b[i] == '$' && b[i + 1] == '$') {
-                    i += 1;
-                }
+        if c.is_whitespace() {
+            i += 1;
+        } else if c == '-' && b.get(i + 1) == Some(&'-') {
+            while i < b.len() && b[i] != '\n' {
                 i += 1;
             }
-            '-' if b.get(i + 1) == Some(&'-') => {
-                while i < b.len() && b[i] != '\n' {
+        } else if c == '/' && b.get(i + 1) == Some(&'*') {
+            let mut depth = 1;
+            i += 2;
+            while i < b.len() && depth > 0 {
+                if b[i] == '/' && b.get(i + 1) == Some(&'*') {
+                    depth += 1;
+                    i += 2;
+                } else if b[i] == '*' && b.get(i + 1) == Some(&'/') {
+                    depth -= 1;
+                    i += 2;
+                } else {
                     i += 1;
                 }
             }
-            '/' if b.get(i + 1) == Some(&'*') => {
-                i += 2;
-                while i + 1 < b.len() && !(b[i] == '*' && b[i + 1] == '/') {
+        } else if c == '\'' || c == '"' {
+            i = skip_quoted(&b, i, false);
+            out.push(Token::Other);
+        } else if c == '$' {
+            // A dollar quote needs `$` + an optional tag + `$`. `$1` is a parameter.
+            let mut j = i + 1;
+            if j < b.len() && word_start(b[j]) && b[j] != '$' {
+                while j < b.len() && (b[j].is_alphanumeric() || b[j] == '_') {
+                    j += 1;
+                }
+            }
+            if b.get(j) == Some(&'$') {
+                let tag = &b[i..=j];
+                i = j + 1;
+                while i < b.len() && !b[i..].starts_with(tag) {
                     i += 1;
                 }
+                i = (i + tag.len()).min(b.len());
+            } else {
                 i += 1;
             }
-            ';' => seen_semicolon = true,
-            c if seen_semicolon && !c.is_whitespace() => return true,
-            _ => {}
+            out.push(Token::Other);
+        } else if word_start(c) {
+            let start = i;
+            while i < b.len() && word_part(b[i]) {
+                i += 1;
+            }
+            if i - start == 1 && (c == 'e' || c == 'E') && b.get(i) == Some(&'\'') {
+                i = skip_quoted(&b, i, true);
+                out.push(Token::Other);
+            } else {
+                out.push(Token::Word(b[start..i].iter().collect::<String>().to_lowercase()));
+            }
+        } else {
+            i += 1;
+            out.push(if c == ';' { Token::Semi } else { Token::Other });
         }
-        i += 1;
     }
-    false
+    out
+}
+
+/// Skip a quoted run that starts at `start`. Returns the index after the closing quote.
+/// The quote doubled is an escape. With `backslash`, a backslash also escapes the next char.
+fn skip_quoted(b: &[char], start: usize, backslash: bool) -> usize {
+    let q = b[start];
+    let mut i = start + 1;
+    while i < b.len() {
+        if backslash && b[i] == '\\' {
+            i += 2;
+        } else if b[i] == q {
+            if b.get(i + 1) == Some(&q) {
+                i += 2;
+            } else {
+                return i + 1;
+            }
+        } else {
+            i += 1;
+        }
+    }
+    b.len()
+}
+
+/// Is there more than one statement? Strings, quoted names and comments are skipped.
+pub fn is_multi_statement(sql: &str) -> bool {
+    let t = sql_tokens(sql);
+    t.iter().position(|x| *x == Token::Semi).is_some_and(|p| t[p + 1..].iter().any(|x| *x != Token::Semi))
 }
 
 /// `COPY ... PROGRAM` runs a shell command on the database host. Never.
 pub fn runs_a_program(sql: &str) -> bool {
-    let l = sql.to_ascii_lowercase();
-    l.contains("copy") && (l.contains(" program") || l.contains("\nprogram"))
+    let mut copy = false;
+    for t in sql_tokens(sql) {
+        match t {
+            Token::Semi => copy = false,
+            Token::Word(w) if w == "copy" => copy = true,
+            Token::Word(w) if copy && w == "program" => return true,
+            _ => {}
+        }
+    }
+    false
 }
 
 /// Run SQL on the database.
@@ -453,6 +529,22 @@ mod tests {
     fn copy_program_is_refused() {
         assert!(runs_a_program("COPY t TO PROGRAM 'id'"));
         assert!(runs_a_program("copy t from\nprogram 'x'"));
+        assert!(runs_a_program("COPY t TO\tPROGRAM 'id'"));
+        assert!(runs_a_program("COPY t TO/**/PROGRAM 'id'"));
+        assert!(runs_a_program("copy t to -- x\nprogram 'id'"));
         assert!(!runs_a_program("SELECT program FROM t"));
+        assert!(!runs_a_program("SELECT 'copy program'"));
+    }
+
+    #[test]
+    fn tricky_strings_and_comments_are_understood() {
+        assert!(is_multi_statement(r"SELECT E'\''; COMMIT; DROP TABLE x; --'"));
+        assert!(!is_multi_statement(r"SELECT E'it\'s; ok'"));
+        assert!(!is_multi_statement("DO $fn$a;b$fn$"));
+        assert!(!is_multi_statement("SELECT $$a;b$$"));
+        assert!(!is_multi_statement("SELECT 1 /* /* ; */ ; */"));
+        assert!(!is_multi_statement(r#"SELECT "a;b""#));
+        assert!(!is_multi_statement("SELECT $1;  -- end"));
+        assert!(!is_multi_statement("SELECT 1; /* end */ "));
     }
 }

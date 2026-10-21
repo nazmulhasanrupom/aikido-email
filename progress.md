@@ -1,6 +1,6 @@
 # AIKIDO EMAIL: Progress
 
-Last updated: 2026-10-21 (Open tracking built)
+Last updated: 2026-10-22 (Code review fixes and the Aikido design)
 
 ## Status in one line
 
@@ -938,3 +938,49 @@ A third tracker type `end_mark_image` (migration `0022_tracking_end_mark.sql` wi
 ## Open tracking: the "Hyphen" tracker (2026-10-22)
 
 A fourth tracker type `hyphen_image` (migration `0023_tracking_hyphen.sql` widens the CHECK again). A hyphen image is always added at the very end of the email, after the last visible text (after the `</a>` when the email ends with link text); it never replaces a mark. Style from the last text (auto) or the manual style, `alt=""`, same token and `/i/{token}.png`. Code: `html::find_end_append` (the end-mark code now shares `last_text` and `append_at_end`), `send::prepare_hyphen`, `routes::end_mark_preview(.., hyphen)`, UI card "Hyphen". Tests: 1 new in `html.rs`, 1 in `send.rs`. Not run: DB tests. Not seen in a mail app. Limit: a hyphen right after a word can look like a dash glued to the text; it is tiny and the same color as the text.
+
+## Code review fixes and the Aikido design (2026-10-22)
+
+A full review of the code (Opus as the reviewer, Sonnet 5.5 at medium effort as the fixer). Every change was read again after the fixer. Checked with `cargo build`, `cargo clippy --all-targets` (112 style hints, the same as before), `cargo test --lib` (310 pass), `pnpm typecheck` and `pnpm test` (147 pass). **Not run:** the DB tests and the browser tests (no server was started, as asked). Run them with Docker Postgres before a release.
+
+### Bugs fixed
+
+| Where | Problem | Fix |
+| --- | --- | --- |
+| `config.rs` | Any `http://[IPv6]` address counted as localhost, so the login cookie failed on a remote plain-HTTP host. | Only `[::1]` is local. Unit tests. |
+| `users/session.rs` | The site address (used in unsubscribe links) was learned before the CSRF token was checked. | Learned after the full check. |
+| `users/routes.rs`, `main.rs` | Invite and reset links were relative paths when `AIKIDO_PUBLIC_URL` was not set. | They use the learned site address (the CLI reads it from the database). |
+| `sending/routes.rs` | The account status did not show the follow-up safety gate for unthreaded follow-ups. | Same rule as the sender (`step_number > 1`). |
+| `senders/smtp.rs` | A `550 5.7.x` policy block counted as a hard bounce: a good address was blocked and the bounce rate rose. | `5.7.x` is a block, not a bounce. Unit test. |
+| `senders/gmail.rs`, `microsoft.rs` | The lookup after a successful send ran inside the 60 s send limit, so a sent email could be marked `stuck`. | The lookup has its own short time budget. |
+| `accounts` (PATCH) | A fixed SMTP login left the account disconnected and paused; a new IMAP login left `can_read` false (follow-ups held forever). | A working login reconnects the account; a working IMAP login marks the inbox readable. |
+| `devtools/routes.rs` | The SQL console check for `COPY ... PROGRAM` could be bypassed (tab, comment); read-only mode could be escaped with a crafted string and `COMMIT`. | A small SQL tokenizer (strings, `E''`, `$tag$`, nested comments). Unit tests. |
+| `campaigns/extras.rs` | Duplicate lost the verification rule and the tracking settings. | Both are copied. |
+| `campaigns/routes.rs` | A lead held for its AI email showed as "due now" on the Leads tab. | `wait_reason` reports the hold. |
+| `campaigns/emails.rs` | Optimised mode marked leads as missing a footer value it never uses. | The footer is skipped in that mode. |
+| `campaigns/send_now.rs` | Send now enrolled a lead whose first AI email was not written, then refused; it also worked on archived campaigns. | Checked before enrolling; archived and completed campaigns are refused. |
+| `tracking/send.rs` | Open tracking did nothing (and warned nothing) for plain-text emails: all AI and Optimised emails. | A campaign's own plain-text email gets a matching HTML part for the tracker. Inbox replies stay plain. |
+| `tracking/routes.rs` | The tracker preview did not work for text emails. | It uses the text as HTML. |
+| `leads/upsert.rs`, `campaigns/emails.rs` | An import or bulk update that changed a lead did not mark its saved emails out of date: the old text could be sent. | Updated leads are checked like a single edit. |
+| UI: campaign Settings | Hooks after an early return (could crash); saving one card wiped the unsaved edits of the others. | Fixed. |
+| UI: campaign Leads | "waiting delay" text hid the step and the next date; Send now showed for ended sequences. | Plain words for every code; the button is hidden when the sequence ended. |
+| UI: Editor | Leaving the Editor within 1.5 s lost the last edits. | The change is saved on leave; the browser warns before a reload with unsaved changes. |
+| UI: accounts | No way to fix a broken account; the popup fallback never saw a reconnect. | **Reconnect** (Google, Microsoft) and **Edit login** (IMAP/SMTP) on the account page. |
+| UI: tracking | Manual style could not be saved without touching the fields. | The shown defaults are sent. |
+| UI: developer panel | The SQL tab lost its text when you switched tabs; "All" hid trace lines; the Run button was unreadable in some themes. | Fixed. |
+| UI: API keys | No `tracking` scope in the key form. | Added. |
+
+### The Aikido design
+
+Settings → Account → **Appearance** (and the account menu) has two designs. **Generic** is the first look and is unchanged. **Aikido** is new: ink (sumi) and paper (washi), an indigo accent, a seal-red brand mark, pill buttons, rounder cards, mono labels, an ink menu rail in both themes, a brush circle (ensō) in empty pages, and a split login page. Each design has Light and Dark (and System). The deep red theme of Generic is now called **Crimson**.
+
+- Code: `ui/src/theme/theme.ts` (design state, saved in `localStorage` `aikido.design` and `users.preferences.design`), `ui/public/theme-init.js` (paints before the first frame), `ui/src/theme/tokens.css` (Aikido tokens), `ui/src/styles.css` (Aikido rules), `ui/src/components/Enso.tsx`, `AuthLayout.tsx`, the Appearance card in `routes/w.$ws.settings.account.tsx`.
+- The shared parts read tokens (`--radius-button`, `--input-bg`, `--sidebar-*`, `--tab-indicator`, ...). In Generic they keep the old values, so Generic looks as before.
+- `contrast.test.ts` checks the Aikido colors too (every text color AA on every background, the ink rail, the buttons).
+- New browser test `e2e/phase9_u7_design.spec.ts` (not run).
+- **Not verified:** the design was checked on a static page with the built CSS in headless Chrome, not in the running app. Open the app and click through the pages in both designs.
+
+### Still open
+
+- Run the DB tests (`tests/tracking.rs`, `tests/docs.rs` may still be out of date for routes added earlier) and the browser tests.
+- The things listed as "not verified" in the sections above (real Gmail/Outlook, real LLM, real DNS and certificates) are unchanged.

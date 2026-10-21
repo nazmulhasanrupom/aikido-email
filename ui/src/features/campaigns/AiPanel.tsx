@@ -112,7 +112,7 @@ export function AiPanel({
       </p>
       <div className="flex flex-wrap items-center gap-2">
         <MenuRoot>
-          <MenuTrigger className="inline-flex h-9 items-center gap-2 rounded-(--radius-control) border border-border bg-surface px-3 text-sm font-medium hover:bg-surface-2">
+          <MenuTrigger className="inline-flex h-9 items-center gap-2 rounded-(--radius-button) border border-border bg-surface px-3 text-sm font-medium hover:bg-surface-2">
             <Braces size={14} /> Variable
           </MenuTrigger>
           <MenuContent align="start" className="max-h-80 overflow-auto">
@@ -154,7 +154,7 @@ export function AiPanel({
           </MenuContent>
         </MenuRoot>
         <MenuRoot>
-          <MenuTrigger className="inline-flex h-9 items-center gap-2 rounded-(--radius-control) border border-border bg-surface px-3 text-sm font-medium hover:bg-surface-2">
+          <MenuTrigger className="inline-flex h-9 items-center gap-2 rounded-(--radius-button) border border-border bg-surface px-3 text-sm font-medium hover:bg-surface-2">
             Presets
           </MenuTrigger>
           <MenuContent align="start">

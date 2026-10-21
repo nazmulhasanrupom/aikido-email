@@ -212,5 +212,8 @@ pub async fn upsert_batch(conn: &mut PgConnection, rows: &[LeadInput], ctx: &Ups
         let created: Vec<Uuid> = out.iter().filter(|u| u.outcome == Outcome::Created).map(|u| u.id).collect();
         crate::verify_reoon::auto::enqueue_new(conn, &created, ctx.now).await?;
     }
+    // saved campaign emails of the updated leads may now be out of date
+    let updated: Vec<Uuid> = out.iter().filter(|u| u.outcome == Outcome::Updated).map(|u| u.id).collect();
+    crate::campaigns::emails::leads_changed(conn, &updated).await?;
     Ok(out)
 }

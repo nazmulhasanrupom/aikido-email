@@ -2,10 +2,17 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Outlet, useNavigate, useRouter } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { type AuthState, logout, saveThemePreference } from "@/api/auth";
+import { type AuthState, logout, saveDesignPreference, saveThemePreference } from "@/api/auth";
 import { messageOf } from "@/api/errors";
 import { readStored, writeStored } from "@/lib/safe-storage";
-import { applyChoice, isChoice, type ThemeChoice } from "@/theme/theme";
+import {
+  applyChoice,
+  applyDesign,
+  type DesignChoice,
+  isChoice,
+  isDesign,
+  type ThemeChoice,
+} from "@/theme/theme";
 import { DevPanel } from "@/features/developer/DevPanel";
 import { useDeveloperMode } from "@/features/developer/api";
 import { Banners } from "./Banners";
@@ -31,6 +38,11 @@ export function Shell({ ws, state }: { ws: string; state: AuthState }) {
   useEffect(() => {
     if (isChoice(saved)) applyChoice(saved);
   }, [saved]);
+  // The design too (Generic or Aikido).
+  const savedDesign = user?.preferences?.design;
+  useEffect(() => {
+    if (isDesign(savedDesign)) applyDesign(savedDesign);
+  }, [savedDesign]);
 
   // Ctrl/Cmd + K opens the search.
   useEffect(() => {
@@ -65,6 +77,15 @@ export function Shell({ ws, state }: { ws: string; state: AuthState }) {
     }
   }
 
+  async function changeDesign(design: DesignChoice) {
+    applyDesign(design);
+    try {
+      await saveDesignPreference(design);
+    } catch (e) {
+      toast.error(`The design is changed here, but not saved to your account. ${messageOf(e)}`);
+    }
+  }
+
   async function onLogout() {
     try {
       await logout();
@@ -86,6 +107,7 @@ export function Shell({ ws, state }: { ws: string; state: AuthState }) {
         drawerOpen={drawer}
         onCloseDrawer={() => setDrawer(false)}
         onChangeTheme={changeTheme}
+        onChangeDesign={changeDesign}
         onLogout={onLogout}
       />
       <div className="flex min-w-0 flex-1 flex-col">

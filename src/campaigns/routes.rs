@@ -690,7 +690,8 @@ pub struct CampaignLeadRow {
     /// When the next step is due.
     pub next_due_at: Option<DateTime<Utc>>,
     /// Why the lead is not moving, in a code. `waiting_delay`, `queued`, `waiting_ai_review`, `paused`,
-    /// `finished`, or the stop reason (`reply`, `bounce_hard`, `unsubscribe`, `manual`, ...). Empty when the next step is due now.
+    /// `finished`, a hold from the follow-up scheduler (`email_not_ready`, `email_review`, `generation_pending`, `generation_review`),
+    /// or the stop reason (`reply`, `bounce_hard`, `unsubscribe`, `manual`, ...). Empty when the next step is due now.
     pub wait_reason: Option<String>,
     /// The saved emails of this lead in this campaign, one per step that has one.
     #[sqlx(skip)]
@@ -772,6 +773,7 @@ async fn list_campaign_leads(State(st): State<AppState>, ApiPath(id): ApiPath<Uu
                   WHEN e.status IN ('stopped', 'failed') THEN COALESCE(e.stop_reason, 'stopped')
                   WHEN e.status = 'finished' THEN 'finished'
                   WHEN e.status = 'paused' THEN 'paused'
+                  WHEN e.status = 'active' AND e.wait_reason IS NOT NULL THEN e.wait_reason
                   WHEN EXISTS (SELECT 1 FROM generations g WHERE g.enrollment_id = e.id AND g.step_number = e.next_step AND g.status = 'pending_review')
                     THEN 'waiting_ai_review'
                   WHEN e.status = 'waiting_send' THEN 'queued'

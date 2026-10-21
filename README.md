@@ -10,7 +10,7 @@ Send, follow up, detect replies, manage leads and write personal text with AI. A
 ![React](https://img.shields.io/badge/React-19-61dafb?logo=react&logoColor=black)
 ![Docker](https://img.shields.io/badge/Docker-ready-2496ed?logo=docker&logoColor=white)
 ![License](https://img.shields.io/badge/license-Apache%202.0-blue)
-![Tests](https://img.shields.io/badge/tests-663%20Rust%20%7C%2061%20UI%20%7C%2020%20E2E-brightgreen)
+![Tests](https://img.shields.io/badge/tests-663%20Rust%20%7C%20147%20UI%20%7C%2020%20E2E-brightgreen)
 
 [Quick start](#-quick-start) · [Features](#-features) · [Configuration](#-configuration) · [Deploy](#-deploy-to-production) · [API](#-api) · [Development](#-development)
 
@@ -57,6 +57,7 @@ You connect your inboxes (Gmail, Outlook or any IMAP/SMTP). You import leads. Yo
 | **Open tracking** | Counts opens without a hidden pixel. The tracker is a normal image served from your own domain (a CNAME like `media.acme.com`, free Let's Encrypt certificate). Text-to-image or signature image. Apple, Google proxy and scanner opens are marked. |
 | **AI column mapping** | Upload any CSV. Rules and an AI map the columns. You confirm before anything is saved. |
 | **Web app** | Setup wizard, accounts, leads, campaigns editor, inbox, reports, settings, status page, alerts, `Ctrl K` search. |
+| **Two designs** | **Generic** (the first look: warm and simple) or **Aikido** (ink, paper and indigo, round shapes, an ink menu rail). Each has a light and a dark theme. Pick it in **Settings → Account → Appearance** or in the account menu. |
 | **Security** | Secrets encrypted with AES-256-GCM. Scoped API keys (SHA-256 hashed). CSRF protection. Logs never hold tokens or passwords. |
 | **Everything is an API** | 100+ routes with a live OpenAPI spec at `/docs`. |
 
@@ -358,6 +359,8 @@ Server setup: set `AIKIDO_TRACKING_CNAME_TARGET` (default: the host of `AIKIDO_P
 
 **Host the tracking domain with HTTPS.** Green in the app only means the CNAME was found. The tracking host (for example `media.yourdomain.com`) must also open over HTTPS on your server, or the image will not load and no opens are counted. Use a CNAME only, no A record. **In Coolify:** open the Aikido app, go to **Configuration → General**, and add the host to **Domains** after the ones you have, separated by a comma (`https://app.example.com,https://media.yourdomain.com`), with port `8080`. Save and redeploy. If the domain is on Cloudflare, set the record to **DNS only** (grey cloud) until the certificate works. Check with `https://media.yourdomain.com/i/test.png` (a blank page, no error). Do this once for each tracking host. Other hosting: serve the host over HTTPS and send it to the Aikido port.
 
+A plain-text campaign email (all AI and Optimised emails, and Text-mode templates) gets a matching HTML part with the same text, so the tracker can be placed. A reply you write in the Inbox stays plain text.
+
 Opens from Apple Mail Privacy Protection, the Google image proxy and security scanners are marked. A lead with only such opens shows **Maybe opened**.
 
 ### Developer mode
@@ -473,7 +476,7 @@ e2e/run.sh                # browser tests (Playwright + Chrome) against a fresh 
 | Suite | Count |
 | --- | --- |
 | Rust | 663 |
-| UI unit | 61 |
+| UI unit | 147 |
 | Browser (E2E) | 20 |
 
 ### Useful commands
@@ -556,6 +559,7 @@ Please try these on a test account first, and report what you find. `progress.md
 | Saved inboxes stopped working | The encryption key changed or was lost. Restore `encryption.key` or connect the inboxes again. |
 | Gmail account goes `disconnected` after 7 days | The Google app is in **Testing** mode. Use **Internal**, or publish and verify the app. |
 | Account shows `reconnect_needed` | It was connected before the Reply Check. Connect it again. |
+| An account is disconnected (login failed) | Open the account. Google and Microsoft: press **Reconnect**. IMAP/SMTP: press **Edit login**, type the new password, then **Test and save**. The account is active again. |
 | Follow-ups do not go out | The inbox was not read lately (safety gate). Check `/v1/sending/accounts/{id}/status` for `reply_check_stale`. |
 | `CREATE EXTENSION pg_trgm` fails | Enable `pg_trgm` by hand on your managed database. |
 | Page shows a small placeholder | `ui/dist` is not built. Run `pnpm build` in `ui/`, then `cargo build`. |

@@ -95,7 +95,7 @@ export function DomainCheck({ accountId, compact }: { accountId: string; compact
               value={typed}
               onChange={(e) => setTyped(e.target.value)}
               placeholder="for example s1"
-              className="h-8 w-48 rounded border border-border bg-surface-2 px-2"
+              className="h-8 w-48 rounded border border-border bg-(--input-bg) px-2"
             />
           </label>
           <Button type="submit" variant="secondary" className="h-8">

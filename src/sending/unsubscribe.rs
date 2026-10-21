@@ -62,7 +62,7 @@ fn escape_html(s: &str) -> String {
 }
 
 /// A plain text body as HTML: escaped, line breaks kept.
-fn text_to_html(text: &str) -> String {
+pub fn text_to_html(text: &str) -> String {
     format!("<div style=\"white-space:pre-wrap\">{}</div>", escape_html(text))
 }
 

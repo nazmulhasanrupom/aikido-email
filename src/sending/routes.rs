@@ -306,8 +306,8 @@ async fn follow_up_gate_wait(
     let Some(block) = queue::reply_check_block(&mut conn, account, settings, now).await? else { return Ok(None) };
     // Due jobs that the gate does not hold back: first emails, and manual jobs.
     let (open, held): (i64, i64) = sqlx::query_as(
-        "SELECT count(*) FILTER (WHERE NOT (kind = 'automated' AND in_reply_to IS NOT NULL) AND (send_after IS NULL OR send_after <= $2)),
-                count(*) FILTER (WHERE kind = 'automated' AND in_reply_to IS NOT NULL)
+        "SELECT count(*) FILTER (WHERE NOT (kind = 'automated' AND (in_reply_to IS NOT NULL OR COALESCE(step_number, 1) > 1)) AND (send_after IS NULL OR send_after <= $2)),
+                count(*) FILTER (WHERE kind = 'automated' AND (in_reply_to IS NOT NULL OR COALESCE(step_number, 1) > 1))
          FROM send_jobs WHERE account_id = $1 AND status = 'queued'",
     )
     .bind(account.id)

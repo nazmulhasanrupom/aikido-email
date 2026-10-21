@@ -219,6 +219,10 @@ pub struct AccountChanges {
     pub smtp: Option<HostInfo>,
     pub imap: Option<HostInfo>,
     pub secrets: Option<Secrets>,
+    /// The SMTP login was tested and works: bring a disconnected account back.
+    pub reconnect: bool,
+    /// The IMAP login works (or was saved untested on localhost): the inbox can be read.
+    pub read_ok: bool,
 }
 
 pub async fn apply_changes(
@@ -228,14 +232,12 @@ pub async fn apply_changes(
     changes: AccountChanges,
 ) -> anyhow::Result<Option<EmailAccount>> {
     let mut tx = pool.begin().await?;
-    let found: Option<(Uuid,)> =
-        sqlx::query_as("SELECT id FROM email_accounts WHERE id = $1 AND deleted_at IS NULL FOR UPDATE")
+    let found: Option<(Uuid, AccountStatus)> =
+        sqlx::query_as("SELECT id, status FROM email_accounts WHERE id = $1 AND deleted_at IS NULL FOR UPDATE")
             .bind(id)
             .fetch_optional(&mut *tx)
             .await?;
-    if found.is_none() {
-        return Ok(None);
-    }
+    let Some((_, old_status)) = found else { return Ok(None) };
     if let Some(name) = &changes.display_name {
         sqlx::query("UPDATE email_accounts SET display_name = $2, updated_at = now() WHERE id = $1")
             .bind(id)
@@ -271,6 +273,34 @@ pub async fn apply_changes(
         .bind(&sealed.ciphertext)
         .bind(&sealed.nonce)
         .bind(sealed.key_version)
+        .execute(&mut *tx)
+        .await?;
+    }
+    // Like a reconnect: a working login brings the account back. An account the user paused stays paused.
+    if changes.reconnect && matches!(old_status, AccountStatus::Disconnected | AccountStatus::Error) {
+        sqlx::query("UPDATE email_accounts SET status = 'active'::account_status, last_error = NULL, updated_at = now() WHERE id = $1")
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query(
+            "UPDATE account_send_state SET paused = false, paused_reason = NULL, paused_at = NULL,
+                    consecutive_failures = 0 WHERE account_id = $1",
+        )
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+    }
+    if changes.read_ok {
+        sqlx::query("UPDATE email_accounts SET can_read = true, read_status = 'ok', updated_at = now() WHERE id = $1")
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
+        // The inbox gets another chance at once.
+        sqlx::query(
+            "UPDATE inbox_sync_state SET consecutive_errors = 0, last_error = NULL, next_sync_at = NULL, sync_started_at = NULL
+             WHERE account_id = $1",
+        )
+        .bind(id)
         .execute(&mut *tx)
         .await?;
     }

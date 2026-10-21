@@ -170,7 +170,7 @@ export function GenerateDialog({
                 max={10000}
                 value={count}
                 onChange={(e) => setCount(Math.max(1, Number(e.target.value) || 1))}
-                className="h-8 w-full rounded border border-border bg-surface-2 px-2"
+                className="h-8 w-full rounded border border-border bg-(--input-bg) px-2"
               />
             </div>
             leads without this email

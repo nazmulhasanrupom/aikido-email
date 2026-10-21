@@ -12,7 +12,9 @@ import {
 } from "react";
 import { messageOf } from "@/api/errors";
 import { cn } from "@/lib/cn";
+import { useDesign } from "@/theme/theme";
 import { Button } from "../Button";
+import { Enso } from "../Enso";
 
 export { Button } from "../Button";
 export { Card } from "../Card";
@@ -43,7 +45,7 @@ export function Pill({
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium",
+        "ui-pill inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium",
         TONES[tone],
       )}
     >
@@ -65,7 +67,9 @@ export function PageHeader({
   return (
     <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
       <div className="min-w-0">
-        <h1 className="truncate text-xl font-semibold">{title}</h1>
+        <h1 className="ui-page-title truncate text-(length:--page-title) leading-(--page-title-leading) font-semibold">
+          {title}
+        </h1>
         {sub && <p className="mt-0.5 text-muted">{sub}</p>}
       </div>
       {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
@@ -90,9 +94,18 @@ export function EmptyState({
   text: string;
   action?: ReactNode;
 }) {
+  const design = useDesign();
   return (
     <div className="animate-rise-in flex flex-col items-center gap-3 rounded-(--radius-card) border border-dashed border-border px-6 py-12 text-center">
-      {Icon && <Icon size={22} className="text-muted" aria-hidden="true" />}
+      {design === "aikido" ? (
+        // the Aikido design draws the icon inside a brush circle
+        <span className="relative flex size-16 items-center justify-center">
+          <Enso size={64} className="absolute inset-0 text-(--brand) opacity-85" />
+          {Icon && <Icon size={20} className="relative text-text" aria-hidden="true" />}
+        </span>
+      ) : (
+        Icon && <Icon size={22} className="text-muted" aria-hidden="true" />
+      )}
       {title && <h2 className="font-semibold">{title}</h2>}
       <p className="max-w-md text-muted">{text}</p>
       {action}
@@ -174,7 +187,7 @@ export function CopyButton({ text, label = "Copy" }: { text: string; label?: str
 /* ---------- form controls ---------- */
 
 const CONTROL =
-  "w-full rounded-(--radius-control) border border-border bg-surface-2 px-3 text-sm placeholder:text-muted disabled:opacity-60";
+  "w-full rounded-(--radius-control) border border-border bg-(--input-bg) px-3 text-sm placeholder:text-muted disabled:opacity-60";
 
 interface SelectProps extends Omit<SelectHTMLAttributes<HTMLSelectElement>, "onChange"> {
   label: string;
@@ -358,11 +371,11 @@ export function TagInput({
       <label htmlFor={id} className="text-sm font-medium">
         {label}
       </label>
-      <div className="flex flex-wrap gap-1.5 rounded-(--radius-control) border border-border bg-surface-2 p-1.5">
+      <div className="flex flex-wrap gap-1.5 rounded-(--radius-control) border border-border bg-(--input-bg) p-1.5">
         {values.map((v) => (
           <span
             key={v}
-            className="inline-flex items-center gap-1 rounded bg-surface px-2 py-0.5 text-xs"
+            className="inline-flex items-center gap-1 rounded bg-(--chip-bg) px-2 py-0.5 text-xs"
           >
             {v}
             <button
@@ -432,7 +445,7 @@ export function Modal({ open, onClose, title, children, footer, size = "md", sid
         if (e.target === ref.current) onClose();
       }}
       className={cn(
-        "m-auto w-full rounded-(--radius-card) border border-border bg-surface p-0 text-text shadow-(--shadow-pop) backdrop:bg-black/35",
+        "m-auto w-full rounded-(--radius-dialog) border border-border bg-surface p-0 text-text shadow-(--shadow-pop) backdrop:bg-(--backdrop)",
         side && "dialog-side ml-auto mr-0 mt-0 mb-0 h-full max-h-full w-full max-w-xl rounded-none",
         !side && width,
       )}
@@ -571,7 +584,7 @@ export function Tabs<T extends string>({
           className={cn(
             "-mb-px border-b-2 px-3 py-2 text-sm duration-200",
             it.value === value
-              ? "border-accent font-medium"
+              ? "border-(--tab-indicator) font-medium"
               : "border-transparent text-muted hover:text-text",
           )}
         >
@@ -600,7 +613,7 @@ export function LinkTabs({
           // biome-ignore lint/suspicious/noExplicitAny: same
           params={it.params as any}
           className="-mb-px whitespace-nowrap border-b-2 border-transparent px-3 py-2 text-sm text-muted duration-200 hover:border-border hover:text-text"
-          activeProps={{ className: "border-accent font-medium text-text" }}
+          activeProps={{ className: "border-(--tab-indicator) font-medium text-text" }}
         >
           {it.label}
         </Link>
@@ -611,7 +624,7 @@ export function LinkTabs({
 
 /* ---------- tables ---------- */
 
-export const TH = "px-3 py-2 text-left text-xs font-medium text-muted";
+export const TH = "ui-th px-3 py-2 text-left text-(length:--th-size) leading-4 font-medium text-muted";
 export const TD = "px-3 py-2 align-middle";
 
 export function Table({ children, className }: { children: ReactNode; className?: string }) {
@@ -629,7 +642,7 @@ export function Table({ children, className }: { children: ReactNode; className?
 
 export function Head({ cols }: { cols: (string | ReactNode)[] }) {
   return (
-    <thead className="bg-surface-2">
+    <thead className="bg-(--table-head-bg)">
       <tr>
         {cols.map((c, i) => (
           <th key={i} scope="col" className={TH}>

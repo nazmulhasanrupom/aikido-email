@@ -40,7 +40,7 @@ impl GmailSender {
     async fn real_message_id(&self, client: &reqwest::Client, gmail_id: &str, ours: &str) -> Option<String> {
         let mut url = oauth2::url::Url::parse(&format!("{}/messages/{gmail_id}", self.read_base.trim_end_matches('/'))).ok()?;
         url.query_pairs_mut().append_pair("format", "metadata").append_pair("metadataHeaders", "Message-ID");
-        let resp = client.get(url).bearer_auth(self.access_token.expose_secret()).send().await.ok()?;
+        let resp = client.get(url).timeout(LOOKUP_REQUEST_TIMEOUT).bearer_auth(self.access_token.expose_secret()).send().await.ok()?;
         if !resp.status().is_success() {
             return None;
         }
@@ -56,6 +56,16 @@ impl GmailSender {
         (real != ours).then_some(real)
     }
 }
+
+/// How long the best-effort lookup after a send may take: at most 15 s, and it must end before the worker's 60 s limit.
+/// `None` means no time is left, so the lookup is skipped.
+pub fn lookup_budget(elapsed: Duration) -> Option<Duration> {
+    let left = Duration::from_secs(55).saturating_sub(elapsed).min(Duration::from_secs(15));
+    (!left.is_zero()).then_some(left)
+}
+
+/// The time limit of one lookup request.
+pub const LOOKUP_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 
 pub fn retry_after(headers: &reqwest::header::HeaderMap) -> Option<Duration> {
     headers
@@ -128,6 +138,7 @@ impl MailSender for GmailSender {
         if let Some(thread) = &msg.thread_id {
             payload["threadId"] = Value::String(thread.clone());
         }
+        let started = std::time::Instant::now();
         let client = reqwest::Client::builder().timeout(Duration::from_secs(55)).build().map_err(map_request_error)?;
         let resp = client
             .post(&self.url)
@@ -142,7 +153,11 @@ impl MailSender for GmailSender {
         let body = resp.text().await.unwrap_or_default();
         let mut receipt = map_response(status, &headers, &body)?;
         if let Some(gmail_id) = receipt.provider_message_id.clone() {
-            receipt.message_id_header = self.real_message_id(&client, &gmail_id, &msg.message_id).await;
+            // The email is sent. A slow lookup must not turn it into a timeout.
+            if let Some(budget) = lookup_budget(started.elapsed()) {
+                receipt.message_id_header =
+                    tokio::time::timeout(budget, self.real_message_id(&client, &gmail_id, &msg.message_id)).await.ok().flatten();
+            }
         }
         Ok(receipt)
     }
@@ -175,6 +190,14 @@ mod tests {
         assert!(matches!(err(503, "oops"), SendError::Transient(_)));
         assert!(matches!(err(500, "oops"), SendError::Transient(_)));
         assert!(matches!(err(400, "bad"), SendError::Permanent { hard_bounce: false, .. }));
+    }
+
+    #[test]
+    fn lookup_budget_stays_inside_the_limit() {
+        assert_eq!(lookup_budget(Duration::from_secs(1)), Some(Duration::from_secs(15)));
+        assert_eq!(lookup_budget(Duration::from_secs(45)), Some(Duration::from_secs(10)));
+        assert_eq!(lookup_budget(Duration::from_secs(55)), None);
+        assert_eq!(lookup_budget(Duration::from_secs(70)), None);
     }
 
     #[test]

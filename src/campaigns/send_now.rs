@@ -9,6 +9,7 @@
 //! address that is on the suppression list. A lead whose sequence has ended (stopped, finished, failed) has no next
 //! email. A step whose AI text is not written yet cannot be sent.
 use super::feeder::pick_account;
+use super::model::CampaignStatus;
 use super::routes::{get, pool_accounts};
 use crate::error::{ApiError, ApiJson, ApiPath, ApiResult};
 use crate::followups::enroll::{self, EnrollError, EnrollStatus, NewEnrollment};
@@ -40,7 +41,7 @@ pub struct SendNowReply {
 #[utoipa::path(post, path = "/v1/campaigns/{id}/leads/{lead_id}/send-now", tag = "campaigns",
     params(("id" = Uuid, Path), ("lead_id" = Uuid, Path)),
     responses((status = 200, body = SendNowReply), (status = 404, description = "No such campaign, or the lead is not in it"),
-        (status = 409, description = "`no_healthy_account`, `sequence_ended`, `email_not_ready`, `already_sending`, `busy`"),
+        (status = 409, description = "`no_healthy_account`, `sequence_ended`, `email_not_ready`, `already_sending`, `busy`, `invalid_status` (archived or completed campaign)"),
         (status = 422, description = "The lead could not be enrolled or the email could not be made")),
     security(("api_key" = ["campaigns"])),
     description = "Scope: `campaigns`. Sends the next email of the lead at once and checks no rule: not the send window, the daily cap, the gap, the cooldown, the \
@@ -53,10 +54,25 @@ async fn send_now(State(st): State<AppState>, ApiPath((id, lead_id)): ApiPath<(U
     let row: Option<(Option<Uuid>,)> = sqlx::query_as("SELECT enrollment_id FROM campaign_leads WHERE campaign_id = $1 AND lead_id = $2").bind(id).bind(lead_id).fetch_optional(&mut *conn).await?;
     let Some((existing,)) = row else { return Err(ApiError::not_found("lead_not_in_campaign", "This lead is not in the campaign.")) };
 
+    if matches!(c.status, CampaignStatus::Archived | CampaignStatus::Completed) {
+        return Err(ApiError::conflict("invalid_status", format!("The campaign is {}.", c.status.as_str())));
+    }
+
     // 1. A lead that is not enrolled yet: enroll it now (no daily limit), on an account of the pool.
     let enrollment_id = match existing {
         Some(e) => e,
         None => {
+            // AI and Optimised mode: the first email must be written before the lead is enrolled.
+            if c.is_ai() {
+                let first: Option<String> = sqlx::query_scalar("SELECT status FROM lead_emails WHERE campaign_id = $1 AND lead_id = $2 AND step_number = 1")
+                    .bind(id)
+                    .bind(lead_id)
+                    .fetch_optional(&mut *conn)
+                    .await?;
+                if !first.is_some_and(|s| matches!(s.as_str(), "ready" | "stale" | "sent")) {
+                    return Err(ApiError::conflict("email_not_ready", "The first email of this lead is not written yet. Write or approve it first."));
+                }
+            }
             let accounts = pool_accounts(&mut conn, id).await?;
             let (last,): (Option<Uuid>,) = sqlx::query_as("SELECT last_account_id FROM campaigns WHERE id = $1").bind(id).fetch_one(&mut *conn).await?;
             let Some(account) = pick_account(&mut conn, &c, last, &accounts).await? else {

@@ -155,7 +155,6 @@ export function Editor({
   const subjectRef = useRef<HTMLInputElement>(null);
   const [device, setDevice] = useState<"desktop" | "mobile">("desktop");
   const cursor = useRef<number | null>(null);
-  const first = useRef(true);
   const onVariant = sel === 0 && vsel >= 0 && !!variants[vsel];
   const cur = onVariant
     ? (variants[vsel] as Draft)
@@ -165,6 +164,13 @@ export function Editor({
     !!slotProvider && providers.data?.some((p) => p.id === slotProvider && p.status === "ok");
 
   const body = useCallback((s: Draft) => (s.html ? (s.body_html ?? "") : s.body_text), []);
+
+  // What the server has (as text), what is being saved now, and the latest edits.
+  const snapshot = JSON.stringify({ steps, variants, aiSystem });
+  const lastSaved = useRef(snapshot);
+  const inflight = useRef<string | null>(null);
+  const snapshotRef = useRef(snapshot);
+  snapshotRef.current = snapshot;
 
   const payloadOf = (d: Draft, i: number) => {
     const html = d.html ? sanitizeHtml(d.body_html ?? "") : null;
@@ -180,6 +186,16 @@ export function Editor({
   };
   /** Save the template (the steps and the variants of step 1). */
   const persist = useCallback(async () => {
+    const snap = JSON.stringify({ steps, variants, aiSystem });
+    inflight.current = snap;
+    try {
+      await persistNow();
+      lastSaved.current = snap;
+    } finally {
+      inflight.current = null;
+    }
+  }, [steps, variants, thread, aiSystem]);
+  const persistNow = async () => {
     if (aiSystem !== savedSystem.current) {
       await http.patch("/v1/followups/sequences/{id}", {
         path: { id: seq.id },
@@ -198,20 +214,25 @@ export function Editor({
       },
     });
     void qc.invalidateQueries({ queryKey: ["campaigns", campaign.id] });
-  }, [steps, variants, thread, aiSystem]);
+  };
+
+  const persistRef = useRef(persist);
+  persistRef.current = persist;
+  const unsaved = () =>
+    snapshotRef.current !== lastSaved.current && snapshotRef.current !== inflight.current;
 
   // Autosave 1.5 s after the last change.
   useEffect(() => {
-    if (first.current) {
-      first.current = false;
+    if (snapshot === lastSaved.current) {
+      setSave((s) => (s === "dirty" ? "saved" : s));
       return;
     }
     setSave("dirty");
     const t = setTimeout(async () => {
       setSave("saving");
       try {
-        await persist();
-        setSave("saved");
+        await persistRef.current();
+        setSave(snapshotRef.current === lastSaved.current ? "saved" : "dirty");
         setSaveError(null);
       } catch (e) {
         setSave("error");
@@ -225,7 +246,25 @@ export function Editor({
       }
     }, 1500);
     return () => clearTimeout(t);
-  }, [steps, variants, aiSystem]);
+  }, [snapshot]);
+
+  // Leaving the tab with a change that is not saved yet: save it now.
+  useEffect(
+    () => () => {
+      if (unsaved()) void persistRef.current().catch(() => {});
+    },
+    [],
+  );
+  // Closing or reloading the page with unsaved changes: ask the browser to warn.
+  useEffect(() => {
+    const h = (e: BeforeUnloadEvent) => {
+      if (snapshotRef.current === lastSaved.current && inflight.current === null) return;
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", h);
+    return () => window.removeEventListener("beforeunload", h);
+  }, []);
 
   /** Save: the template, then the emails of every lead. */
   async function saveEmails(overwrite?: "keep_edited" | "all") {
@@ -477,7 +516,7 @@ export function Editor({
                         ),
                       )
                     }
-                    className="h-7 w-12 rounded border border-border bg-surface-2 px-1.5 text-text"
+                    className="h-7 w-12 rounded border border-border bg-(--input-bg) px-1.5 text-text"
                   />
                   <select
                     aria-label={`Kind of days before follow-up ${i}`}
@@ -489,7 +528,7 @@ export function Editor({
                         ),
                       )
                     }
-                    className="h-7 rounded border border-border bg-surface-2 px-1 text-text"
+                    className="h-7 rounded border border-border bg-(--input-bg) px-1 text-text"
                   >
                     <option value="business_days">business days</option>
                     <option value="calendar_days">calendar days</option>

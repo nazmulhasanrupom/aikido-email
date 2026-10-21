@@ -105,7 +105,7 @@ function CampaignLayout() {
               to={to}
               params={p}
               className="flex items-center whitespace-nowrap border-b-2 border-transparent px-3 py-3 text-sm text-muted hover:text-text"
-              activeProps={{ className: "border-accent! font-medium text-text!" }}
+              activeProps={{ className: "border-(--tab-indicator)! font-medium text-text!" }}
             >
               {label}
             </Link>

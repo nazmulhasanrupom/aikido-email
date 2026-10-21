@@ -101,7 +101,7 @@ function Team() {
                         aria-label={`Role of ${u.name}`}
                         value={u.role}
                         onChange={(e) => patch.mutate({ id: u.id, body: { role: e.target.value } })}
-                        className="h-8 rounded border border-border bg-surface-2 px-1.5"
+                        className="h-8 rounded border border-border bg-(--input-bg) px-1.5"
                       >
                         <option value="admin">admin</option>
                         <option value="member">member</option>

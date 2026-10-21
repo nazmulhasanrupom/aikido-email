@@ -403,7 +403,7 @@ export function AddColumn() {
           <label className="flex flex-col gap-1 text-sm font-medium">
             Column name
             <input
-              className="h-9 rounded border border-border bg-surface-2 px-2 text-sm font-normal"
+              className="h-9 rounded border border-border bg-(--input-bg) px-2 text-sm font-normal"
               value={name}
               onChange={(e) => {
                 setName(e.target.value);
@@ -415,7 +415,7 @@ export function AddColumn() {
           <label className="flex flex-col gap-1 text-sm font-medium">
             Value when empty (optional)
             <input
-              className="h-9 rounded border border-border bg-surface-2 px-2 text-sm font-normal"
+              className="h-9 rounded border border-border bg-(--input-bg) px-2 text-sm font-normal"
               value={fallback}
               onChange={(e) => setFallback(e.target.value)}
             />
@@ -539,7 +539,7 @@ export function ColumnHeader({ col }: { col: GridCol }) {
           <label className="flex flex-col gap-1 text-sm font-medium">
             {mode === "rename" ? "Name (the key stays the same)" : "Value when empty"}
             <input
-              className="h-9 rounded border border-border bg-surface-2 px-2 text-sm font-normal"
+              className="h-9 rounded border border-border bg-(--input-bg) px-2 text-sm font-normal"
               value={text}
               onChange={(e) => setText(e.target.value)}
             />

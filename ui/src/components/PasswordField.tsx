@@ -18,7 +18,7 @@ export const PasswordField = forwardRef<HTMLInputElement, Props>(
             onClick={() => setShown((s) => !s)}
             aria-label={shown ? "Hide password" : "Show password"}
             aria-pressed={shown}
-            className="rounded p-1.5 text-muted hover:bg-surface hover:text-text"
+            className="rounded p-1.5 text-muted hover:bg-text/5 hover:text-text"
           >
             {shown ? <EyeOff size={16} /> : <Eye size={16} />}
           </button>

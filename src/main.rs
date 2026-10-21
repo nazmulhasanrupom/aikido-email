@@ -45,7 +45,16 @@ async fn main() -> Res<()> {
             let Some(user) = aikido_email::users::repo::find_by_email(&pool, email).await.map_err(|e| format!("{e:#}"))? else {
                 return Err(format!("no user with the email {email}").into());
             };
-            let link = aikido_email::users::routes::new_reset_link(&pool, cfg.public_url.as_deref(), user.id, chrono::Utc::now())
+            // Without AIKIDO_PUBLIC_URL, use the address the app was last opened at.
+            let site_url = match &cfg.public_url {
+                Some(u) => Some(u.clone()),
+                None => sqlx::query_scalar::<_, Option<String>>("SELECT site_url FROM app_state WHERE id = 1")
+                    .fetch_optional(&pool)
+                    .await
+                    .map_err(|e| format!("{e:#}"))?
+                    .flatten(),
+            };
+            let link = aikido_email::users::routes::new_reset_link(&pool, site_url.as_deref(), user.id, chrono::Utc::now())
                 .await
                 .map_err(|e| format!("{e:#}"))?;
             println!("One-time link for {} (valid 1 hour, works one time):\n{link}", user.email);

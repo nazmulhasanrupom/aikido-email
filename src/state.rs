@@ -23,9 +23,9 @@ pub struct AppState {
     pub llm: Arc<dyn LlmFactory>,
     /// Hashes and checks the passwords of web users.
     pub passwords: Arc<Passwords>,
-    /// Looks up SPF, DKIM and DMARC for the domain check. Tests replace the resolver inside it.
     /// Builds the Reoon client for a key. Tests replace it with a fake.
     pub verifier: Arc<dyn crate::verify_reoon::client::VerifierFactory>,
+    /// Looks up SPF, DKIM and DMARC for the domain check. Tests replace the resolver inside it.
     pub dns: Arc<crate::accounts::dns_check::DnsChecker>,
     /// Fetches portfolio pages for PERSONALIZATION. Tests replace it with a fetcher that has a fake resolver.
     pub fetcher: Arc<crate::net::safe_fetch::SafeFetcher>,

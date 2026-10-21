@@ -7,7 +7,7 @@ export function Logo({ size = 28 }: { size?: number }) {
       aria-hidden="true"
       width={size}
       height={size}
-      className="shrink-0 rounded-md object-contain"
+      className="ui-logo shrink-0 rounded-md object-contain"
       style={{ width: size, height: size }}
     />
   );

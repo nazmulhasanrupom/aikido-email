@@ -70,3 +70,9 @@ export async function saveThemePreference(theme: string): Promise<void> {
   const preferences = { theme } as unknown as Record<string, never>;
   await unwrap(api.PATCH("/v1/users/me", { body: { preferences } }));
 }
+
+/** Remember the design (Generic or Aikido) on the account, like the theme. */
+export async function saveDesignPreference(design: string): Promise<void> {
+  const preferences = { design } as unknown as Record<string, never>;
+  await unwrap(api.PATCH("/v1/users/me", { body: { preferences } }));
+}

@@ -141,15 +141,29 @@ impl Config {
     }
 }
 
+/// The host part of `host[:port][/path]` is this machine. A bracketed IPv6 host is read up to the `]`.
+fn is_local_host(rest: &str) -> bool {
+    let host = match rest.strip_prefix('[') {
+        Some(inner) => match inner.split_once(']') {
+            Some((h, _)) => return h == "::1",
+            None => return false,
+        },
+        None => rest.split(['/', ':', '?', '#']).next().unwrap_or(""),
+    };
+    matches!(host, "localhost" | "127.0.0.1")
+}
+
+/// The address is `http://` and its host is not this machine.
+fn is_plain_http_remote(url: &str) -> bool {
+    url.strip_prefix("http://").is_some_and(|rest| !is_local_host(rest))
+}
+
 impl Config {
     /// The browser address of the app is plain HTTP on a host that is not this machine.
     /// A `Secure` cookie is not stored there, so the login would not work.
     pub fn plain_http_remote(&self) -> bool {
         let Some(url) = &self.public_url else { return false };
-        let Some(rest) = url.strip_prefix("http://") else { return false };
-        let host = rest.split(['/', ':']).next().unwrap_or("");
-        let host = if rest.starts_with('[') { "[::1]" } else { host };
-        !self.insecure_cookies && !matches!(host, "localhost" | "127.0.0.1" | "[::1]")
+        !self.insecure_cookies && is_plain_http_remote(url)
     }
 
     /// The host a tracking domain must point to: `AIKIDO_TRACKING_CNAME_TARGET`, else the host of `AIKIDO_PUBLIC_URL`.
@@ -166,5 +180,30 @@ impl Config {
 
     pub fn https(&self) -> bool {
         self.public_url.as_deref().is_some_and(|u| u.starts_with("https"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_plain_http_remote;
+
+    #[test]
+    fn local_hosts_are_not_remote() {
+        assert!(!is_plain_http_remote("http://localhost:8080"));
+        assert!(!is_plain_http_remote("http://127.0.0.1:8080/app"));
+        assert!(!is_plain_http_remote("http://[::1]:8080"));
+        assert!(!is_plain_http_remote("http://[::1]"));
+    }
+
+    #[test]
+    fn other_plain_http_hosts_are_remote() {
+        assert!(is_plain_http_remote("http://[2001:db8::1]:8080"));
+        assert!(is_plain_http_remote("http://example.com"));
+        assert!(is_plain_http_remote("http://[::1"));
+    }
+
+    #[test]
+    fn https_is_never_remote_plain() {
+        assert!(!is_plain_http_remote("https://example.com"));
     }
 }

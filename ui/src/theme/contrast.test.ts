@@ -28,21 +28,25 @@ function contrast(a: string, b: string): number {
   return (hi + 0.05) / (lo + 0.05);
 }
 
+/** Generic: light, dark and Crimson (`data-theme="aikido"`). Aikido design: light and dark. */
 const themes = {
   light: block(":root"),
   dark: block(':root[data-theme="dark"]'),
-  aikido: block(':root[data-theme="aikido"]'),
+  crimson: block(':root[data-theme="aikido"]'),
+  "aikido design light": block(':root[data-design="aikido"]'),
+  "aikido design dark": block(':root[data-design="aikido"][data-theme="dark"]'),
 };
 const AA = 4.5;
 const grounds = ["bg", "surface", "surface-2"] as const;
 const textColors = ["text", "text-muted", "accent", "success", "warning", "danger", "info", "ai"];
+/** Every theme sets these colors itself. */
+const palette = [...grounds, "border", ...textColors, "accent-fg", "accent-soft"].sort();
 
 describe("theme tokens", () => {
-  it("both themes define every token", () => {
-    const names = Object.keys(themes.light).sort();
-    expect(names).toContain("accent-soft");
-    expect(Object.keys(themes.dark).sort()).toEqual(names);
-    expect(Object.keys(themes.aikido).sort()).toEqual(names);
+  it("every theme defines every palette color", () => {
+    for (const [name, tokens] of Object.entries(themes)) {
+      for (const color of palette) expect(tokens[color], `${name}: --${color}`).toMatch(/^#/);
+    }
   });
 
   for (const [theme, tokens] of Object.entries(themes)) {
@@ -71,8 +75,29 @@ describe("theme tokens", () => {
     });
   }
 
-  it("the dark background is not pure black and the light one is not pure white", () => {
+  // The Aikido design draws the menu on the left as an ink rail, in both themes.
+  for (const theme of ["aikido design light", "aikido design dark"] as const) {
+    const t = themes[theme];
+    it(`${theme}: the ink rail reads well`, () => {
+      for (const ground of ["sidebar-bg", "sidebar-hover", "sidebar-active"]) {
+        expect(contrast(t["sidebar-fg"] as string, t[ground] as string)).toBeGreaterThanOrEqual(AA);
+        expect(contrast(t["sidebar-muted"] as string, t[ground] as string)).toBeGreaterThanOrEqual(AA);
+      }
+      expect(contrast(t["sidebar-active-fg"] as string, t["sidebar-active"] as string)).toBeGreaterThanOrEqual(AA);
+      // an icon needs 3:1 (WCAG 1.4.11)
+      expect(contrast(t["sidebar-icon-active"] as string, t["sidebar-active"] as string)).toBeGreaterThanOrEqual(3);
+      expect(contrast(t["sidebar-badge-fg"] as string, t["sidebar-badge"] as string)).toBeGreaterThanOrEqual(AA);
+    });
+  }
+  it("aikido design: the initials in the menu read well", () => {
+    const t = themes["aikido design light"];
+    expect(contrast(t["sidebar-avatar-fg"] as string, t["sidebar-avatar"] as string)).toBeGreaterThanOrEqual(AA);
+  });
+
+  it("the dark backgrounds are not pure black and the light ones are not pure white", () => {
     expect(themes.dark.bg).not.toBe("#000000");
     expect(themes.light.bg).not.toBe("#ffffff");
+    expect(themes["aikido design dark"].bg).not.toBe("#000000");
+    expect(themes["aikido design light"].bg).not.toBe("#ffffff");
   });
 });

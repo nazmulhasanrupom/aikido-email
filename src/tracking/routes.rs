@@ -159,13 +159,15 @@ pub struct PreviewReply {
 }
 
 async fn first_step_html(st: &AppState, campaign_id: Uuid) -> Result<Option<String>, sqlx::Error> {
-    let html: Option<Option<String>> = sqlx::query_scalar(
-        "SELECT ss.body_html FROM campaigns c JOIN sequence_steps ss ON ss.sequence_id = c.sequence_id AND ss.step_number = 1 WHERE c.id = $1",
+    let row = sqlx::query_as::<_, (Option<String>, Option<String>)>(
+        "SELECT ss.body_html, ss.body_text FROM campaigns c JOIN sequence_steps ss ON ss.sequence_id = c.sequence_id AND ss.step_number = 1 WHERE c.id = $1",
     )
     .bind(campaign_id)
     .fetch_optional(&st.pool)
     .await?;
-    Ok(html.flatten().filter(|h| !h.trim().is_empty()))
+    let Some((html, text)) = row else { return Ok(None) };
+    // a step with no HTML (a text email) is shown as its text turned into HTML, like the send does
+    Ok(html.filter(|h| !h.trim().is_empty()).or_else(|| text.filter(|t| !t.trim().is_empty()).map(|t| crate::sending::unsubscribe::text_to_html(&t))))
 }
 
 fn data_url(content_type: &str, bytes: &[u8]) -> String {

@@ -253,7 +253,7 @@ export function AllLeads({ search, ws }: { search: LeadSearch; ws: string }) {
             Import CSV
           </Button>
           <a
-            className="inline-flex h-9 items-center rounded-(--radius-control) border border-border px-3.5 text-sm font-medium hover:bg-surface-2"
+            className="inline-flex h-9 items-center rounded-(--radius-button) border border-border px-3.5 text-sm font-medium hover:bg-surface-2"
             href={`/v1/leads/export.csv?${new URLSearchParams(Object.entries(filter).map(([k, v]) => [k, String(v)])).toString()}`}
             download
           >

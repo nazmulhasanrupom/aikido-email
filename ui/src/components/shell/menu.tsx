@@ -18,7 +18,7 @@ export function MenuContent({ className, ...rest }: ComponentProps<typeof Menu.C
       <Menu.Content
         sideOffset={6}
         className={cn(
-          "menu-pop z-50 min-w-52 rounded-(--radius-card) border border-border bg-surface p-1 shadow-(--shadow-pop)",
+          "menu-pop z-50 min-w-52 rounded-(--radius-menu) border border-border bg-surface p-1 shadow-(--shadow-pop)",
           className,
         )}
         {...rest}

@@ -114,7 +114,7 @@ export function ListView({ id, onBack }: { id: string; onBack: () => void }) {
           onChange={(e) => setText(e.target.value)}
           placeholder="Search this list"
           aria-label="Search this list"
-          className="h-9 w-64 rounded-(--radius-control) border border-border bg-surface-2 px-3 text-sm"
+          className="h-9 w-64 rounded-(--radius-control) border border-border bg-(--input-bg) px-3 text-sm"
         />
         <div className="ml-auto flex flex-wrap gap-2">
           {picked.size > 0 && (

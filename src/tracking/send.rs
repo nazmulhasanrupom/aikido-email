@@ -95,6 +95,30 @@ pub async fn apply(st: &AppState, job: &Job, account: &EmailAccount, html: &str)
     }
 }
 
+/// Open tracking for a whole message. An email with an HTML part gets the tracker in it. A plain-text email of the
+/// campaign itself (an automated job) gets a matching HTML part (the same text) only if the tracker could be placed
+/// in it, so it stays plain text otherwise. A manual email (like an Inbox reply) never gets an HTML part.
+/// It never fails the send.
+pub async fn apply_to_message(st: &AppState, job: &Job, account: &EmailAccount, msg: &mut crate::sending::senders::OutgoingMessage) {
+    if let Some(html) = msg.body_html.take().filter(|h| !h.trim().is_empty()) {
+        msg.body_html = Some(apply(st, job, account, &html).await.unwrap_or(html));
+        return;
+    }
+    let Some(text) = msg.body_text.as_deref().filter(|t| !t.trim().is_empty()) else { return };
+    if job.kind != crate::replies::model::JobKind::Automated {
+        return;
+    }
+    let Some(campaign_id) = job.campaign_id else { return };
+    match settings::load(&st.pool, campaign_id).await {
+        Ok(row) if row.enabled && row.tracker().is_some() => {}
+        _ => return,
+    }
+    let html = crate::sending::unsubscribe::text_to_html(text);
+    if let Some(new_html) = apply(st, job, account, &html).await {
+        msg.body_html = Some(new_html);
+    }
+}
+
 async fn try_apply(st: &AppState, job: &Job, account: &EmailAccount, html: &str, row: &Row, tracker: TrackerType, campaign_id: Uuid) -> Result<String, String> {
     let sending_domain = domains::domain_of_email(&account.email).ok_or_else(|| format!("the sender address {} has no domain", account.email))?;
     let domain = domains::by_sending_domain(&st.pool, &sending_domain).await.map_err(|e| e.to_string())?.ok_or_else(|| format!("{sending_domain} has no tracking domain"))?;
@@ -166,6 +190,13 @@ async fn save_token(st: &AppState, job: &Job, campaign_id: Uuid, asset_id: &Uuid
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_text_email_as_html_can_take_an_end_mark() {
+        let html = crate::sending::unsubscribe::text_to_html("Thanks, Nazmul");
+        assert!(html.contains("Thanks, Nazmul"));
+        assert!(prepare_end_mark(&html, None).is_some());
+    }
 
     #[test]
     fn tokens_are_random_and_22_characters() {

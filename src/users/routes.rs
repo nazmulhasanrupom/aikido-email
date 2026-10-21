@@ -656,7 +656,7 @@ async fn create_invite(
     .bind(now + Duration::days(repo::INVITE_DAYS))
     .fetch_one(&st.pool)
     .await?;
-    let link = format!("{}/invite/{token}", st.config.public_url.as_deref().unwrap_or(""));
+    let link = format!("{}/invite/{token}", st.site_url().unwrap_or_default());
     Ok((StatusCode::CREATED, ApiJson(NewInviteReply { invite, link })))
 }
 
@@ -812,7 +812,7 @@ async fn make_reset_link(
     if target.role() == Role::Owner && ctx.role != Role::Owner {
         return Err(ApiError::forbidden("owner_protected", "Only the owner can reset the owner's password."));
     }
-    let link = new_reset_link(&st.pool, st.config.public_url.as_deref(), id, st.now()).await?;
+    let link = new_reset_link(&st.pool, st.site_url().as_deref(), id, st.now()).await?;
     Ok((StatusCode::CREATED, ApiJson(ResetLinkReply { link })))
 }
 

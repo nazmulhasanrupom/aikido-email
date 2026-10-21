@@ -30,7 +30,7 @@ export const Field = forwardRef<HTMLInputElement, FieldProps>(function Field(
           aria-invalid={error ? true : undefined}
           aria-describedby={cn(help && helpId, error && errorId) || undefined}
           className={cn(
-            "h-9 w-full rounded-(--radius-control) border bg-surface-2 px-3 text-sm placeholder:text-muted",
+            "h-9 w-full rounded-(--radius-control) border bg-(--input-bg) px-3 text-sm placeholder:text-muted",
             error ? "border-danger" : "border-border",
             adornment && "pr-10",
             className,

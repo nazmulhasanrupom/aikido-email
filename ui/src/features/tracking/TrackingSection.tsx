@@ -61,7 +61,11 @@ export function TrackingSection({ campaignId }: { campaignId: string }) {
   }, [s]);
   const save = useMutation({
     mutationFn: (body: TrackingBody) =>
-      http.put("/v1/campaigns/{id}/tracking", { path: { id: campaignId }, body }),
+      http.put("/v1/campaigns/{id}/tracking", {
+        path: { id: campaignId },
+        // the fields show the defaults, so send them when the user did not touch them
+        body: { ...body, manual_style: body.style_mode === "manual" ? (body.manual_style ?? DEFAULT_MANUAL) : body.manual_style },
+      }),
     onSuccess: async () => {
       toast.success("Tracking saved.");
       await qc.invalidateQueries({ queryKey: ["tracking", "campaign", campaignId] });
@@ -106,7 +110,7 @@ export function TrackingSection({ campaignId }: { campaignId: string }) {
       </div>
       <Check2
         label="Email tracking"
-        help="Off by default. Only emails with an HTML part get a tracker."
+        help="Off by default. A plain-text email gets a matching HTML part, so the tracker can be placed."
         checked={form.enabled}
         onChange={(on) => {
           set({ enabled: on });
@@ -488,7 +492,7 @@ function DomainRow({ d, campaignId }: { d: DomainView; campaignId: string }) {
           <div className="flex items-center gap-1.5">
             <input
               aria-label={`Subdomain for ${d.sending_domain}`}
-              className="h-8 w-28 rounded-(--radius-control) border border-border bg-surface-2 px-2 text-sm"
+              className="h-8 w-28 rounded-(--radius-control) border border-border bg-(--input-bg) px-2 text-sm"
               value={name}
               onChange={(e) => setName(e.target.value)}
             />

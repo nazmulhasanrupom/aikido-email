@@ -195,7 +195,7 @@ export function ImportFlow({
                   value={tags}
                   onChange={(e) => setTags(e.target.value)}
                   placeholder="webinar, 2026"
-                  className="h-9 rounded-(--radius-control) border border-border bg-surface-2 px-3"
+                  className="h-9 rounded-(--radius-control) border border-border bg-(--input-bg) px-3"
                 />
               </label>
             </div>

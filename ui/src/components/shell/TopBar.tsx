@@ -20,7 +20,7 @@ export function TopBar({
   const list = alerts.data ?? [];
   const errors = list.filter((a) => a.severity === "error").length;
   return (
-    <header className="flex h-12 shrink-0 items-center gap-3 border-b border-border bg-bg px-4">
+    <header className="ui-topbar flex h-12 shrink-0 items-center gap-3 border-b border-border bg-(--topbar-bg) px-4">
       <button
         type="button"
         onClick={onOpenDrawer}
@@ -34,7 +34,7 @@ export function TopBar({
           type="button"
           onClick={onOpenSearch}
           aria-label="Search"
-          className="flex h-8 w-full max-w-md items-center gap-2 rounded-(--radius-control) border border-border bg-surface px-3 text-sm text-muted hover:bg-surface-2"
+          className="flex h-8 w-full max-w-md items-center gap-2 rounded-(--radius-button) border border-border bg-surface px-3 text-sm text-muted hover:bg-surface-2"
         >
           <Search size={14} aria-hidden="true" />
           <span className="flex-1 text-left">Search</span>

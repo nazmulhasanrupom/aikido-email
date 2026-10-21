@@ -2,7 +2,7 @@
 //! MIME keeps our own headers, like `In-Reply-To`.
 //! `sendMail` answers `202` with no id. We keep our own `Message-ID`, and try once to find
 //! the sent item by `internetMessageId` to save the Graph ids (best effort, needs `Mail.Read`).
-use super::gmail::{map_request_error, retry_after};
+use super::gmail::{LOOKUP_REQUEST_TIMEOUT, lookup_budget, map_request_error, retry_after};
 use super::{MailSender, OutgoingMessage, SendError, SendReceipt, clip};
 use async_trait::async_trait;
 use base64::{Engine, engine::general_purpose::STANDARD as B64};
@@ -50,7 +50,7 @@ impl MicrosoftSender {
             Some(url)
         };
         let fetch = |url: oauth2::url::Url| async move {
-            let resp = client.get(url).bearer_auth(self.access_token.expose_secret()).send().await.ok()?;
+            let resp = client.get(url).timeout(LOOKUP_REQUEST_TIMEOUT).bearer_auth(self.access_token.expose_secret()).send().await.ok()?;
             if !resp.status().is_success() {
                 return None;
             }
@@ -109,6 +109,7 @@ pub fn map_response(status: u16, headers: &reqwest::header::HeaderMap, body: &st
 impl MailSender for MicrosoftSender {
     async fn send(&self, msg: &OutgoingMessage) -> Result<SendReceipt, SendError> {
         let mime = msg.build()?.formatted();
+        let started = std::time::Instant::now();
         let client = reqwest::Client::builder().timeout(Duration::from_secs(55)).build().map_err(map_request_error)?;
         let resp = client
             .post(format!("{}/me/sendMail", self.base_url))
@@ -122,7 +123,11 @@ impl MailSender for MicrosoftSender {
         let headers = resp.headers().clone();
         let body = resp.text().await.unwrap_or_default();
         map_response(status, &headers, &body)?;
-        let found = self.find_sent_item(&client, msg).await;
+        // The email is sent. A slow lookup (its wait counts too) must not turn it into a timeout.
+        let found = match lookup_budget(started.elapsed()) {
+            Some(budget) => tokio::time::timeout(budget, self.find_sent_item(&client, msg)).await.ok().flatten(),
+            None => None,
+        };
         Ok(SendReceipt {
             provider_message_id: found.as_ref().map(|f| f.0.clone()),
             message_id_header: found.as_ref().and_then(|f| f.2.clone()),

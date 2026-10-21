@@ -57,7 +57,9 @@ function Settings() {
     setTz(c.timezone);
     setCompany(c.stop_company_on_reply);
     setUnverified(c.allow_unverified);
-  }, [c]);
+    // load once per campaign, so a refetch does not wipe edits that are not saved
+    // biome-ignore lint/correctness/useExhaustiveDependencies: keyed on the id on purpose
+  }, [c?.id]);
   useEffect(() => {
     if (genCamp.data) {
       setReview(
@@ -78,13 +80,17 @@ function Settings() {
     })),
   });
   const [archive, setArchive] = useState(false);
-  if (!c) return <Skeleton />;
   const reoon = useReoon();
   const wsRule = useQuery({ ...reoonSettingsQuery, enabled: reoon.installed });
   const [ruleOpen, setRuleOpen] = useState(false);
-  const done = async (what: string, run: () => Promise<unknown>) => {
+  if (!c) return <Skeleton />;
+  const patchCamp = (body: Record<string, unknown>) =>
+    http.patch<S["CampaignDetail"]>("/v1/campaigns/{id}", { path: { id }, body });
+  // after a save, the card shows what the server answered
+  const done = async <T,>(what: string, run: () => Promise<T>, apply?: (r: T) => void) => {
     try {
-      await run();
+      const r = await run();
+      apply?.(r);
       toast.success(`${what} saved.`);
       await qc.invalidateQueries({ queryKey: ["campaigns"] });
     } catch (e) {
@@ -135,10 +141,11 @@ function Settings() {
           <Button
             onClick={() =>
               done("Accounts", () =>
-                http.patch("/v1/campaigns/{id}", {
-                  path: { id },
-                  body: { account_ids: picked, account_pick: pick },
-                }),
+                patchCamp({ account_ids: picked, account_pick: pick }),
+                (r) => {
+                  setPicked(r.accounts.map((a) => a.id));
+                  setPick(r.account_pick);
+                },
               )
             }
           >
@@ -196,10 +203,11 @@ function Settings() {
           <Button
             onClick={() =>
               done("Schedule", () =>
-                http.patch("/v1/campaigns/{id}", {
-                  path: { id },
-                  body: { daily_new_leads: daily, timezone: tz },
-                }),
+                patchCamp({ daily_new_leads: daily, timezone: tz }),
+                (r) => {
+                  setDaily(r.daily_new_leads);
+                  setTz(r.timezone);
+                },
               )
             }
           >
@@ -257,10 +265,11 @@ function Settings() {
           <Button
             onClick={() =>
               done("Advanced", () =>
-                http.patch("/v1/campaigns/{id}", {
-                  path: { id },
-                  body: { stop_company_on_reply: company, allow_unverified: unverified },
-                }),
+                patchCamp({ stop_company_on_reply: company, allow_unverified: unverified }),
+                (r) => {
+                  setCompany(r.stop_company_on_reply);
+                  setUnverified(r.allow_unverified);
+                },
               )
             }
           >

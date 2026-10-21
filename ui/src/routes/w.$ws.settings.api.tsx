@@ -36,6 +36,7 @@ const SCOPES = [
   "generator",
   "integrations",
   "personalization",
+  "tracking",
 ];
 
 function Api() {

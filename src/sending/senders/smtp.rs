@@ -58,6 +58,14 @@ enum Stage {
     Send,
 }
 
+/// The reply text holds an enhanced status code that starts with `5.7.` (policy, spam or auth block).
+fn is_policy_block(text: &str) -> bool {
+    text.split(|c: char| !(c.is_ascii_digit() || c == '.')).any(|w| {
+        let mut parts = w.split('.');
+        parts.next() == Some("5") && parts.next() == Some("7") && parts.next().is_some_and(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit()))
+    })
+}
+
 /// Map an SMTP error to our `SendError`, by reply code.
 fn map_error(e: &SmtpError, stage: Stage) -> SendError {
     let text = clip(&e.to_string());
@@ -67,7 +75,8 @@ fn map_error(e: &SmtpError, stage: Stage) -> SendError {
             530 | 534 | 535 | 538 => SendError::AuthFailed(text),
             421 | 450 | 451 | 452 => SendError::Transient(text),
             400..=499 => SendError::Transient(text),
-            550 | 551 | 553 => SendError::Permanent { reason: text, hard_bounce: true },
+            // A 5.7.x reply is a policy or spam block, not a bad address.
+            550 | 551 | 553 => SendError::Permanent { hard_bounce: !is_policy_block(&e.to_string()), reason: text },
             _ => SendError::Permanent { reason: text, hard_bounce: false },
         };
     }
@@ -124,5 +133,19 @@ impl MailSender for SmtpSender {
             Ok(_) => Ok(SendReceipt::default()),
             Err(e) => Err(map_error(&e, Stage::Send)),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_policy_block;
+
+    #[test]
+    fn reads_the_enhanced_code() {
+        assert!(is_policy_block("permanent error (550): 5.7.1 Message rejected as spam"));
+        assert!(is_policy_block("permanent error (550): 5.7.26 Unauthenticated sender"));
+        assert!(!is_policy_block("permanent error (550): 5.1.1 User unknown"));
+        assert!(!is_policy_block("permanent error (550): No such user here"));
+        assert!(!is_policy_block("permanent error (550): host 15.7.1.2 refused"));
     }
 }

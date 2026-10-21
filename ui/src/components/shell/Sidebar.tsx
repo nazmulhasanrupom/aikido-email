@@ -13,6 +13,7 @@ import {
   Send,
   Settings,
   ShieldCheck,
+  Palette as PaletteIcon,
   Sparkles,
   Sun,
   Swords,
@@ -27,7 +28,14 @@ import { http, type S } from "@/api/http";
 import { useReoon } from "@/features/reoon/api";
 import { useUser } from "@/features/settings/useUser";
 import { cn } from "@/lib/cn";
-import { type ThemeChoice, useThemeChoice } from "@/theme/theme";
+import {
+  type DesignChoice,
+  shownChoice,
+  type ThemeChoice,
+  themeOptions,
+  useDesign,
+  useThemeChoice,
+} from "@/theme/theme";
 import { Button } from "../Button";
 import { Logo } from "../Logo";
 import { Field, Modal, Notice } from "../ui";
@@ -83,6 +91,7 @@ interface Props {
   drawerOpen: boolean;
   onCloseDrawer: () => void;
   onChangeTheme: (choice: ThemeChoice) => void;
+  onChangeDesign: (design: DesignChoice) => void;
   onLogout: () => void;
 }
 
@@ -114,7 +123,7 @@ export function Sidebar(p: Props) {
       <aside
         aria-label="Main menu"
         className={cn(
-          "fixed inset-y-0 left-0 z-40 flex w-60 flex-col overflow-hidden border-r border-border bg-surface transition-[transform,width] duration-300 ease-(--ease-out-soft) md:static md:translate-x-0",
+          "ui-sidebar fixed inset-y-0 left-0 z-40 flex w-60 flex-col overflow-hidden border-r border-(--sidebar-border) bg-(--sidebar-bg) text-(--sidebar-fg) transition-[transform,width] duration-300 ease-(--ease-out-soft) md:static md:translate-x-0",
           p.drawerOpen ? "translate-x-0" : "-translate-x-full",
           slim ? "md:w-14" : "md:w-58",
         )}
@@ -134,12 +143,12 @@ export function Sidebar(p: Props) {
               onClick={p.onCloseDrawer}
               title={slim ? item.label : undefined}
               className={cn(
-                "flex h-9 items-center gap-3 rounded-(--radius-control) px-2.5 text-sm text-muted hover:bg-surface-2 hover:text-text [&>svg]:transition-transform [&>svg]:duration-200 hover:[&>svg]:scale-110",
+                "ui-nav-item flex h-9 items-center gap-3 rounded-(--radius-control) px-2.5 text-sm text-(--sidebar-muted) hover:bg-(--sidebar-hover) hover:text-(--sidebar-fg) [&>svg]:transition-transform [&>svg]:duration-200 hover:[&>svg]:scale-110",
                 slim && "md:justify-center md:px-0",
               )}
               activeProps={{
                 className:
-                  "bg-accent-soft font-medium text-text hover:bg-accent-soft [&>svg]:text-accent",
+                  "bg-(--sidebar-active) font-medium text-(--sidebar-active-fg) hover:bg-(--sidebar-active) hover:text-(--sidebar-active-fg) [&>svg]:text-(--sidebar-icon-active)",
               }}
             >
               <item.icon size={18} aria-hidden="true" className="shrink-0" />
@@ -147,7 +156,7 @@ export function Sidebar(p: Props) {
               {item.soon && (
                 <span
                   className={cn(
-                    "rounded bg-surface-2 px-1.5 py-0.5 text-xs text-muted",
+                    "rounded bg-(--sidebar-hover) px-1.5 py-0.5 text-xs text-(--sidebar-muted)",
                     slim && "md:hidden",
                   )}
                 >
@@ -156,7 +165,7 @@ export function Sidebar(p: Props) {
               )}
               {item.to === "/w/$ws/inbox" && inboxCount > 0 ? (
                 <span
-                  className="rounded-full bg-accent px-1.5 text-xs text-accent-fg"
+                  className="rounded-full bg-(--sidebar-badge) px-1.5 text-xs font-medium text-(--sidebar-badge-fg)"
                   aria-label={`${inboxCount} new replies`}
                 >
                   {inboxCount > 99 ? "99+" : inboxCount}
@@ -167,7 +176,7 @@ export function Sidebar(p: Props) {
           {reoon.installed && (
             <>
               <div
-                className={cn("mt-3 px-2.5 text-xs font-medium text-muted", slim && "md:hidden")}
+                className={cn("ui-label mt-3 px-2.5 text-xs font-medium text-(--sidebar-muted)", slim && "md:hidden")}
               >
                 Apps
               </div>
@@ -177,12 +186,12 @@ export function Sidebar(p: Props) {
                 onClick={p.onCloseDrawer}
                 title={slim ? "Reoon" : undefined}
                 className={cn(
-                  "flex h-9 items-center gap-3 rounded-(--radius-control) px-2.5 text-sm text-muted hover:bg-surface-2 hover:text-text [&>svg]:transition-transform [&>svg]:duration-200 hover:[&>svg]:scale-110",
+                  "ui-nav-item flex h-9 items-center gap-3 rounded-(--radius-control) px-2.5 text-sm text-(--sidebar-muted) hover:bg-(--sidebar-hover) hover:text-(--sidebar-fg) [&>svg]:transition-transform [&>svg]:duration-200 hover:[&>svg]:scale-110",
                   slim && "md:justify-center md:px-0",
                 )}
                 activeProps={{
                   className:
-                    "bg-accent-soft font-medium text-text hover:bg-accent-soft [&>svg]:text-accent",
+                    "bg-(--sidebar-active) font-medium text-(--sidebar-active-fg) hover:bg-(--sidebar-active) hover:text-(--sidebar-active-fg) [&>svg]:text-(--sidebar-icon-active)",
                 }}
               >
                 <ShieldCheck size={18} aria-hidden="true" className="shrink-0" />
@@ -192,12 +201,12 @@ export function Sidebar(p: Props) {
           )}
         </nav>
 
-        <div className="border-t border-border p-2">
+        <div className="border-t border-(--sidebar-border) p-2">
           <button
             type="button"
             onClick={p.onToggleCollapsed}
             aria-label={slim ? "Expand the menu" : "Collapse the menu"}
-            className="mb-1 hidden h-8 w-full items-center gap-3 rounded-(--radius-control) px-2.5 text-muted hover:bg-surface-2 md:flex"
+            className="mb-1 hidden h-8 w-full items-center gap-3 rounded-(--radius-control) px-2.5 text-(--sidebar-muted) hover:bg-(--sidebar-hover) hover:text-(--sidebar-fg) md:flex"
           >
             {slim ? <PanelLeftOpen size={18} className="mx-auto" /> : <PanelLeftClose size={18} />}
             {!slim && <span className="text-sm">Collapse</span>}
@@ -227,7 +236,7 @@ function WorkspaceMenu({
         <MenuTrigger
           aria-label={`Workspace ${name}`}
           className={cn(
-            "flex h-10 min-w-0 items-center gap-2.5 rounded-(--radius-control) px-1.5 hover:bg-surface-2",
+            "flex h-10 min-w-0 items-center gap-2.5 rounded-(--radius-control) px-1.5 hover:bg-(--sidebar-hover)",
             slim ? "md:w-10 md:justify-center" : "flex-1",
           )}
         >
@@ -241,7 +250,7 @@ function WorkspaceMenu({
           </span>
           <ChevronsUpDown
             size={14}
-            className={cn("shrink-0 text-muted", slim && "md:hidden")}
+            className={cn("shrink-0 text-(--sidebar-muted)", slim && "md:hidden")}
             aria-hidden="true"
           />
         </MenuTrigger>
@@ -352,27 +361,33 @@ function WorkspaceSettings({
   );
 }
 
-const THEMES: { value: ThemeChoice; label: string; icon: typeof Sun }[] = [
-  { value: "light", label: "Light", icon: Sun },
-  { value: "dark", label: "Dark", icon: Moon },
-  { value: "aikido", label: "Aikido", icon: Swords },
-  { value: "system", label: "System", icon: Monitor },
+const THEME_ICONS: Record<ThemeChoice, typeof Sun> = {
+  light: Sun,
+  dark: Moon,
+  aikido: Swords,
+  system: Monitor,
+};
+
+const DESIGNS: { value: DesignChoice; label: string }[] = [
+  { value: "generic", label: "Generic" },
+  { value: "aikido", label: "Aikido" },
 ];
 
 function UserMenu(p: Props & { slim: boolean }): ReactNode {
   const theme = useThemeChoice();
+  const design = useDesign();
   return (
     <MenuRoot>
       <MenuTrigger
         aria-label={`Account menu for ${p.user.name}`}
         className={cn(
-          "flex h-10 w-full items-center gap-2.5 rounded-(--radius-control) px-1.5 hover:bg-surface-2",
+          "flex h-10 w-full items-center gap-2.5 rounded-(--radius-control) px-1.5 hover:bg-(--sidebar-hover)",
           p.slim && "md:justify-center",
         )}
       >
         <span
           aria-hidden="true"
-          className="flex size-7 shrink-0 items-center justify-center rounded-full bg-accent-soft text-xs font-semibold"
+          className="flex size-7 shrink-0 items-center justify-center rounded-full bg-(--sidebar-avatar) text-xs font-semibold text-(--sidebar-avatar-fg)"
         >
           {initials(p.user.name)}
         </span>
@@ -388,15 +403,31 @@ function UserMenu(p: Props & { slim: boolean }): ReactNode {
           </Link>
         </MenuItem>
         <MenuSeparator />
-        <MenuLabel>Theme</MenuLabel>
-        <MenuRadioGroup value={theme} onValueChange={(v) => p.onChangeTheme(v as ThemeChoice)}>
-          {THEMES.map((t) => (
-            <MenuRadioItem key={t.value} value={t.value}>
+        <MenuLabel>Design</MenuLabel>
+        <MenuRadioGroup value={design} onValueChange={(v) => p.onChangeDesign(v as DesignChoice)}>
+          {DESIGNS.map((d) => (
+            <MenuRadioItem key={d.value} value={d.value}>
               <span className="flex items-center gap-2">
-                <t.icon size={16} aria-hidden="true" /> {t.label}
+                <PaletteIcon size={16} aria-hidden="true" /> {d.label}
               </span>
             </MenuRadioItem>
           ))}
+        </MenuRadioGroup>
+        <MenuLabel>Theme</MenuLabel>
+        <MenuRadioGroup
+          value={shownChoice(theme, design)}
+          onValueChange={(v) => p.onChangeTheme(v as ThemeChoice)}
+        >
+          {themeOptions(design).map((t) => {
+            const Icon = THEME_ICONS[t.value];
+            return (
+              <MenuRadioItem key={t.value} value={t.value}>
+                <span className="flex items-center gap-2">
+                  <Icon size={16} aria-hidden="true" /> {t.label}
+                </span>
+              </MenuRadioItem>
+            );
+          })}
         </MenuRadioGroup>
         <MenuSeparator />
         <MenuItem asChild>

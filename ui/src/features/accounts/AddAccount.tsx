@@ -24,15 +24,20 @@ export function AddAccount({
   open,
   onClose,
   onAdded,
+  start,
 }: {
   open: boolean;
   onClose: () => void;
   onAdded?: (a: S["AccountView"]) => void;
+  /** Skip the choice and open this flow first. */
+  start?: "gmail" | "microsoft" | "other";
 }) {
-  const [mode, setMode] = useState<Mode>("choose");
+  const first: Mode =
+    start === "gmail" ? "google" : start === "microsoft" ? "microsoft" : (start ?? "choose");
+  const [mode, setMode] = useState<Mode>(first);
   useEffect(() => {
-    if (open) setMode("choose");
-  }, [open]);
+    if (open) setMode(first);
+  }, [open, first]);
   const title =
     mode === "choose"
       ? "Add an email account"
@@ -111,7 +116,7 @@ function OAuthFlow({
   const qc = useQueryClient();
   const [state, setState] = useState<"idle" | "waiting" | "failed">("idle");
   const [error, setError] = useState<ApiProblem | string | null>(null);
-  const known = useRef<Set<string>>(new Set());
+  const known = useRef<Map<string, string>>(new Map());
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
   const label = provider === "gmail" ? "Google" : "Microsoft";
 
@@ -140,7 +145,7 @@ function OAuthFlow({
     await qc.invalidateQueries({ queryKey: q.accounts.queryKey });
     // a reconnect updates the same row, so also accept the newest one
     const added =
-      list.find((a) => !known.current.has(a.id)) ??
+      list.find((a) => isNewOrChanged(a, known.current)) ??
       [...list].sort((a, b) => b.updated_at.localeCompare(a.updated_at))[0];
     if (added) onAdded(added);
   }
@@ -149,7 +154,7 @@ function OAuthFlow({
     setError(null);
     try {
       const before = await http.get<S["AccountView"][]>("/v1/accounts");
-      known.current = new Set(before.map((a) => a.id));
+      known.current = new Map(before.map((a) => [a.id, a.updated_at]));
       const { auth_url } = await http.post<S["OAuthStartReply"]>(
         "/v1/accounts/oauth/{provider}/start",
         { path: { provider } },
@@ -166,7 +171,7 @@ function OAuthFlow({
           return;
         }
         const list = await http.get<S["AccountView"][]>("/v1/accounts").catch(() => []);
-        if (list.some((a) => !known.current.has(a.id))) {
+        if (list.some((a) => isNewOrChanged(a, known.current))) {
           if (timer.current) clearInterval(timer.current);
           void finish();
         }
@@ -221,6 +226,12 @@ function OAuthFlow({
   );
 }
 
+/** A new account, or an old one that was updated (a reconnect) since we looked. */
+function isNewOrChanged(a: S["AccountView"], before: Map<string, string>): boolean {
+  const old = before.get(a.id);
+  return old === undefined || old !== a.updated_at;
+}
+
 function useConfig(): S["RedirectUris"] | undefined {
   const [uris, setUris] = useState<S["RedirectUris"]>();
   useEffect(() => {
@@ -232,14 +243,14 @@ function useConfig(): S["RedirectUris"] | undefined {
   return uris;
 }
 
-interface Server {
+export interface Server {
   host: string;
   port: string;
   tls: S["TlsMode"];
   username: string;
   password: string;
 }
-const blank = (port: number, tls: S["TlsMode"]): Server => ({
+export const blank = (port: number, tls: S["TlsMode"]): Server => ({
   host: "",
   port: String(port),
   tls,
@@ -381,13 +392,14 @@ function SmtpForm({
   );
 }
 
-function ServerBlock({
+export function ServerBlock({
   title,
   value,
   onChange,
   ports,
   userHint,
   hideLogin,
+  passwordHint,
 }: {
   title: string;
   value: Server;
@@ -395,6 +407,7 @@ function ServerBlock({
   ports: number[];
   userHint: string;
   hideLogin?: boolean;
+  passwordHint?: string;
 }) {
   const set = (p: Partial<Server>) => onChange({ ...value, ...p });
   return (
@@ -438,6 +451,7 @@ function ServerBlock({
             label="Password"
             type="password"
             autoComplete="new-password"
+            placeholder={passwordHint}
             value={value.password}
             onChange={(e) => set({ password: e.target.value })}
             help="Many providers need an app password."
