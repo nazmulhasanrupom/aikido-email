@@ -12,9 +12,11 @@ import {
   isChoice,
   isDesign,
   type ThemeChoice,
+  useDesign,
 } from "@/theme/theme";
 import { DevPanel } from "@/features/developer/DevPanel";
 import { useDeveloperMode } from "@/features/developer/api";
+import { AikidoShell } from "./AikidoShell";
 import { Banners } from "./Banners";
 import { Palette } from "./Palette";
 import { Sidebar } from "./Sidebar";
@@ -22,7 +24,10 @@ import { TopBar } from "./TopBar";
 
 const SIDEBAR_KEY = "aikido.sidebar";
 
-/** The frame of the app: menu on the left, top bar, and the page. */
+/**
+ * The frame of the app. Generic and Indigo: the menu on the left, a top bar and the page.
+ * Aikido: its own frame (see AikidoShell).
+ */
 export function Shell({ ws, state }: { ws: string; state: AuthState }) {
   const user = state.user;
   const queryClient = useQueryClient();
@@ -32,13 +37,14 @@ export function Shell({ ws, state }: { ws: string; state: AuthState }) {
   const [drawer, setDrawer] = useState(false);
   const [search, setSearch] = useState(false);
   const developer = useDeveloperMode();
+  const design = useDesign();
 
   // The theme of the account follows the user to a new browser.
   const saved = user?.preferences?.theme;
   useEffect(() => {
     if (isChoice(saved)) applyChoice(saved);
   }, [saved]);
-  // The design too (Generic or Aikido).
+  // The design too (Generic, Indigo or Aikido).
   const savedDesign = user?.preferences?.design;
   useEffect(() => {
     if (isDesign(savedDesign)) applyDesign(savedDesign);
@@ -96,6 +102,24 @@ export function Shell({ ws, state }: { ws: string; state: AuthState }) {
     await navigate({ to: "/login", search: {} });
   }
 
+  const palette = <Palette open={search} onClose={() => setSearch(false)} ws={ws} />;
+
+  if (design === "aikido")
+    return (
+      <>
+        <AikidoShell
+          ws={ws}
+          state={state}
+          user={user}
+          onOpenSearch={() => setSearch(true)}
+          onChangeTheme={changeTheme}
+          onChangeDesign={changeDesign}
+          onLogout={onLogout}
+        />
+        {palette}
+      </>
+    );
+
   return (
     <div className="flex h-full">
       <Sidebar
@@ -118,7 +142,7 @@ export function Shell({ ws, state }: { ws: string; state: AuthState }) {
         </main>
         {developer.on && <DevPanel ws={ws} />}
       </div>
-      <Palette open={search} onClose={() => setSearch(false)} ws={ws} />
+      {palette}
     </div>
   );
 }

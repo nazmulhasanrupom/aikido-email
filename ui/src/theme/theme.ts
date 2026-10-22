@@ -3,13 +3,14 @@ import { readStored, writeStored } from "@/lib/safe-storage";
 
 /**
  * Two settings decide the look:
- * - the design: `generic` (the first look of the app) or `aikido` (ink, paper and indigo, round shapes);
+ * - the design: `generic` (the first look of the app), `indigo` (the same layout in ink, paper and indigo)
+ *   or `aikido` (a different layout: navigation at the top, a status bar, section menus and a side panel);
  * - the theme: light, dark or system. The Generic design also has `aikido`, the deep red theme ("Crimson").
  * Both are saved in this browser and in the account, and `public/theme-init.js` paints them before the first frame.
  */
 export type ThemeChoice = "light" | "dark" | "aikido" | "system";
 export type ResolvedTheme = "light" | "dark" | "aikido";
-export type DesignChoice = "generic" | "aikido";
+export type DesignChoice = "generic" | "indigo" | "aikido";
 
 /** Keep the keys in step with public/theme-init.js. */
 export const THEME_KEY = "aikido.theme";
@@ -20,7 +21,7 @@ export function isChoice(value: unknown): value is ThemeChoice {
 }
 
 export function isDesign(value: unknown): value is DesignChoice {
-  return value === "generic" || value === "aikido";
+  return value === "generic" || value === "indigo" || value === "aikido";
 }
 
 export function readChoice(): ThemeChoice {
@@ -41,17 +42,24 @@ let current: ThemeChoice = readChoice();
 let design: DesignChoice = readDesign();
 const listeners = new Set<() => void>();
 
-/** The theme to paint. The deep red theme belongs to the Generic design: the Aikido design shows it as dark. */
+/** The theme to paint. The deep red theme belongs to the Generic design: the other designs show it as dark. */
 export function resolve(choice: ThemeChoice, d: DesignChoice = design): ResolvedTheme {
   if (choice === "system") return systemIsDark() ? "dark" : "light";
-  if (choice === "aikido" && d === "aikido") return "dark";
+  if (choice === "aikido" && d !== "generic") return "dark";
   return choice;
 }
 
-/** The choice to show as picked in a menu: the red theme reads as Dark in the Aikido design. */
+/** The choice to show as picked in a menu: the red theme reads as Dark outside the Generic design. */
 export function shownChoice(choice: ThemeChoice, d: DesignChoice): ThemeChoice {
-  return choice === "aikido" && d === "aikido" ? "dark" : choice;
+  return choice === "aikido" && d !== "generic" ? "dark" : choice;
 }
+
+/** The designs, in menu order. */
+export const DESIGNS: { value: DesignChoice; label: string }[] = [
+  { value: "generic", label: "Generic" },
+  { value: "indigo", label: "Indigo" },
+  { value: "aikido", label: "Aikido" },
+];
 
 /** The themes each design offers, in menu order. */
 export function themeOptions(d: DesignChoice): { value: ThemeChoice; label: string }[] {
@@ -127,6 +135,11 @@ export function useThemeChoice(): ThemeChoice {
 
 export function useResolvedTheme(): ResolvedTheme {
   return useSyncExternalStore(subscribe, () => resolve(current));
+}
+
+/** The design on the screen now, outside React (route guards). */
+export function currentDesign(): DesignChoice {
+  return design;
 }
 
 export function useDesign(): DesignChoice {

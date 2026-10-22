@@ -1,7 +1,7 @@
 import { cn } from "@/lib/cn";
 
 /**
- * An ensō: the brush circle of Zen ink painting. The mark of the Aikido design.
+ * An ensō: the brush circle of Zen ink painting. The mark of the Indigo design.
  * The ring is drawn from two circles with a small offset, so the stroke is thick at the bottom left,
  * starts round at the top and ends in a point where the brush lifts. It takes the current text color.
  */

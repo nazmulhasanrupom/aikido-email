@@ -59,7 +59,7 @@ You connect your inboxes (Gmail, Outlook or any IMAP/SMTP). You import leads. Yo
 | **Open tracking** | Counts opens without a hidden pixel. The tracker is a normal image served from your own domain (a CNAME like `media.acme.com`, free Let's Encrypt certificate). Text-to-image or signature image. Apple, Google proxy and scanner opens are marked. |
 | **AI column mapping** | Upload any CSV. Rules and an AI map the columns. You confirm before anything is saved. |
 | **Web app** | Setup wizard, accounts, leads, campaigns editor, inbox, reports, settings, status page, alerts, `Ctrl K` search. |
-| **Two designs** | **Generic** (the first look: warm and simple) or **Aikido** (ink, paper and indigo, round shapes, an ink menu rail). Each has a light and a dark theme. Pick it in **Settings → Account → Appearance** or in the account menu. |
+| **Three designs** | **Generic** (the first look: warm and simple), **Indigo** (the same layout in ink, paper and indigo, with an ink menu rail) or **Aikido** (its own layout: the pages in a dark bar at the top, a Home page, a menu per section, details in a side panel and a live status bar). Each has a light and a dark theme. Pick it in **Settings → Account → Appearance** or in the account menu. |
 | **Security** | Secrets encrypted with AES-256-GCM. Scoped API keys (SHA-256 hashed). CSRF protection. Logs never hold tokens or passwords. |
 | **Everything is an API** | 100+ routes with a live OpenAPI spec at `/docs`. |
 

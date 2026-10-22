@@ -4,7 +4,15 @@ import { toast } from "sonner";
 import { messageOf } from "@/api/errors";
 import { http } from "@/api/http";
 import { q } from "@/api/queries";
-import { Button, ErrorNote, LinkTabs, Page, PageHeader, Skeleton } from "@/components/ui";
+import {
+  Button,
+  ErrorNote,
+  LinkTabs,
+  Page,
+  PageHeader,
+  SectionLayout,
+  Skeleton,
+} from "@/components/ui";
 import { AccountStatusPill } from "@/features/accounts/parts";
 
 export const Route = createFileRoute("/w/$ws/accounts/$id")({ component: AccountLayout });
@@ -58,16 +66,21 @@ function AccountLayout() {
           </Button>
         }
       />
-      <LinkTabs
-        label="Account pages"
-        items={[
-          { to: "/w/$ws/accounts/$id", params: p, label: "Overview" },
-          { to: "/w/$ws/accounts/$id/sending", params: p, label: "Sending" },
-          { to: "/w/$ws/accounts/$id/reply-check", params: p, label: "Reply check" },
-          { to: "/w/$ws/accounts/$id/activity", params: p, label: "Activity" },
-        ]}
-      />
-      <Outlet />
+      <SectionLayout
+        nav={
+          <LinkTabs
+            label="Account pages"
+            items={[
+              { to: "/w/$ws/accounts/$id", params: p, label: "Overview", exact: true },
+              { to: "/w/$ws/accounts/$id/sending", params: p, label: "Sending" },
+              { to: "/w/$ws/accounts/$id/reply-check", params: p, label: "Reply check" },
+              { to: "/w/$ws/accounts/$id/activity", params: p, label: "Activity" },
+            ]}
+          />
+        }
+      >
+        <Outlet />
+      </SectionLayout>
     </Page>
   );
 }

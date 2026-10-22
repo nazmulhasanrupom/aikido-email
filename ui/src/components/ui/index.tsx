@@ -1,15 +1,18 @@
 import { Link } from "@tanstack/react-router";
 import { Check, Copy, type LucideIcon } from "lucide-react";
 import {
+  createContext,
   forwardRef,
   type ReactNode,
   type SelectHTMLAttributes,
   type TextareaHTMLAttributes,
+  useContext,
   useEffect,
   useId,
   useRef,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
 import { messageOf } from "@/api/errors";
 import { cn } from "@/lib/cn";
 import { useDesign } from "@/theme/theme";
@@ -64,6 +67,21 @@ export function PageHeader({
   sub?: ReactNode;
   actions?: ReactNode;
 }) {
+  const design = useDesign();
+  if (design === "aikido") {
+    // The Aikido design: a toolbar that stays at the top of the page while you scroll.
+    return (
+      <div className="sticky top-0 z-20 -mx-6 -mt-6 mb-6 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-border bg-bg/90 px-6 py-3 backdrop-blur">
+        <div className="flex min-w-0 items-baseline gap-3">
+          <h1 className="ui-page-title truncate text-(length:--page-title) leading-(--page-title-leading) font-semibold">
+            {title}
+          </h1>
+          {sub && <p className="hidden truncate text-sm text-muted md:block">{sub}</p>}
+        </div>
+        {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
+      </div>
+    );
+  }
   return (
     <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
       <div className="min-w-0">
@@ -78,10 +96,49 @@ export function PageHeader({
 }
 
 export function Page({ children, wide }: { children: ReactNode; wide?: boolean }) {
+  const design = useDesign();
+  // The Aikido design uses the full width of the screen.
+  if (design === "aikido") return <div className="p-6">{children}</div>;
   return (
     <div className={cn("mx-auto px-6 py-6", wide ? "max-w-[1400px]" : "max-w-5xl")}>{children}</div>
   );
 }
+
+/**
+ * A section with pages of its own (Settings, an account, the leads): the menu of the section on top
+ * (Generic and Indigo), or in a column on the left (Aikido).
+ */
+export function SectionLayout({
+  nav,
+  children,
+  narrow,
+}: {
+  nav: ReactNode;
+  children: ReactNode;
+  /** Forms: keep the lines short in the Aikido design, which has no page width. */
+  narrow?: boolean;
+}) {
+  const design = useDesign();
+  if (design !== "aikido") {
+    return (
+      <>
+        {nav}
+        {children}
+      </>
+    );
+  }
+  return (
+    <div className="grid gap-5 lg:grid-cols-[200px_minmax(0,1fr)] lg:gap-8">
+      <div className="lg:sticky lg:top-20 lg:self-start">{nav}</div>
+      <div className={cn("min-w-0", narrow && "max-w-4xl")}>{children}</div>
+    </div>
+  );
+}
+
+/** One item of the section menu of the Aikido design. */
+const RAIL_ITEM =
+  "relative flex h-8 shrink-0 items-center whitespace-nowrap rounded-(--radius-control) px-3 text-left text-sm text-muted hover:bg-surface-2 hover:text-text";
+const RAIL_ACTIVE = "bg-surface! font-medium text-text! shadow-(--shadow-card) ring-1 ring-border";
 
 export function EmptyState({
   icon: Icon,
@@ -98,7 +155,13 @@ export function EmptyState({
   return (
     <div className="animate-rise-in flex flex-col items-center gap-3 rounded-(--radius-card) border border-dashed border-border px-6 py-12 text-center">
       {design === "aikido" ? (
-        // the Aikido design draws the icon inside a brush circle
+        // the Aikido design: the icon on a small tile with the red mark of the logo
+        <span className="relative flex size-12 items-center justify-center rounded-(--radius-card) border border-border bg-surface shadow-(--shadow-card)">
+          {Icon && <Icon size={20} className="text-text" aria-hidden="true" />}
+          <span aria-hidden="true" className="absolute -top-1 -right-1 size-2.5 rounded-full bg-(--brand) ring-2 ring-bg" />
+        </span>
+      ) : design === "indigo" ? (
+        // the Indigo design draws the icon inside a brush circle
         <span className="relative flex size-16 items-center justify-center">
           <Enso size={64} className="absolute inset-0 text-(--brand) opacity-85" />
           {Icon && <Icon size={20} className="relative text-text" aria-hidden="true" />}
@@ -422,8 +485,71 @@ interface ModalProps {
   side?: boolean;
 }
 
+/**
+ * The panel on the right side of the Aikido design. The shell gives its element here; a `side` Modal is drawn
+ * into it, next to the page, instead of over it.
+ */
+export const InspectorContext = createContext<HTMLElement | null>(null);
+
+/** A dialog. A `side` dialog is a panel on the right: over the page, or next to it in the Aikido design. */
+export function Modal(props: ModalProps) {
+  const design = useDesign();
+  const dock = useContext(InspectorContext);
+  if (props.side && design === "aikido" && dock) return <Inspector {...props} host={dock} />;
+  return <DialogModal {...props} />;
+}
+
+/** The side panel of the Aikido design: next to the page, not modal. Esc or the close button closes it. */
+function Inspector({ open, onClose, title, children, footer, host }: ModalProps & { host: HTMLElement }) {
+  const titleId = useId();
+  const ref = useRef<HTMLElement>(null);
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  // focus the panel when it opens, so the keyboard is in it
+  useEffect(() => {
+    if (open) ref.current?.focus();
+  }, [open]);
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      // a dialog over the page closes first
+      if (e.key === "Escape" && !document.querySelector("dialog[open]")) closeRef.current();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open]);
+  if (!open) return null;
+  return createPortal(
+    <section
+      ref={ref}
+      tabIndex={-1}
+      aria-labelledby={titleId}
+      className="animate-fade-in flex h-full min-h-0 flex-col outline-none"
+    >
+      <header className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-border px-4">
+        <h2 id={titleId} className="truncate font-semibold">
+          {title}
+        </h2>
+        <button
+          type="button"
+          aria-label="Close"
+          onClick={onClose}
+          className="flex size-7 shrink-0 items-center justify-center rounded-(--radius-control) text-lg leading-none text-muted hover:bg-surface-2 hover:text-text"
+        >
+          &times;
+        </button>
+      </header>
+      <div className="min-h-0 flex-1 overflow-auto px-4 py-4">{children}</div>
+      {footer && (
+        <div className="flex shrink-0 justify-end gap-2 border-t border-border px-4 py-3">{footer}</div>
+      )}
+    </section>,
+    host,
+  );
+}
+
 /** A dialog on the browser's own `<dialog>`: focus is kept inside and Esc closes it. */
-export function Modal({ open, onClose, title, children, footer, size = "md", side }: ModalProps) {
+function DialogModal({ open, onClose, title, children, footer, size = "md", side }: ModalProps) {
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
   useEffect(() => {
@@ -566,12 +692,38 @@ export function Tabs<T extends string>({
   value,
   onChange,
   label,
+  rail,
 }: {
   items: { value: T; label: ReactNode }[];
   value: T;
   onChange: (v: T) => void;
   label: string;
+  /** In a `SectionLayout`: the Aikido design shows the tabs as a menu on the left. */
+  rail?: boolean;
 }) {
+  const design = useDesign();
+  if (rail && design === "aikido") {
+    return (
+      <div
+        role="tablist"
+        aria-label={label}
+        className="ak-section-nav flex gap-1 overflow-x-auto lg:flex-col lg:overflow-visible"
+      >
+        {items.map((it) => (
+          <button
+            key={it.value}
+            type="button"
+            role="tab"
+            aria-selected={it.value === value}
+            onClick={() => onChange(it.value)}
+            className={cn(RAIL_ITEM, it.value === value && RAIL_ACTIVE)}
+          >
+            {it.label}
+          </button>
+        ))}
+      </div>
+    );
+  }
   return (
     <div role="tablist" aria-label={label} className="mb-4 flex gap-1 border-b border-border">
       {items.map((it) => (
@@ -595,14 +747,39 @@ export function Tabs<T extends string>({
   );
 }
 
-/** Tabs that are pages of their own (the address changes). */
+/**
+ * Tabs that are pages of their own (the address changes). `exact` marks an item that is the parent page
+ * itself (like an Overview): it is not marked while a page under it is open.
+ * In the Aikido design they are the menu on the left of a `SectionLayout`.
+ */
 export function LinkTabs({
   items,
   label,
 }: {
-  items: { to: string; params?: Record<string, string>; label: string }[];
+  items: { to: string; params?: Record<string, string>; label: string; exact?: boolean }[];
   label: string;
 }) {
+  const design = useDesign();
+  if (design === "aikido") {
+    return (
+      <nav aria-label={label} className="ak-section-nav flex gap-1 overflow-x-auto lg:flex-col lg:overflow-visible">
+        {items.map((it) => (
+          <Link
+            key={it.to + it.label}
+            // biome-ignore lint/suspicious/noExplicitAny: the tab list is built from route names
+            to={it.to as any}
+            // biome-ignore lint/suspicious/noExplicitAny: same
+            params={it.params as any}
+            activeOptions={{ exact: it.exact ?? false }}
+            className={RAIL_ITEM}
+            activeProps={{ className: RAIL_ACTIVE }}
+          >
+            {it.label}
+          </Link>
+        ))}
+      </nav>
+    );
+  }
   return (
     <nav aria-label={label} className="mb-4 flex gap-1 overflow-x-auto border-b border-border">
       {items.map((it) => (
@@ -612,6 +789,7 @@ export function LinkTabs({
           to={it.to as any}
           // biome-ignore lint/suspicious/noExplicitAny: same
           params={it.params as any}
+          activeOptions={{ exact: it.exact ?? false }}
           className="-mb-px whitespace-nowrap border-b-2 border-transparent px-3 py-2 text-sm text-muted duration-200 hover:border-border hover:text-text"
           activeProps={{ className: "border-(--tab-indicator) font-medium text-text" }}
         >

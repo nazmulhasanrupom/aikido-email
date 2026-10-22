@@ -11,6 +11,7 @@ import { ChecklistBar } from "@/features/campaigns/ChecklistBar";
 import { campaignQuery, tone } from "@/features/campaigns/hooks";
 import { LaunchDialog } from "@/features/campaigns/Launch";
 import { say } from "@/lib/words";
+import { useDesign } from "@/theme/theme";
 
 export const Route = createFileRoute("/w/$ws/campaigns/$id")({ component: CampaignLayout });
 
@@ -27,6 +28,7 @@ function CampaignLayout() {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const res = useQuery(campaignQuery(id));
+  const design = useDesign();
   const [name, setName] = useState("");
   const [launch, setLaunch] = useState(false);
   const [archive, setArchive] = useState(false);
@@ -74,76 +76,52 @@ function CampaignLayout() {
     );
   const c = res.data;
   const p = { ws, id };
-  return (
-    <Page wide>
-      <div className="-mx-6 -mt-6 mb-5 flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-border px-6">
-        <div className="flex min-w-0 items-center gap-1 py-2.5">
-          <Link
-            to="/w/$ws/campaigns"
-            params={{ ws }}
-            aria-label="Back to campaigns"
-            className="rounded p-1.5 text-muted hover:bg-surface-2 hover:text-text"
-          >
-            <ArrowLeft size={18} />
-          </Link>
-          <input
-            aria-label="Campaign name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            onBlur={() => name.trim() && name !== c.name && rename.mutate(name.trim())}
-            onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
-            className="min-w-0 max-w-72 rounded-(--radius-control) border border-transparent bg-transparent px-2 py-1 text-lg font-semibold hover:border-border focus:border-border"
-          />
-        </div>
-        <nav
-          aria-label="Campaign pages"
-          className="order-last flex w-full gap-1 self-stretch overflow-x-auto lg:order-none lg:w-auto lg:flex-1 lg:justify-center lg:border-l lg:border-border lg:pl-4"
+  const nameInput = (
+    <input
+      aria-label="Campaign name"
+      value={name}
+      onChange={(e) => setName(e.target.value)}
+      onBlur={() => name.trim() && name !== c.name && rename.mutate(name.trim())}
+      onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
+      className="min-w-0 max-w-72 rounded-(--radius-control) border border-transparent bg-transparent px-2 py-1 text-lg font-semibold hover:border-border focus:border-border"
+    />
+  );
+  const actions = (
+    <>
+      <Pill dot tone={tone(c.status)}>
+        {say("campaign", c.status)}
+      </Pill>
+      {c.status === "draft" && (
+        <Button onClick={() => setLaunch(true)}>
+          <Rocket size={15} aria-hidden="true" /> Launch
+        </Button>
+      )}
+      {c.status === "active" && (
+        <Button variant="secondary" busy={act.isPending} onClick={() => act.mutate("pause")}>
+          <Pause size={15} aria-hidden="true" /> Pause
+        </Button>
+      )}
+      {c.status === "paused" && (
+        <Button busy={act.isPending} onClick={() => act.mutate("resume")}>
+          <Play size={15} aria-hidden="true" /> Resume
+        </Button>
+      )}
+      <MenuRoot>
+        <MenuTrigger
+          aria-label="More actions"
+          className="flex size-9 items-center justify-center rounded-(--radius-control) border border-border hover:bg-surface-2"
         >
-          {TABS.map(([to, label]) => (
-            <Link
-              key={to}
-              to={to}
-              params={p}
-              className="flex items-center whitespace-nowrap border-b-2 border-transparent px-3 py-3 text-sm text-muted hover:text-text"
-              activeProps={{ className: "border-(--tab-indicator)! font-medium text-text!" }}
-            >
-              {label}
-            </Link>
-          ))}
-        </nav>
-        <div className="ml-auto flex items-center gap-2 py-2.5">
-          <Pill dot tone={tone(c.status)}>
-            {say("campaign", c.status)}
-          </Pill>
-          {c.status === "draft" && (
-            <Button onClick={() => setLaunch(true)}>
-              <Rocket size={15} aria-hidden="true" /> Launch
-            </Button>
-          )}
-          {c.status === "active" && (
-            <Button variant="secondary" busy={act.isPending} onClick={() => act.mutate("pause")}>
-              <Pause size={15} aria-hidden="true" /> Pause
-            </Button>
-          )}
-          {c.status === "paused" && (
-            <Button busy={act.isPending} onClick={() => act.mutate("resume")}>
-              <Play size={15} aria-hidden="true" /> Resume
-            </Button>
-          )}
-          <MenuRoot>
-            <MenuTrigger
-              aria-label="More actions"
-              className="flex size-9 items-center justify-center rounded-(--radius-control) border border-border hover:bg-surface-2"
-            >
-              <MoreVertical size={17} />
-            </MenuTrigger>
-            <MenuContent align="end">
-              <MenuItem onSelect={() => copy.mutate()}>Duplicate</MenuItem>
-              <MenuItem onSelect={() => setArchive(true)}>Archive</MenuItem>
-            </MenuContent>
-          </MenuRoot>
-        </div>
-      </div>
+          <MoreVertical size={17} />
+        </MenuTrigger>
+        <MenuContent align="end">
+          <MenuItem onSelect={() => copy.mutate()}>Duplicate</MenuItem>
+          <MenuItem onSelect={() => setArchive(true)}>Archive</MenuItem>
+        </MenuContent>
+      </MenuRoot>
+    </>
+  );
+  const body = (
+    <>
       {c.warning && (
         <div className="mb-3">
           <Notice tone="warning">{c.warning}</Notice>
@@ -166,6 +144,76 @@ function CampaignLayout() {
           await qc.invalidateQueries({ queryKey: ["campaigns"] });
         }}
       />
+    </>
+  );
+
+  if (design === "aikido")
+    // The Aikido design: a path and the actions on one line, the pages under it; it stays at the top.
+    return (
+      <Page>
+        <div className="sticky top-0 z-20 -mx-6 -mt-6 mb-5 border-b border-border bg-bg/90 px-6 backdrop-blur">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 pt-2.5">
+            <div className="flex min-w-0 items-center gap-1 text-sm">
+              <Link to="/w/$ws/campaigns" params={{ ws }} className="text-muted hover:text-text">
+                Campaigns
+              </Link>
+              <span aria-hidden="true" className="text-muted">
+                /
+              </span>
+              {nameInput}
+            </div>
+            <div className="ml-auto flex items-center gap-2">{actions}</div>
+          </div>
+          <nav aria-label="Campaign pages" className="-mb-px mt-1 flex gap-1 overflow-x-auto">
+            {TABS.map(([to, label]) => (
+              <Link
+                key={to}
+                to={to}
+                params={p}
+                className="relative whitespace-nowrap px-3 py-2.5 text-sm text-muted after:absolute after:inset-x-3 after:bottom-0 after:h-0.5 after:rounded-full hover:text-text data-[status=active]:font-medium data-[status=active]:text-text data-[status=active]:after:bg-(--tab-indicator)"
+              >
+                {label}
+              </Link>
+            ))}
+          </nav>
+        </div>
+        {body}
+      </Page>
+    );
+
+  return (
+    <Page wide>
+      <div className="-mx-6 -mt-6 mb-5 flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-border px-6">
+        <div className="flex min-w-0 items-center gap-1 py-2.5">
+          <Link
+            to="/w/$ws/campaigns"
+            params={{ ws }}
+            aria-label="Back to campaigns"
+            className="rounded p-1.5 text-muted hover:bg-surface-2 hover:text-text"
+          >
+            <ArrowLeft size={18} />
+          </Link>
+          {nameInput}
+        </div>
+        <nav
+          aria-label="Campaign pages"
+          className="order-last flex w-full gap-1 self-stretch overflow-x-auto lg:order-none lg:w-auto lg:flex-1 lg:justify-center lg:border-l lg:border-border lg:pl-4"
+        >
+          {TABS.map(([to, label]) => (
+            <Link
+              key={to}
+              to={to}
+              params={p}
+              className="flex items-center whitespace-nowrap border-b-2 border-transparent px-3 py-3 text-sm text-muted hover:text-text"
+              activeProps={{ className: "border-(--tab-indicator)! font-medium text-text!" }}
+            >
+              {label}
+            </Link>
+          ))}
+        </nav>
+        <div className="ml-auto flex items-center gap-2 py-2.5">{actions}</div>
+      </div>
+      {body}
     </Page>
   );
 }

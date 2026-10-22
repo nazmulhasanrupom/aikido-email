@@ -29,6 +29,7 @@ import { useReoon } from "@/features/reoon/api";
 import { useUser } from "@/features/settings/useUser";
 import { cn } from "@/lib/cn";
 import {
+  DESIGNS,
   type DesignChoice,
   shownChoice,
   type ThemeChoice,
@@ -74,7 +75,7 @@ const NAV: NavItem[] = [
   { to: "/w/$ws/reports", label: "Reports", icon: ChartColumn },
 ];
 
-function initials(name: string): string {
+export function initials(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   return (
     (parts[0]?.[0] ?? "?") + (parts.length > 1 ? (parts[parts.length - 1]?.[0] ?? "") : "")
@@ -95,11 +96,9 @@ interface Props {
   onLogout: () => void;
 }
 
-export function Sidebar(p: Props) {
-  // The icon-only mode is for wide screens. In the phone drawer the labels always show.
-  const slim = p.collapsed;
-  const seen = (p.user.preferences as { last_seen_inbox_at?: string } | undefined)
-    ?.last_seen_inbox_at;
+/** The replies that came in after the user last opened the inbox (up to 100), checked every minute. */
+export function useUnreadReplies(user: User): number {
+  const seen = (user.preferences as { last_seen_inbox_at?: string } | undefined)?.last_seen_inbox_at;
   const unread = useQuery({
     queryKey: ["inbox", "badge", seen],
     queryFn: () =>
@@ -108,7 +107,13 @@ export function Sidebar(p: Props) {
       }),
     refetchInterval: 60_000,
   });
-  const inboxCount = unread.data?.messages.length ?? 0;
+  return unread.data?.messages.length ?? 0;
+}
+
+export function Sidebar(p: Props) {
+  // The icon-only mode is for wide screens. In the phone drawer the labels always show.
+  const slim = p.collapsed;
+  const inboxCount = useUnreadReplies(p.user);
   const reoon = useReoon();
   return (
     <>
@@ -274,7 +279,7 @@ function WorkspaceMenu({
   );
 }
 
-function WorkspaceSettings({
+export function WorkspaceSettings({
   open,
   onClose,
   name,
@@ -361,21 +366,56 @@ function WorkspaceSettings({
   );
 }
 
-const THEME_ICONS: Record<ThemeChoice, typeof Sun> = {
+export const THEME_ICONS: Record<ThemeChoice, typeof Sun> = {
   light: Sun,
   dark: Moon,
   aikido: Swords,
   system: Monitor,
 };
 
-const DESIGNS: { value: DesignChoice; label: string }[] = [
-  { value: "generic", label: "Generic" },
-  { value: "aikido", label: "Aikido" },
-];
-
-function UserMenu(p: Props & { slim: boolean }): ReactNode {
+/** The Design and Theme choices of an account menu. */
+export function LookItems({
+  onChangeDesign,
+  onChangeTheme,
+}: {
+  onChangeDesign: (design: DesignChoice) => void;
+  onChangeTheme: (choice: ThemeChoice) => void;
+}) {
   const theme = useThemeChoice();
   const design = useDesign();
+  return (
+    <>
+      <MenuLabel>Design</MenuLabel>
+      <MenuRadioGroup value={design} onValueChange={(v) => onChangeDesign(v as DesignChoice)}>
+        {DESIGNS.map((d) => (
+          <MenuRadioItem key={d.value} value={d.value}>
+            <span className="flex items-center gap-2">
+              <PaletteIcon size={16} aria-hidden="true" /> {d.label}
+            </span>
+          </MenuRadioItem>
+        ))}
+      </MenuRadioGroup>
+      <MenuLabel>Theme</MenuLabel>
+      <MenuRadioGroup
+        value={shownChoice(theme, design)}
+        onValueChange={(v) => onChangeTheme(v as ThemeChoice)}
+      >
+        {themeOptions(design).map((t) => {
+          const Icon = THEME_ICONS[t.value];
+          return (
+            <MenuRadioItem key={t.value} value={t.value}>
+              <span className="flex items-center gap-2">
+                <Icon size={16} aria-hidden="true" /> {t.label}
+              </span>
+            </MenuRadioItem>
+          );
+        })}
+      </MenuRadioGroup>
+    </>
+  );
+}
+
+function UserMenu(p: Props & { slim: boolean }): ReactNode {
   return (
     <MenuRoot>
       <MenuTrigger
@@ -403,32 +443,7 @@ function UserMenu(p: Props & { slim: boolean }): ReactNode {
           </Link>
         </MenuItem>
         <MenuSeparator />
-        <MenuLabel>Design</MenuLabel>
-        <MenuRadioGroup value={design} onValueChange={(v) => p.onChangeDesign(v as DesignChoice)}>
-          {DESIGNS.map((d) => (
-            <MenuRadioItem key={d.value} value={d.value}>
-              <span className="flex items-center gap-2">
-                <PaletteIcon size={16} aria-hidden="true" /> {d.label}
-              </span>
-            </MenuRadioItem>
-          ))}
-        </MenuRadioGroup>
-        <MenuLabel>Theme</MenuLabel>
-        <MenuRadioGroup
-          value={shownChoice(theme, design)}
-          onValueChange={(v) => p.onChangeTheme(v as ThemeChoice)}
-        >
-          {themeOptions(design).map((t) => {
-            const Icon = THEME_ICONS[t.value];
-            return (
-              <MenuRadioItem key={t.value} value={t.value}>
-                <span className="flex items-center gap-2">
-                  <Icon size={16} aria-hidden="true" /> {t.label}
-                </span>
-              </MenuRadioItem>
-            );
-          })}
-        </MenuRadioGroup>
+        <LookItems onChangeDesign={p.onChangeDesign} onChangeTheme={p.onChangeTheme} />
         <MenuSeparator />
         <MenuItem asChild>
           <Link to="/w/$ws/status" params={{ ws: p.ws }} onClick={p.onCloseDrawer}>

@@ -22,6 +22,13 @@ export function AuthLayout({
       </AikidoAuth>
     );
   }
+  if (design === "indigo") {
+    return (
+      <IndigoAuth title={title} intro={intro}>
+        {children}
+      </IndigoAuth>
+    );
+  }
   return (
     <main className="flex min-h-full items-center justify-center px-4 py-10">
       <div className="animate-fade-in w-full max-w-md">
@@ -39,8 +46,8 @@ export function AuthLayout({
   );
 }
 
-/** The Aikido design: an ink panel with a brush circle on the left, the form on paper on the right. */
-function AikidoAuth({ title, intro, children }: { title: string; intro?: string; children: ReactNode }) {
+/** The Indigo design: an ink panel with a brush circle on the left, the form on paper on the right. */
+function IndigoAuth({ title, intro, children }: { title: string; intro?: string; children: ReactNode }) {
   return (
     <main className="grid min-h-full lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)]">
       <section
@@ -82,5 +89,33 @@ function AikidoAuth({ title, intro, children }: { title: string; intro?: string;
         </div>
       </section>
     </main>
+  );
+}
+
+/** The Aikido design: the frame of the app (the dark top bar and the status line) around the form. */
+function AikidoAuth({ title, intro, children }: { title: string; intro?: string; children: ReactNode }) {
+  return (
+    <div className="flex min-h-full flex-col">
+      <header className="flex h-12 shrink-0 items-center gap-2 bg-(--topnav-bg) px-4 text-(--topnav-fg)">
+        <Logo size={24} />
+        <span className="text-[13px] font-semibold">Aikido Email</span>
+      </header>
+      <main className="flex flex-1 items-center justify-center px-4 py-10">
+        <div className="animate-fade-in w-full max-w-sm rounded-(--radius-card) border border-border bg-surface p-6 shadow-(--shadow-card)">
+          <h1 className="text-(length:--page-title) leading-(--page-title-leading) font-semibold">
+            {title}
+          </h1>
+          {intro && <p className="mt-1 text-muted">{intro}</p>}
+          <div className="mt-5">{children}</div>
+        </div>
+      </main>
+      <footer className="flex h-7 shrink-0 items-center gap-4 border-t border-border bg-(--statusbar-bg) px-3 font-mono text-[11px] text-muted">
+        <span className="flex items-center gap-1.5">
+          <span aria-hidden="true" className="size-1.5 rounded-full bg-success" />
+          Self-hosted
+        </span>
+        <span>Your server. Your data.</span>
+      </footer>
+    </div>
   );
 }

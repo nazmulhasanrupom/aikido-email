@@ -111,11 +111,11 @@
 }
 
 /*
- * The Aikido design. Ink (sumi) and paper (washi), the indigo of a hakama as the accent,
+ * The Indigo design. Ink (sumi) and paper (washi), the indigo of a hakama as the accent,
  * and the vermilion of a seal for small brand marks. Round shapes: pill buttons, soft cards.
  * The menu on the left is an ink rail in both themes. Every text color reaches AA (contrast.test.ts).
  */
-:root[data-design="aikido"] {
+:root[data-design="indigo"] {
   color-scheme: light;
   --bg: #f3f1ec;
   --surface: #fcfbf8;
@@ -167,7 +167,7 @@
   --backdrop: rgb(15 17 22 / 0.42);
 }
 
-:root[data-design="aikido"][data-theme="dark"] {
+:root[data-design="indigo"][data-theme="dark"] {
   color-scheme: dark;
   --bg: #0f1116;
   --surface: #161920;
@@ -198,4 +198,99 @@
   --shadow-pop: 0 28px 56px -16px rgb(0 0 0 / 0.65), 0 8px 18px -8px rgb(0 0 0 / 0.4);
   --shadow-button: 0 1px 2px rgb(0 0 0 / 0.4), inset 0 1px 0 rgb(255 255 255 / 0.14);
   --backdrop: rgb(0 0 0 / 0.55);
+}
+
+/*
+ * The Aikido design: a different layout (navigation in an ink bar at the top, a live status bar at the bottom,
+ * a menu per section, details in a side panel). Crisp and plain: white panels on cool grey, ink for the main
+ * actions, and the red of the logo only for marks (the page you are on, the brand, focus). Square-ish corners.
+ * Every text color reaches AA (contrast.test.ts).
+ */
+:root[data-design="aikido"] {
+  color-scheme: light;
+  --bg: #f4f5f7;
+  --surface: #ffffff;
+  --surface-2: #eff1f4;
+  --border: #e2e5ea;
+  --text: #0e0f13;
+  --text-muted: #586070;
+  --accent: #0e0f13;
+  --accent-fg: #ffffff;
+  --accent-soft: #e8eaef;
+  --success: #17734a;
+  --warning: #8a5b00;
+  --danger: #c0262d;
+  --info: #1d5bb8;
+  --ai: #6a3dcc;
+  --brand: #d92d20;
+  --app-font: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+  --app-features: "cv05", "ss01";
+  --heading-tracking: -0.015em;
+  --radius-card: 10px;
+  --radius-control: 8px;
+  --radius-button: 8px;
+  --radius-dialog: 12px;
+  --radius-menu: 10px;
+  --input-bg: var(--surface);
+  --chip-bg: var(--surface-2);
+  --table-head-bg: var(--surface-2);
+  --row-hover: color-mix(in srgb, var(--surface-2) 70%, transparent);
+  --tab-indicator: var(--brand);
+  --topnav-bg: #0e0f13;
+  --topnav-fg: #f2f3f5;
+  --topnav-muted: #a3a8b3;
+  --topnav-hover: #1c1e24;
+  --topnav-border: #1f2229;
+  --topnav-mark: #ff4d3d;
+  --topnav-mark-fg: #0e0f13;
+  --statusbar-bg: var(--surface);
+  --sidebar-bg: var(--surface);
+  --sidebar-fg: var(--text);
+  --sidebar-muted: var(--text-muted);
+  --sidebar-hover: var(--surface-2);
+  --sidebar-active: var(--accent-soft);
+  --sidebar-active-fg: var(--text);
+  --sidebar-icon-active: var(--brand);
+  --sidebar-border: var(--border);
+  --sidebar-badge: var(--brand);
+  --sidebar-badge-fg: #ffffff;
+  --sidebar-avatar: #d92d20;
+  --sidebar-avatar-fg: #ffffff;
+  --topbar-bg: var(--surface);
+  --page-title: 1.375rem;
+  --page-title-leading: 1.75rem;
+  --th-size: 0.6875rem;
+  --shadow-card: 0 1px 0 rgb(14 15 19 / 0.03);
+  --shadow-pop: 0 18px 44px -14px rgb(14 15 19 / 0.28), 0 4px 10px -4px rgb(14 15 19 / 0.08);
+  --shadow-button: 0 1px 0 rgb(14 15 19 / 0.06);
+  --backdrop: rgb(10 11 14 / 0.5);
+}
+
+:root[data-design="aikido"][data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0a0b0e;
+  --surface: #111318;
+  --surface-2: #171a20;
+  --border: #252932;
+  --text: #ececef;
+  --text-muted: #9aa0ad;
+  --accent: #ececef;
+  --accent-fg: #0a0b0e;
+  --accent-soft: #22262f;
+  --success: #3dcc8a;
+  --warning: #efb54a;
+  --danger: #ff6b6b;
+  --info: #6ea8ff;
+  --ai: #b39dff;
+  --brand: #ff4d3d;
+  --topnav-bg: #050608;
+  --topnav-hover: #121419;
+  --topnav-border: #16181d;
+  --sidebar-avatar: #ff4d3d;
+  --sidebar-avatar-fg: #0a0b0e;
+  --sidebar-badge-fg: #0a0b0e;
+  --shadow-card: 0 1px 0 rgb(0 0 0 / 0.4);
+  --shadow-pop: 0 20px 48px -12px rgb(0 0 0 / 0.7), 0 6px 14px -6px rgb(0 0 0 / 0.45);
+  --shadow-button: 0 1px 0 rgb(0 0 0 / 0.4);
+  --backdrop: rgb(0 0 0 / 0.6);
 }

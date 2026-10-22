@@ -1,6 +1,6 @@
 # AIKIDO EMAIL: Progress
 
-Last updated: 2026-10-22 (Code review fixes and the Aikido design)
+Last updated: 2026-10-22 (Code review fixes, the Indigo design and the Aikido layout)
 
 ## Status in one line
 
@@ -939,7 +939,7 @@ A third tracker type `end_mark_image` (migration `0022_tracking_end_mark.sql` wi
 
 A fourth tracker type `hyphen_image` (migration `0023_tracking_hyphen.sql` widens the CHECK again). A hyphen image is always added at the very end of the email, after the last visible text (after the `</a>` when the email ends with link text); it never replaces a mark. Style from the last text (auto) or the manual style, `alt=""`, same token and `/i/{token}.png`. Code: `html::find_end_append` (the end-mark code now shares `last_text` and `append_at_end`), `send::prepare_hyphen`, `routes::end_mark_preview(.., hyphen)`, UI card "Hyphen". Tests: 1 new in `html.rs`, 1 in `send.rs`. Not run: DB tests. Not seen in a mail app. Limit: a hyphen right after a word can look like a dash glued to the text; it is tiny and the same color as the text.
 
-## Code review fixes and the Aikido design (2026-10-22)
+## Code review fixes, the Indigo design and the Aikido layout (2026-10-22)
 
 A full review of the code (Opus as the reviewer, Sonnet 5.5 at medium effort as the fixer). Every change was read again after the fixer. Checked with `cargo build`, `cargo clippy --all-targets` (112 style hints, the same as before), `cargo test --lib` (310 pass), `pnpm typecheck` and `pnpm test` (147 pass). **Not run:** the DB tests and the browser tests (no server was started, as asked). Run them with Docker Postgres before a release.
 
@@ -970,15 +970,25 @@ A full review of the code (Opus as the reviewer, Sonnet 5.5 at medium effort as 
 | UI: developer panel | The SQL tab lost its text when you switched tabs; "All" hid trace lines; the Run button was unreadable in some themes. | Fixed. |
 | UI: API keys | No `tracking` scope in the key form. | Added. |
 
-### The Aikido design
+### The designs
 
-Settings → Account → **Appearance** (and the account menu) has two designs. **Generic** is the first look and is unchanged. **Aikido** is new: ink (sumi) and paper (washi), an indigo accent, a seal-red brand mark, pill buttons, rounder cards, mono labels, an ink menu rail in both themes, a brush circle (ensō) in empty pages, and a split login page. Each design has Light and Dark (and System). The deep red theme of Generic is now called **Crimson**.
+Settings → Account → **Appearance** (and the account menu) has three designs. Each has Light and Dark (and System). The deep red theme of Generic is called **Crimson**; the other designs show it as Dark.
 
-- Code: `ui/src/theme/theme.ts` (design state, saved in `localStorage` `aikido.design` and `users.preferences.design`), `ui/public/theme-init.js` (paints before the first frame), `ui/src/theme/tokens.css` (Aikido tokens), `ui/src/styles.css` (Aikido rules), `ui/src/components/Enso.tsx`, `AuthLayout.tsx`, the Appearance card in `routes/w.$ws.settings.account.tsx`.
-- The shared parts read tokens (`--radius-button`, `--input-bg`, `--sidebar-*`, `--tab-indicator`, ...). In Generic they keep the old values, so Generic looks as before.
-- `contrast.test.ts` checks the Aikido colors too (every text color AA on every background, the ink rail, the buttons).
-- New browser test `e2e/phase9_u7_design.spec.ts` (not run).
-- **Not verified:** the design was checked on a static page with the built CSS in headless Chrome, not in the running app. Open the app and click through the pages in both designs.
+- **Generic**: the first look. Unchanged.
+- **Indigo**: the same layout as Generic in ink (sumi) and paper (washi), an indigo accent, a seal-red brand mark, pill buttons, rounder cards, mono labels, an ink menu rail in both themes, a brush circle (ensō) in empty pages and a split login page. (This was called "Aikido" in the first version of this work.)
+- **Aikido**: a different layout, not only different colors.
+  - The pages are in a dark bar at the top (Home, Campaigns, Leads, Inbox with the new-reply count, Accounts, Personalisation, Reports, More). The bar also has search (Ctrl/⌘ K), a **New** menu (campaign, import leads, email account), the alerts, Settings and the account menu (design, theme, log out). On a narrow screen the pages are in a menu.
+  - A **Home** page (the start page of this design): the last 7 days (sent, replies, reply rate, bounce rate, each with a small line), the campaigns, the open alerts ("Needs you"), the latest replies and the inboxes. The other designs still open on the campaigns.
+  - A **status bar** at the bottom: sending on or paused (with Resume for an admin), dry run, queued / sending / stuck jobs, inboxes and disconnected ones, open alerts, the version. On a phone the old banners show instead.
+  - Settings, an account and Leads have their **menu in a column on the left**. A campaign has a header that stays at the top (path, name, status, actions) with its pages under it. Page titles stay at the top while you scroll.
+  - Lead, email, enrollment and preview details open in a **side panel next to the page** (the page stays usable), not over it. Esc closes it.
+  - Plain white panels on cool grey (near black in Dark), ink for the main actions, the red of the logo only for marks. Card titles are small capitals with a red bar.
+- Code: `ui/src/theme/theme.ts` (design state, saved in `localStorage` `aikido.design` and `users.preferences.design`), `ui/public/theme-init.js` (paints before the first frame), `ui/src/theme/tokens.css` (Indigo and Aikido tokens), `ui/src/styles.css` (design rules), `ui/src/components/shell/AikidoShell.tsx` (the Aikido frame), `ui/src/features/home/Home.tsx`, `SectionLayout`, `InspectorContext` and the `rail` tabs in `ui/src/components/ui/index.tsx`, `AuthLayout.tsx`, the Appearance card in `routes/w.$ws.settings.account.tsx`.
+- The start page is now `/w/default`: Home in Aikido, a redirect to the campaigns in the other designs.
+- Fixed on the way: the **Overview** tab of an account was shown as active on every account page.
+- `contrast.test.ts` checks all designs (every text color AA on every background, the ink rail of Indigo, the top bar of Aikido). `pnpm typecheck`, `pnpm test` (199 pass) and `pnpm build` pass.
+- Browser test `e2e/phase9_u7_design.spec.ts` updated for three designs (not run).
+- **Not verified:** nothing was opened in a browser (no server was started, as asked). Open the app and click through the pages in each design, on a wide and a narrow screen.
 
 ### Still open
 

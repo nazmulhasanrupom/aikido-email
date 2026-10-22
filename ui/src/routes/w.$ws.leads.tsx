@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { Page, PageHeader, Tabs } from "@/components/ui";
+import { Page, PageHeader, SectionLayout, Tabs } from "@/components/ui";
 import { AllLeads, type LeadSearch } from "@/features/leads/AllLeads";
 import { LeadDrawer } from "@/features/leads/LeadDrawer";
 import { ListView } from "@/features/leads/ListView";
@@ -46,37 +46,43 @@ function Leads() {
   return (
     <Page wide>
       <PageHeader title="Leads" sub="Everyone you email, in one place." />
-      <Tabs
-        label="Leads pages"
-        value={tab}
-        onChange={(t) =>
-          navigate({ to: "/w/$ws/leads", params: { ws }, search: t === "all" ? {} : { tab: t } })
+      <SectionLayout
+        nav={
+          <Tabs
+            rail
+            label="Leads pages"
+            value={tab}
+            onChange={(t) =>
+              navigate({ to: "/w/$ws/leads", params: { ws }, search: t === "all" ? {} : { tab: t } })
+            }
+            items={[
+              { value: "all", label: "All leads" },
+              { value: "lists", label: "Lists" },
+              { value: "fields", label: "Custom fields" },
+              { value: "imports", label: "Imports" },
+              { value: "blocklist", label: "Blocklist" },
+            ]}
+          />
         }
-        items={[
-          { value: "all", label: "All leads" },
-          { value: "lists", label: "Lists" },
-          { value: "fields", label: "Custom fields" },
-          { value: "imports", label: "Imports" },
-          { value: "blocklist", label: "Blocklist" },
-        ]}
-      />
-      {tab === "all" && <AllLeads search={search} ws={ws} />}
-      {tab === "lists" && !search.list && (
-        <ListsTab
-          onOpen={(id) =>
-            navigate({ to: "/w/$ws/leads", params: { ws }, search: { tab: "lists", list: id } })
-          }
-        />
-      )}
-      {tab === "lists" && search.list && (
-        <ListView
-          id={search.list}
-          onBack={() => navigate({ to: "/w/$ws/leads", params: { ws }, search: { tab: "lists" } })}
-        />
-      )}
-      {tab === "fields" && <FieldsTab />}
-      {tab === "imports" && <ImportsTab />}
-      {tab === "blocklist" && <BlocklistTab />}
+      >
+        {tab === "all" && <AllLeads search={search} ws={ws} />}
+        {tab === "lists" && !search.list && (
+          <ListsTab
+            onOpen={(id) =>
+              navigate({ to: "/w/$ws/leads", params: { ws }, search: { tab: "lists", list: id } })
+            }
+          />
+        )}
+        {tab === "lists" && search.list && (
+          <ListView
+            id={search.list}
+            onBack={() => navigate({ to: "/w/$ws/leads", params: { ws }, search: { tab: "lists" } })}
+          />
+        )}
+        {tab === "fields" && <FieldsTab />}
+        {tab === "imports" && <ImportsTab />}
+        {tab === "blocklist" && <BlocklistTab />}
+      </SectionLayout>
       <LeadDrawer
         id={search.lead ?? null}
         ws={ws}

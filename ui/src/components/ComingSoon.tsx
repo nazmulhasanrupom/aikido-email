@@ -15,10 +15,15 @@ export function ComingSoon({
   const design = useDesign();
   return (
     <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
-      {design === "aikido" ? (
+      {design === "indigo" ? (
         <span className="relative flex size-24 items-center justify-center">
           <Enso size={96} className="absolute inset-0 text-(--brand)" />
           <Icon size={26} className="relative" />
+        </span>
+      ) : design === "aikido" ? (
+        <span className="relative flex size-14 items-center justify-center rounded-(--radius-card) border border-border bg-surface shadow-(--shadow-card)">
+          <Icon size={24} aria-hidden="true" />
+          <span aria-hidden="true" className="absolute -top-1 -right-1 size-2.5 rounded-full bg-(--brand)" />
         </span>
       ) : (
         <div className="rounded-full bg-surface-2 p-3 text-muted">

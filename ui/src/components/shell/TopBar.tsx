@@ -6,7 +6,7 @@ import { cn } from "@/lib/cn";
 import { fmtAgo } from "@/lib/format";
 import { MenuContent, MenuItem, MenuLabel, MenuRoot, MenuTrigger } from "./menu";
 
-const isMac = typeof navigator !== "undefined" && /mac/i.test(navigator.platform);
+export const isMac = typeof navigator !== "undefined" && /mac/i.test(navigator.platform);
 
 /** The top bar: the search box (opens the palette) and the bell (alerts, checked every minute). */
 export function TopBar({
@@ -16,9 +16,6 @@ export function TopBar({
   onOpenDrawer: () => void;
   onOpenSearch: () => void;
 }) {
-  const alerts = useQuery(q.alerts);
-  const list = alerts.data ?? [];
-  const errors = list.filter((a) => a.severity === "error").length;
   return (
     <header className="ui-topbar flex h-12 shrink-0 items-center gap-3 border-b border-border bg-(--topbar-bg) px-4">
       <button
@@ -43,50 +40,68 @@ export function TopBar({
           </kbd>
         </button>
       </div>
-      <MenuRoot>
-        <MenuTrigger
-          aria-label={list.length ? `Alerts, ${list.length} open` : "Alerts, none"}
-          className="relative rounded-(--radius-control) p-1.5 hover:bg-surface-2"
-        >
-          <Bell size={18} />
-          {list.length > 0 && (
-            <span
-              className={cn(
-                "absolute -right-0.5 -top-0.5 flex min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-semibold text-accent-fg",
-                errors ? "bg-danger" : "bg-accent",
-              )}
-            >
-              {list.length}
-            </span>
-          )}
-        </MenuTrigger>
-        <MenuContent align="end" className="w-96 max-w-[92vw]">
-          <MenuLabel>Alerts</MenuLabel>
-          {list.length === 0 && <p className="px-2 py-3 text-sm text-muted">All clear.</p>}
-          {list.map((a) => (
-            <MenuItem key={a.id} asChild>
-              <Link to={a.link as never} className="flex flex-col items-start gap-0.5">
-                <span className="flex items-center gap-2 font-medium">
-                  <span
-                    aria-hidden="true"
-                    className={cn(
-                      "size-2 rounded-full",
-                      a.severity === "error"
-                        ? "bg-danger"
-                        : a.severity === "warning"
-                          ? "bg-warning"
-                          : "bg-info",
-                    )}
-                  />
-                  {a.title}
-                </span>
-                <span className="text-xs text-muted">{a.detail}</span>
-                <span className="text-xs text-muted">{fmtAgo(a.since)}</span>
-              </Link>
-            </MenuItem>
-          ))}
-        </MenuContent>
-      </MenuRoot>
+      <AlertsMenu />
     </header>
+  );
+}
+
+/**
+ * The bell: the open alerts, checked every minute. `ink` is for the dark top bar of the Aikido design.
+ */
+export function AlertsMenu({ ink, className }: { ink?: boolean; className?: string }) {
+  const alerts = useQuery(q.alerts);
+  const list = alerts.data ?? [];
+  const errors = list.filter((a) => a.severity === "error").length;
+  return (
+    <MenuRoot>
+      <MenuTrigger
+        aria-label={list.length ? `Alerts, ${list.length} open` : "Alerts, none"}
+        className={className ?? "relative rounded-(--radius-control) p-1.5 hover:bg-surface-2"}
+      >
+        <Bell size={ink ? 16 : 18} />
+        {list.length > 0 && (
+          <span
+            className={cn(
+              "absolute -right-0.5 -top-0.5 flex min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-semibold",
+              ink
+                ? errors
+                  ? "bg-(--topnav-mark) text-(--topnav-mark-fg)"
+                  : "bg-(--topnav-fg) text-(--topnav-bg)"
+                : errors
+                  ? "bg-danger text-accent-fg"
+                  : "bg-accent text-accent-fg",
+            )}
+          >
+            {list.length}
+          </span>
+        )}
+      </MenuTrigger>
+      <MenuContent align="end" className="w-96 max-w-[92vw]">
+        <MenuLabel>Alerts</MenuLabel>
+        {list.length === 0 && <p className="px-2 py-3 text-sm text-muted">All clear.</p>}
+        {list.map((a) => (
+          <MenuItem key={a.id} asChild>
+            <Link to={a.link as never} className="flex flex-col items-start gap-0.5">
+              <span className="flex items-center gap-2 font-medium">
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    "size-2 rounded-full",
+                    a.severity === "error"
+                      ? "bg-danger"
+                      : a.severity === "warning"
+                        ? "bg-warning"
+                        : "bg-info",
+                  )}
+                />
+                {a.title}
+              </span>
+              <span className="text-xs text-muted">{a.detail}</span>
+              <span className="text-xs text-muted">{fmtAgo(a.since)}</span>
+            </Link>
+          </MenuItem>
+        ))}
+      </MenuContent>
+    </MenuRoot>
   );
 }

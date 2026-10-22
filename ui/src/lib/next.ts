@@ -6,4 +6,5 @@ export function safeNext(next: unknown): string | undefined {
   return next;
 }
 
-export const HOME = "/w/default/campaigns";
+/** The start page of the workspace: Home in the Aikido design, the campaigns in the others. */
+export const HOME = "/w/default";
