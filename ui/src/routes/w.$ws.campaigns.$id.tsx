@@ -32,6 +32,7 @@ function CampaignLayout() {
   const [name, setName] = useState("");
   const [launch, setLaunch] = useState(false);
   const [archive, setArchive] = useState(false);
+  const [remove, setRemove] = useState(false);
   useEffect(() => {
     if (res.data) setName(res.data.name);
   }, [res.data]);
@@ -115,7 +116,8 @@ function CampaignLayout() {
         </MenuTrigger>
         <MenuContent align="end">
           <MenuItem onSelect={() => copy.mutate()}>Duplicate</MenuItem>
-          <MenuItem onSelect={() => setArchive(true)}>Archive</MenuItem>
+          {c.status !== "archived" && <MenuItem onSelect={() => setArchive(true)}>Archive</MenuItem>}
+          {c.status !== "active" && <MenuItem onSelect={() => setRemove(true)}>Delete</MenuItem>}
         </MenuContent>
       </MenuRoot>
     </>
@@ -141,6 +143,20 @@ function CampaignLayout() {
         text="Pending leads are skipped and the sequence stops."
         onConfirm={async () => {
           await http.post("/v1/campaigns/{id}/archive", { path: { id } });
+          await qc.invalidateQueries({ queryKey: ["campaigns"] });
+        }}
+      />
+      <ConfirmDialog
+        open={remove}
+        onClose={() => setRemove(false)}
+        title="Delete this campaign?"
+        typed={c.name}
+        confirmLabel="Delete campaign"
+        text="The campaign, its emails and its lead links are removed for good. The leads stay in their lists. A campaign that already sent email can not be deleted: archive it."
+        onConfirm={async () => {
+          await http.delEmpty("/v1/campaigns/{id}", { path: { id } });
+          await navigate({ to: "/w/$ws/campaigns", params: { ws } });
+          qc.removeQueries({ queryKey: ["campaigns", id] });
           await qc.invalidateQueries({ queryKey: ["campaigns"] });
         }}
       />

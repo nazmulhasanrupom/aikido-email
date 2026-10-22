@@ -207,10 +207,11 @@ pub async fn upsert_batch(conn: &mut PgConnection, rows: &[LeadInput], ctx: &Ups
         let outcome = if repeat { Outcome::Skipped } else { outcomes.get(r.email.as_str()).copied().unwrap_or(Outcome::Skipped) };
         out.push(Upserted { id, outcome, repeat_in_batch: repeat });
     }
-    // verify on import: new leads of the CSV import, the API and a manual add (not the ones an enrollment makes)
+    // verify on import: the leads of the CSV import, the API and a manual add (not the ones an enrollment makes)
     if ctx.source != LeadSource::Enrollment {
-        let created: Vec<Uuid> = out.iter().filter(|u| u.outcome == Outcome::Created).map(|u| u.id).collect();
-        crate::verify_reoon::auto::enqueue_new(conn, &created, ctx.now).await?;
+        // every lead of the batch, not only the new ones: a lead that was there before may have no result yet
+        let touched: Vec<Uuid> = out.iter().filter(|u| !u.repeat_in_batch && !u.id.is_nil()).map(|u| u.id).collect();
+        crate::verify_reoon::auto::enqueue_new(conn, &touched, ctx.now).await?;
     }
     // saved campaign emails of the updated leads may now be out of date
     let updated: Vec<Uuid> = out.iter().filter(|u| u.outcome == Outcome::Updated).map(|u| u.id).collect();

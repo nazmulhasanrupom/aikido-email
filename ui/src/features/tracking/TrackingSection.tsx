@@ -122,7 +122,7 @@ export function TrackingSection({ campaignId }: { campaignId: string }) {
       {form.enabled && (
         <>
           <Domains domains={s.domains} campaignId={campaignId} />
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <div className="flex flex-col gap-3">
             <TrackerCard
               title="Text to image"
               locked={!s.trackers_unlocked}
@@ -148,7 +148,7 @@ export function TrackingSection({ campaignId }: { campaignId: string }) {
                 help="Auto reads only what is written in the email HTML. It is close, not always perfect."
               />
               {form.style_mode === "manual" && (
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-2 gap-2 sm:col-span-2 sm:grid-cols-4">
                   <Select
                     label="Font"
                     value={manual.font}
@@ -212,7 +212,7 @@ export function TrackingSection({ campaignId }: { campaignId: string }) {
                 ]}
               />
               {form.style_mode === "manual" && (
-                <p className="text-xs text-muted">Uses the font, size and color set under Text to image.</p>
+                <p className="text-xs text-muted sm:col-span-2">Uses the font, size and color set under Text to image.</p>
               )}
               <PreviewBox
                 shown={form.tracker_type === "end_mark_image" ? preview : null}
@@ -243,7 +243,7 @@ export function TrackingSection({ campaignId }: { campaignId: string }) {
                 ]}
               />
               {form.style_mode === "manual" && (
-                <p className="text-xs text-muted">Uses the font, size and color set under Text to image.</p>
+                <p className="text-xs text-muted sm:col-span-2">Uses the font, size and color set under Text to image.</p>
               )}
               <PreviewBox
                 shown={form.tracker_type === "hyphen_image" ? preview : null}
@@ -292,7 +292,7 @@ export function TrackingSection({ campaignId }: { campaignId: string }) {
                   })
                 }
               />
-              <div>
+              <div className="sm:col-span-2">
                 <Button
                   variant="secondary"
                   className="h-8"
@@ -342,7 +342,7 @@ function TrackerCard({
   return (
     <div
       className={cn(
-        "flex flex-col gap-3 rounded-(--radius-control) border p-3",
+        "flex flex-col gap-4 rounded-(--radius-control) border p-4 lg:grid lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:items-start lg:gap-6",
         active ? "border-accent" : "border-border",
         locked && "opacity-60",
       )}
@@ -363,7 +363,7 @@ function TrackerCard({
           <span className="text-xs text-muted">{text}</span>
         </span>
       </label>
-      <fieldset disabled={locked} className="flex flex-col gap-3">
+      <fieldset disabled={locked} className="grid min-w-0 content-start gap-3 sm:grid-cols-2">
         {children}
       </fieldset>
     </div>
@@ -380,7 +380,7 @@ function PreviewBox({
   onPreview: () => void;
 }) {
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-2 sm:col-span-2">
       <div>
         <Button variant="secondary" className="h-8" disabled={busy} onClick={onPreview}>
           Preview

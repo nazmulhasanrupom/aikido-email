@@ -18,7 +18,7 @@ export function ImportModal({
     <Modal open={open} onClose={onClose} size="lg" title="Import leads from a CSV file">
       {open && settings.data?.settings.auto_verify && (
         <div className="mb-3">
-          <Notice tone="info">New leads from this file are checked with Reoon after the import. You can turn this off on the Reoon page.</Notice>
+          <Notice tone="info">Leads from this file that have no Reoon result yet are checked after the import. You can turn this off on the Reoon page.</Notice>
         </div>
       )}
       {open && <ImportFlow campaignId={campaignId} />}

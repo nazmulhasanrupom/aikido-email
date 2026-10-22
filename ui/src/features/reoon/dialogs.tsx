@@ -215,7 +215,7 @@ export function SettingsDialog({ open, onClose, isAdmin }: { open: boolean; onCl
         <div className="flex flex-col gap-5">
           <Check2
             label="Verify new leads automatically"
-            help="New leads from a CSV import, the API or a manual add are checked at once. Leads with a recent result cost nothing."
+            help="Leads from a CSV import, the API or a manual add are checked at once. Leads with a recent result cost nothing."
             checked={s.auto_verify}
             onChange={(v) => save.mutate({ auto_verify: v })}
           />

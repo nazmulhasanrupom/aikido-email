@@ -153,9 +153,6 @@ function TopNav(p: FrameProps) {
         </button>
         <NewMenu ws={p.ws} />
         <AlertsMenu ink className={ICON_BUTTON} />
-        <Link to="/w/$ws/settings" params={{ ws: p.ws }} aria-label="Settings" className={ICON_BUTTON}>
-          <Settings size={16} aria-hidden="true" />
-        </Link>
         <AccountMenu {...p} />
       </div>
     </header>

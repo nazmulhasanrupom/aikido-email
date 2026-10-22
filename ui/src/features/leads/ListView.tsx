@@ -1,12 +1,6 @@
-import {
-  type InfiniteData,
-  useInfiniteQuery,
-  useMutation,
-  useQuery,
-  useQueryClient,
-} from "@tanstack/react-query";
-import { ArrowLeft, MoreHorizontal } from "lucide-react";
-import { useRef, useState } from "react";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ArrowLeft, ChevronLeft, ChevronRight, MoreHorizontal } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { ApiProblem, messageOf } from "@/api/errors";
 import { http, type S, upload } from "@/api/http";
@@ -33,6 +27,7 @@ import { ListToCampaign } from "./ImportFlow";
 
 type Row = { id: string; data: Record<string, string>; created_at: string; updated_at: string };
 type RowsReply = { columns: string[]; rows: Row[]; total: number; next_cursor?: string | null };
+const PAGE_SIZE = 100;
 type ImportReply = { added: number; empty: number; columns: string[]; new_columns: string[] };
 
 /**
@@ -56,20 +51,35 @@ export function ListView({ id, onBack }: { id: string; onBack: () => void }) {
     | { rename: string }
     | { drop: string }
   >(null);
-  const key = ["leads", "lists", id, "rows", find] as const;
-  const rows = useInfiniteQuery({
+  // The API pages by cursor. The cursors of the pages we have passed are kept, so Previous can go back.
+  const [cursors, setCursors] = useState<(string | undefined)[]>([undefined]);
+  const page = cursors.length - 1;
+  const cursor = cursors[page];
+  useEffect(() => {
+    void find;
+    setCursors([undefined]);
+  }, [find]);
+  const key = ["leads", "lists", id, "rows", find, cursor ?? "first"] as const;
+  const rows = useQuery({
     queryKey: key,
-    initialPageParam: undefined as string | undefined,
-    queryFn: ({ pageParam }) =>
+    queryFn: () =>
       http.get<RowsReply>("/v1/leads/lists/{id}/rows", {
         path: { id },
-        query: { limit: 100, cursor: pageParam, q: find },
+        query: { limit: PAGE_SIZE, cursor, q: find },
       }),
-    getNextPageParam: (l) => l.next_cursor ?? undefined,
+    placeholderData: keepPreviousData,
   });
-  const data = rows.data?.pages.flatMap((p) => p.rows) ?? [];
-  const columns = rows.data?.pages[0]?.columns ?? list?.columns ?? [];
-  const total = rows.data?.pages[0]?.total ?? 0;
+  const data = rows.data?.rows ?? [];
+  const columns = rows.data?.columns ?? list?.columns ?? [];
+  const total = rows.data?.total ?? 0;
+  const nextCursor = rows.data?.next_cursor ?? undefined;
+  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  // the last rows of a page were deleted: go back one page
+  useEffect(() => {
+    if (rows.data && !rows.isPlaceholderData && rows.data.rows.length === 0 && page > 0) {
+      setCursors((c) => c.slice(0, -1));
+    }
+  }, [rows.data, rows.isPlaceholderData, page]);
   const refresh = () => void qc.invalidateQueries({ queryKey: ["leads", "lists"] });
 
   const saveCell = useMutation({
@@ -79,21 +89,38 @@ export function ListView({ id, onBack }: { id: string; onBack: () => void }) {
         body: { [col]: value },
       }),
     onSuccess: (row) =>
-      qc.setQueryData<InfiniteData<RowsReply>>(key, (old) =>
-        old
-          ? {
-              ...old,
-              pages: old.pages.map((p) => ({
-                ...p,
-                rows: p.rows.map((r) => (r.id === row.id ? row : r)),
-              })),
-            }
-          : old,
+      qc.setQueryData<RowsReply>(key, (old) =>
+        old ? { ...old, rows: old.rows.map((r) => (r.id === row.id ? row : r)) } : old,
       ),
     onError: (e) => toast.error(messageOf(e)),
   });
 
   const allPicked = data.length > 0 && data.every((r) => picked.has(r.id));
+  const from = page * PAGE_SIZE + 1;
+  const pager = (
+    <nav aria-label="Pages of this list" className="flex items-center gap-2">
+      <span className="text-xs text-muted">
+        Rows {fmtInt(from)}-{fmtInt(from + data.length - 1)} of {fmtInt(total)}. Page {page + 1} of{" "}
+        {fmtInt(pages)}
+      </span>
+      <Button
+        variant="secondary"
+        className="h-8"
+        disabled={page === 0 || rows.isFetching}
+        onClick={() => setCursors((c) => c.slice(0, -1))}
+      >
+        <ChevronLeft size={14} aria-hidden="true" /> Previous
+      </Button>
+      <Button
+        variant="secondary"
+        className="h-8"
+        disabled={!nextCursor || rows.isFetching}
+        onClick={() => nextCursor && setCursors((c) => [...c, nextCursor])}
+      >
+        Next <ChevronRight size={14} aria-hidden="true" />
+      </Button>
+    </nav>
+  );
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-3">
@@ -149,9 +176,12 @@ export function ListView({ id, onBack }: { id: string; onBack: () => void }) {
       )}
       {data.length > 0 && (
         <>
-          <p className="text-xs text-muted">
-            {find ? `${fmtInt(total)} match.` : null} Click a cell to change it.
-          </p>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs text-muted">
+              {find ? `${fmtInt(total)} match.` : null} Click a cell to change it.
+            </p>
+            {pager}
+          </div>
           <Table>
             <Head
               cols={[
@@ -213,17 +243,7 @@ export function ListView({ id, onBack }: { id: string; onBack: () => void }) {
           </Table>
         </>
       )}
-      {rows.hasNextPage && (
-        <div>
-          <Button
-            variant="secondary"
-            busy={rows.isFetchingNextPage}
-            onClick={() => rows.fetchNextPage()}
-          >
-            Load more
-          </Button>
-        </div>
-      )}
+      {data.length > 0 && <div className="flex justify-end">{pager}</div>}
 
       <ImportDialog
         open={dialog === "import"}

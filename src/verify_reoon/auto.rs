@@ -1,15 +1,16 @@
 //! Verify on import, and the short "latest result" the lead tables show.
 use super::settings::VerifySettings;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 use serde::Serialize;
 use sqlx::PgConnection;
 use std::collections::HashMap;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-/// Called by `upsert_batch` with the ids of the new leads, inside its transaction.
-/// Does nothing when the setting is off or Reoon is not installed. New leads go into the open auto run,
-/// or into a new one. The worker skips a lead that already has a recent result, so a repeat costs nothing.
+/// Called by `upsert_batch` with the ids of the leads a CSV import, the API or a manual add touched, inside its transaction.
+/// Does nothing when the setting is off or Reoon is not installed. Leads that have no fresh result (see `reuse_days`)
+/// go into the open auto run, or into a new one. This covers leads that already existed (an import in "skip" mode
+/// does not change them, but they still need a result before they send). A run is made only when there is something to check.
 pub async fn enqueue_new(conn: &mut PgConnection, lead_ids: &[Uuid], now: DateTime<Utc>) -> Result<(), sqlx::Error> {
     if lead_ids.is_empty() {
         return Ok(());
@@ -23,6 +24,20 @@ pub async fn enqueue_new(conn: &mut PgConnection, lead_ids: &[Uuid], now: DateTi
     if active.is_none() {
         return Ok(());
     }
+    // a result newer than `fresh_after` is reused; with reuse_days = 0 nothing is fresh
+    let fresh_after = if cfg.reuse_days > 0 { now - Duration::days(cfg.reuse_days as i64) } else { now + Duration::days(36_500) };
+    let todo: Vec<(Uuid,)> = sqlx::query_as(
+        "SELECT l.id FROM leads l WHERE l.id = ANY($1)
+            AND NOT EXISTS (SELECT 1 FROM email_verifications v WHERE v.lead_id = l.id AND v.provider = 'reoon' AND v.email = l.email::text AND v.checked_at > $2)",
+    )
+    .bind(lead_ids)
+    .bind(fresh_after)
+    .fetch_all(&mut *conn)
+    .await?;
+    if todo.is_empty() {
+        return Ok(());
+    }
+    let todo: Vec<Uuid> = todo.into_iter().map(|t| t.0).collect();
     let open: Option<(Uuid,)> =
         sqlx::query_as("SELECT id FROM verification_runs WHERE auto AND status IN ('queued', 'running') ORDER BY created_at DESC LIMIT 1 FOR UPDATE").fetch_optional(&mut *conn).await?;
     let run_id = match open {
@@ -35,7 +50,7 @@ pub async fn enqueue_new(conn: &mut PgConnection, lead_ids: &[Uuid], now: DateTi
     };
     let made = sqlx::query("INSERT INTO verification_items (run_id, lead_id, email) SELECT $1, id, email::text FROM leads WHERE id = ANY($2) ON CONFLICT DO NOTHING")
         .bind(run_id)
-        .bind(lead_ids)
+        .bind(&todo)
         .execute(&mut *conn)
         .await?
         .rows_affected();

@@ -19,6 +19,7 @@ pub fn routes() -> OpenApiRouter<AppState> {
         .routes(routes!(render))
         .routes(routes!(generate))
         .routes(routes!(test_email))
+        .routes(routes!(preview_emails))
         .routes(routes!(actions))
         .routes(routes!(list_runs))
         .routes(routes!(get_run))
@@ -144,6 +145,128 @@ pub struct RenderBody {
     /// `skip`, `keep_edited` (default) or `all`.
     #[serde(default)]
     pub overwrite: Overwrite,
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct PreviewEmailsBody {
+    /// A lead of the campaign. Without it, the preview uses `variables` as sample values.
+    pub lead_id: Option<Uuid>,
+    /// Sample values for `{{name}}`, when there is no `lead_id`.
+    #[schema(value_type = Option<Object>)]
+    pub variables: Option<serde_json::Value>,
+    /// Fills `{{sender_name}}` and `{{sender_email}}`, and the From line. Default: the first account of the pool.
+    pub account_id: Option<Uuid>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct PreviewEmail {
+    pub step_number: i32,
+    pub delay_amount: i32,
+    pub delay_type: crate::followups::model::DelayType,
+    pub subject: String,
+    pub body_text: Option<String>,
+    pub body_html: Option<String>,
+    /// `saved` (the text saved for this lead), `template` (the step text filled with the lead values) or `not_written` (AI mode, not written yet).
+    pub source: String,
+    /// Names the text uses that this lead has no value for. They show as `{{name}}` in the text.
+    pub missing: Vec<String>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct PreviewEmailsReply {
+    pub from_name: String,
+    pub from_email: String,
+    pub to_name: String,
+    pub to_email: String,
+    pub steps: Vec<PreviewEmail>,
+}
+
+/// Every email of the sequence as one lead would get it. Nothing is sent or saved.
+#[utoipa::path(post, path = "/v1/campaigns/{id}/emails/preview", tag = "campaigns",
+    params(("id" = Uuid, Path)), request_body = PreviewEmailsBody,
+    responses((status = 200, body = PreviewEmailsReply), (status = 404, description = "No such campaign, lead, or account")),
+    security(("api_key" = ["campaigns"])),
+    description = "Scope: `campaigns`. Uses the text saved for the lead when there is one, and the step text filled with the lead values when there is none. \
+        A value the lead does not have is not an error here: the name stays in the text as `{{name}}` and is listed in `missing`.")]
+async fn preview_emails(State(st): State<AppState>, ApiPath(id): ApiPath<Uuid>, ApiJson(b): ApiJson<PreviewEmailsBody>) -> ApiResult<ApiJson<PreviewEmailsReply>> {
+    let mut conn = st.pool.acquire().await?;
+    let ctx = emails::load_ctx(&mut conn, id).await?.ok_or_else(no_campaign)?;
+    let mut lead: Option<crate::leads::model::Lead> = None;
+    let mut ordinal = 0i64;
+    if let Some(lead_id) = b.lead_id {
+        lead = Some(crate::leads::repo::get(&mut conn, lead_id).await?.ok_or_else(|| ApiError::not_found("lead_not_found", "No lead with this id."))?);
+        let in_campaign: Option<(i32,)> = sqlx::query_as("SELECT 1 FROM campaign_leads WHERE campaign_id = $1 AND lead_id = $2").bind(id).bind(lead_id).fetch_optional(&mut *conn).await?;
+        if in_campaign.is_none() {
+            return Err(ApiError::not_found("lead_not_in_campaign", "This lead is not in the campaign."));
+        }
+        (ordinal,) = sqlx::query_as(
+            "SELECT count(*) FROM campaign_leads c, campaign_leads me WHERE c.campaign_id = $1 AND me.campaign_id = $1 AND me.lead_id = $2
+               AND c.state <> 'skipped' AND (c.added_at, c.lead_id) < (me.added_at, me.lead_id)",
+        )
+        .bind(id)
+        .bind(lead_id)
+        .fetch_one(&mut *conn)
+        .await?;
+    }
+    let account_id = match b.account_id {
+        Some(a) => Some(a),
+        None => sqlx::query_as::<_, (Uuid,)>("SELECT ca.account_id FROM campaign_accounts ca JOIN email_accounts a ON a.id = ca.account_id WHERE ca.campaign_id = $1 AND a.deleted_at IS NULL ORDER BY a.email LIMIT 1")
+            .bind(id)
+            .fetch_optional(&mut *conn)
+            .await?
+            .map(|r| r.0),
+    };
+    let (from_email, display) = match account_id {
+        Some(a) => crate::followups::repo::account_identity(&mut conn, a).await?.ok_or_else(|| ApiError::not_found("account_not_found", "No account with this id."))?,
+        None => ("sender@example.com".to_string(), "Sender".to_string()),
+    };
+    let from_name = crate::followups::template::sender_name_of(&display, &from_email);
+    let saved: Vec<LeadEmail> = match b.lead_id {
+        Some(lead_id) => sqlx::query_as(&format!("SELECT {EMAIL_COLS} FROM lead_emails WHERE campaign_id = $1 AND lead_id = $2 ORDER BY step_number"))
+            .bind(id)
+            .bind(lead_id)
+            .fetch_all(&mut *conn)
+            .await?,
+        None => vec![],
+    };
+    let first_variant = saved.iter().find(|e| e.step_number == 1).and_then(|e| e.variant_key.clone()).unwrap_or_else(|| emails::variant_for(&ctx, ordinal));
+    let sample_email = "sample@example.com".to_string();
+    let vars = match &lead {
+        Some(l) => emails::lead_vars(&ctx, l).map_err(|m| ApiError::unprocessable("invalid_variables", m))?,
+        None => crate::followups::template::build_vars(b.variables.as_ref().unwrap_or(&serde_json::Value::Null), &sample_email, "{{sender_name}}", "{{sender_email}}")
+            .map_err(|m| ApiError::unprocessable("invalid_variables", m))?,
+    };
+    let mut out: Vec<PreviewEmail> = Vec::new();
+    for step in &ctx.steps {
+        let variant = if step.step_number == 1 { first_variant.clone() } else { "A".to_string() };
+        let row = saved.iter().find(|e| e.step_number == step.step_number && (!e.subject.trim().is_empty() || e.body_text.is_some() || e.body_html.is_some()));
+        let (source, mail) = match row {
+            Some(r) => ("saved", emails::PreviewMail { subject: r.subject.clone(), body_text: r.body_text.clone(), body_html: r.body_html.clone(), missing: vec![] }),
+            None if ctx.campaign.is_ai() => ("not_written", emails::PreviewMail { subject: String::new(), body_text: None, body_html: None, missing: vec![] }),
+            None => ("template", emails::build_preview(&ctx, vars.clone(), step, &variant).map_err(|m| ApiError::unprocessable("invalid_template", m))?),
+        };
+        let fill = |t: String, html: bool| emails::fill_sender(&t, &from_name, &from_email, html);
+        let mut subject = fill(mail.subject, false).trim().to_string();
+        if subject.is_empty() && step.step_number > 1 && source != "not_written" {
+            let base = out.first().map(|f| f.subject.clone()).unwrap_or_default();
+            subject = if base.to_ascii_lowercase().starts_with("re:") || base.is_empty() { base } else { format!("Re: {base}") };
+        }
+        out.push(PreviewEmail {
+            step_number: step.step_number,
+            delay_amount: step.delay_amount,
+            delay_type: step.delay_type,
+            subject,
+            body_text: mail.body_text.map(|t| fill(t, false)),
+            body_html: mail.body_html.map(|t| fill(t, true)),
+            source: source.to_string(),
+            missing: mail.missing,
+        });
+    }
+    let (to_name, to_email) = match &lead {
+        Some(l) => ([l.first_name.as_deref(), l.last_name.as_deref()].into_iter().flatten().collect::<Vec<_>>().join(" "), l.email.clone()),
+        None => (String::new(), sample_email),
+    };
+    Ok(ApiJson(PreviewEmailsReply { from_name, from_email, to_name, to_email, steps: out }))
 }
 
 #[derive(Serialize, ToSchema)]

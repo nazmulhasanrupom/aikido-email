@@ -434,7 +434,11 @@ export interface paths {
         get: operations["get_campaign"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Delete a campaign that never sent an email.
+         * @description Scope: `campaigns`. Removes the campaign, its sequence and steps, its lead links, its enrollments and its saved emails. The leads themselves stay in their lists. A campaign that is `active`, or that has queued or sent any email, can not be deleted: archive it.
+         */
+        delete: operations["delete_campaign"];
         options?: never;
         head?: never;
         /**
@@ -454,7 +458,7 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Archive a paused or completed campaign.
+         * Archive a draft, paused or completed campaign.
          * @description Scope: `campaigns`. Pending leads become `skipped` (`campaign_archived`). The sequence is archived too (no new enrollments; open enrollments are not stopped).
          */
         post: operations["archive"];
@@ -7814,6 +7818,40 @@ export interface operations {
             };
         };
     };
+    delete_campaign: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No such campaign */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The campaign is active, or it already has sent history (archive it instead) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     archive: {
         parameters: {
             query?: never;
@@ -7840,7 +7878,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Only a paused or completed campaign can be archived */
+            /** @description Only a draft, paused or completed campaign can be archived */
             409: {
                 headers: {
                     [name: string]: unknown;

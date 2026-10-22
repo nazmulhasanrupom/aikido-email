@@ -31,7 +31,7 @@ pub const MAX_IDS: usize = 10_000;
 pub fn router(state: AppState) -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
         .routes(routes!(create_campaign, list_campaigns))
-        .routes(routes!(get_campaign, patch_campaign))
+        .routes(routes!(get_campaign, patch_campaign, delete_campaign))
         .routes(routes!(add_leads, remove_leads, list_campaign_leads))
         .routes(routes!(requeue_verification))
         .routes(routes!(launch))
@@ -999,17 +999,17 @@ async fn resume(State(st): State<AppState>, ApiPath(id): ApiPath<Uuid>) -> ApiRe
     Ok(ApiJson(detail(&st, id).await?))
 }
 
-/// Archive a paused or completed campaign.
+/// Archive a draft, paused or completed campaign.
 #[utoipa::path(post, path = "/v1/campaigns/{id}/archive", tag = "campaigns",
     params(("id" = Uuid, Path)),
-    responses((status = 200, body = CampaignDetail), (status = 404, description = "No such campaign"), (status = 409, description = "Only a paused or completed campaign can be archived")),
+    responses((status = 200, body = CampaignDetail), (status = 404, description = "No such campaign"), (status = 409, description = "Only a draft, paused or completed campaign can be archived")),
     security(("api_key" = ["campaigns"])),
     description = "Scope: `campaigns`. Pending leads become `skipped` (`campaign_archived`). The sequence is archived too (no new enrollments; open enrollments are not stopped).")]
 async fn archive(State(st): State<AppState>, ApiPath(id): ApiPath<Uuid>) -> ApiResult<ApiJson<CampaignDetail>> {
     let now = st.now();
     let mut tx = st.pool.begin().await?;
     let c = lock(&mut tx, id).await?;
-    if !matches!(c.status, CampaignStatus::Paused | CampaignStatus::Completed) {
+    if !matches!(c.status, CampaignStatus::Draft | CampaignStatus::Paused | CampaignStatus::Completed) {
         return Err(bad_status("be archived (pause it first)", c.status));
     }
     sqlx::query("UPDATE campaign_leads SET state = 'skipped', skip_reason = 'campaign_archived' WHERE campaign_id = $1 AND state = 'pending'").bind(id).execute(&mut *tx).await?;
@@ -1017,6 +1017,40 @@ async fn archive(State(st): State<AppState>, ApiPath(id): ApiPath<Uuid>) -> ApiR
     set_status(&mut tx, &c, CampaignStatus::Archived, now).await?;
     tx.commit().await?;
     Ok(ApiJson(detail(&st, id).await?))
+}
+
+/// Delete a campaign that never sent an email.
+#[utoipa::path(delete, path = "/v1/campaigns/{id}", tag = "campaigns",
+    params(("id" = Uuid, Path)),
+    responses((status = 204, description = "Deleted"), (status = 404, description = "No such campaign"),
+        (status = 409, description = "The campaign is active, or it already has sent history (archive it instead)")),
+    security(("api_key" = ["campaigns"])),
+    description = "Scope: `campaigns`. Removes the campaign, its sequence and steps, its lead links, its enrollments and its saved emails. \
+        The leads themselves stay in their lists. A campaign that is `active`, or that has queued or sent any email, can not be deleted: archive it.")]
+async fn delete_campaign(State(st): State<AppState>, ApiPath(id): ApiPath<Uuid>) -> ApiResult<StatusCode> {
+    let mut tx = st.pool.begin().await?;
+    let c = lock(&mut tx, id).await?;
+    if c.status == CampaignStatus::Active {
+        return Err(bad_status("be deleted (pause it first)", c.status));
+    }
+    let (sent,): (i64,) = sqlx::query_as(
+        "SELECT count(*) FROM send_jobs WHERE campaign_id = $1 OR enrollment_id IN (SELECT id FROM enrollments WHERE sequence_id = $2)",
+    )
+    .bind(id)
+    .bind(c.sequence_id)
+    .fetch_one(&mut *tx)
+    .await?;
+    if sent > 0 {
+        return Err(ApiError::conflict("campaign_has_history", "This campaign already queued or sent emails. Archive it instead of deleting it."));
+    }
+    sqlx::query("DELETE FROM campaign_leads WHERE campaign_id = $1").bind(id).execute(&mut *tx).await?;
+    sqlx::query("DELETE FROM enrollment_events WHERE enrollment_id IN (SELECT id FROM enrollments WHERE sequence_id = $1)").bind(c.sequence_id).execute(&mut *tx).await?;
+    sqlx::query("DELETE FROM enrollments WHERE sequence_id = $1").bind(c.sequence_id).execute(&mut *tx).await?;
+    sqlx::query("DELETE FROM campaigns WHERE id = $1").bind(id).execute(&mut *tx).await?;
+    sqlx::query("DELETE FROM sequence_steps WHERE sequence_id = $1").bind(c.sequence_id).execute(&mut *tx).await?;
+    sqlx::query("DELETE FROM sequences WHERE id = $1").bind(c.sequence_id).execute(&mut *tx).await?;
+    tx.commit().await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 // ---------- stats ----------

@@ -8,7 +8,7 @@
 //! rendered text. When the lead or the template changes, `mark_stale` renders again and marks rows whose hash differs.
 use super::model::Campaign;
 use crate::followups::model::{SequenceStep, STEP_COLS};
-use crate::followups::template::{Escape, StepTemplates, Template, Vars, build_vars};
+use crate::followups::template::{Escape, StepTemplates, Template, Vars, ai_var, build_vars};
 use crate::leads::fields::FieldDefs;
 use crate::leads::model::{LEAD_COLS, Lead};
 use chrono::{DateTime, Utc};
@@ -152,7 +152,7 @@ pub fn fill_sender(text: &str, name: &str, email: &str, html: bool) -> String {
     text.replace("{{sender_name}}", &n).replace("{{sender_email}}", &e)
 }
 
-pub(crate) fn lead_vars(ctx: &Ctx, lead: &Lead) -> Result<Vars, String> {
+pub fn lead_vars(ctx: &Ctx, lead: &Lead) -> Result<Vars, String> {
     let live = crate::leads::vars::render_variables(&json!({}), Some(lead), &ctx.defs);
     build_vars(&live, &lead.email, "{{sender_name}}", "{{sender_email}}")
 }
@@ -185,6 +185,63 @@ pub fn build(ctx: &Ctx, lead: &Lead, step: &SequenceStep, variant: &str) -> Resu
     }
     let hash = h.finalize().iter().map(|b| format!("{b:02x}")).collect::<String>();
     Ok(Built { subject: r.subject, body_text: r.body_text, body_html: r.body_html, hash })
+}
+
+/// One email as the preview shows it. A name with no value stays in the text as `{{name}}`, and is listed in `missing`.
+pub struct PreviewMail {
+    pub subject: String,
+    pub body_text: Option<String>,
+    pub body_html: Option<String>,
+    pub missing: Vec<String>,
+}
+
+/// Render until nothing is missing: a missing name gets its own `{{name}}` (an AI part gets `[AI: key]`) as the value.
+fn render_lenient<T>(vars: &mut Vars, missing: &mut Vec<String>, render: impl Fn(&Vars) -> Result<T, Vec<String>>) -> T {
+    loop {
+        match render(vars) {
+            Ok(v) => return v,
+            Err(names) => {
+                for n in names {
+                    let shown = match n.strip_prefix("ai:") {
+                        Some(key) => format!("[AI: {key}]"),
+                        None => {
+                            if !missing.contains(&n) {
+                                missing.push(n.clone());
+                            }
+                            format!("{{{{{n}}}}}")
+                        }
+                    };
+                    vars.insert(n, shown);
+                }
+            }
+        }
+    }
+}
+
+/// Like `build`, for the preview: it never fails on a missing value. The sender tokens stay for `fill_sender`.
+/// `vars` come from `lead_vars`, or from `build_vars` for sample values.
+pub fn build_preview(ctx: &Ctx, mut vars: Vars, step: &SequenceStep, variant: &str) -> Result<PreviewMail, String> {
+    let s = source(ctx, step, variant);
+    let templates = StepTemplates::parse(s.subject, s.body_text, s.body_html).map_err(|e| format!("The text is not valid: {}", e.message))?;
+    for key in templates.ai_keys() {
+        vars.insert(ai_var(&key), format!("[AI: {key}]"));
+    }
+    let mut missing: Vec<String> = Vec::new();
+    let mut r = render_lenient(&mut vars, &mut missing, |v| templates.render(v));
+    if let Some(f) = &ctx.footer {
+        let text = render_lenient(&mut vars, &mut missing, |v| f.render(v, Escape::Text));
+        if let Some(b) = r.body_text.as_mut() {
+            b.push_str("\n\n");
+            b.push_str(&text);
+        }
+        if let Some(b) = r.body_html.as_mut() {
+            let html = render_lenient(&mut vars, &mut missing, |v| f.render(v, Escape::Html));
+            b.push_str(&format!("<p>{}</p>", html.replace('\n', "<br>")));
+        }
+    }
+    // the real links are made when the email is sent
+    let link = |t: String| t.replace(crate::sending::unsubscribe::TOKEN_URL, "[unsubscribe link]").replace(crate::sending::unsubscribe::TOKEN, "[unsubscribe link]");
+    Ok(PreviewMail { subject: link(r.subject), body_text: r.body_text.map(link), body_html: r.body_html.map(link), missing })
 }
 
 // ---------- the plan: which leads and steps ----------
@@ -602,4 +659,22 @@ pub fn missing_sql(names: &[String], defs: &FieldDefs) -> String {
         }
     }
     if parts.is_empty() { "false".into() } else { parts.join(" OR ") }
+}
+
+#[cfg(test)]
+mod preview_tests {
+    use super::*;
+
+    #[test]
+    fn lenient_render_keeps_a_missing_name_in_the_text() {
+        let t = StepTemplates::parse("Hi {{first_name}}", Some("{{subject}} / {{followup1}} / {{city|there}}"), None).unwrap();
+        let mut vars = Vars::new();
+        vars.insert("first_name".into(), "Ana".into());
+        let mut missing = Vec::new();
+        let r = render_lenient(&mut vars, &mut missing, |v| t.render(v));
+        assert_eq!(r.subject, "Hi Ana");
+        assert_eq!(r.body_text.unwrap(), "{{subject}} / {{followup1}} / there");
+        missing.sort();
+        assert_eq!(missing, vec!["followup1".to_string(), "subject".to_string()]);
+    }
 }

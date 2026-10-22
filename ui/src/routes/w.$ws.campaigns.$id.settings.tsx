@@ -1,5 +1,5 @@
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { messageOf } from "@/api/errors";
@@ -33,6 +33,7 @@ const DAY = ["", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 function Settings() {
   const { id, ws } = Route.useParams();
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const camp = useQuery(campaignQuery(id));
   const accounts = useQuery(q.accounts);
   const genCamp = useQuery({
@@ -80,6 +81,7 @@ function Settings() {
     })),
   });
   const [archive, setArchive] = useState(false);
+  const [remove, setRemove] = useState(false);
   const reoon = useReoon();
   const wsRule = useQuery({ ...reoonSettingsQuery, enabled: reoon.installed });
   const [ruleOpen, setRuleOpen] = useState(false);
@@ -317,10 +319,18 @@ function Settings() {
 
       <Card className="flex flex-col gap-2 border-danger/40">
         <h2 className="font-semibold text-danger">Danger</h2>
-        <div>
-          <Button variant="danger" onClick={() => setArchive(true)}>
-            Archive campaign
-          </Button>
+        <div className="flex flex-wrap gap-2">
+          {c.status !== "archived" && c.status !== "active" && (
+            <Button variant="danger" onClick={() => setArchive(true)}>
+              Archive campaign
+            </Button>
+          )}
+          {c.status !== "active" && (
+            <Button variant="danger" onClick={() => setRemove(true)}>
+              Delete campaign
+            </Button>
+          )}
+          {c.status === "active" && <p className="text-sm text-muted">Pause the campaign to archive or delete it.</p>}
         </div>
       </Card>
       <ConfirmDialog
@@ -332,6 +342,20 @@ function Settings() {
         text="Pending leads are skipped and the sequence stops."
         onConfirm={async () => {
           await http.post("/v1/campaigns/{id}/archive", { path: { id } });
+          await qc.invalidateQueries({ queryKey: ["campaigns"] });
+        }}
+      />
+      <ConfirmDialog
+        open={remove}
+        onClose={() => setRemove(false)}
+        title="Delete this campaign?"
+        typed={c.name}
+        confirmLabel="Delete campaign"
+        text="The campaign, its emails and its lead links are removed for good. The leads stay in their lists. A campaign that already sent email can not be deleted: archive it."
+        onConfirm={async () => {
+          await http.delEmpty("/v1/campaigns/{id}", { path: { id } });
+          await navigate({ to: "/w/$ws/campaigns", params: { ws } });
+          qc.removeQueries({ queryKey: ["campaigns", id] });
           await qc.invalidateQueries({ queryKey: ["campaigns"] });
         }}
       />

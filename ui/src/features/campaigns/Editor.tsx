@@ -1105,7 +1105,6 @@ export function Editor({
       <PreviewDrawer
         open={preview}
         onClose={() => setPreview(false)}
-        sequenceId={seq.id}
         campaignId={campaign.id}
         accounts={campaign.accounts}
         userEmail={userEmail}

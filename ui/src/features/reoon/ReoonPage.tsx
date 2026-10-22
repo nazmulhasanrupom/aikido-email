@@ -3,6 +3,7 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { Settings } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { messageOf } from "@/api/errors";
 import { http } from "@/api/http";
 import { q } from "@/api/queries";
 import {
@@ -215,10 +216,12 @@ export function ReoonPage({ ws, search }: { ws: string; search: ReoonSearch }) {
               role="switch"
               checked={cfg.auto_verify}
               onChange={(e) =>
-                patchSettings({ auto_verify: e.target.checked }).then(() => {
-                  toast.success(e.target.checked ? "New leads will be verified." : "Verify on import is off.");
-                  void qc.invalidateQueries({ queryKey: reoonSettingsQuery.queryKey });
-                })
+                patchSettings({ auto_verify: e.target.checked })
+                  .then(() => {
+                    toast.success(e.target.checked ? "Imported leads will be verified." : "Verify on import is off.");
+                    void qc.invalidateQueries({ queryKey: reoonSettingsQuery.queryKey });
+                  })
+                  .catch((err) => toast.error(messageOf(err)))
               }
               className="size-4 accent-(--accent)"
             />
