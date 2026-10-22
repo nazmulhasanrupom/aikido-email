@@ -138,7 +138,7 @@ async fn sync_imap(email: &str) -> Res<()> {
 async fn serve() -> anyhow::Result<()> {
     let dev = aikido_email::devtools::init_logging();
     let cfg = Config::from_env()?;
-    let pool = db::connect(&cfg.database_url).await?;
+    let pool = db::connect_retry(&cfg.database_url, Duration::from_secs(60)).await?;
     db::migrate(&pool).await?;
     let crypto = Crypto::load_or_create(&cfg)?;
 

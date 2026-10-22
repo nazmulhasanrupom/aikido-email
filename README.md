@@ -20,6 +20,34 @@ Send, follow up, detect replies, manage leads and write personal text with AI. A
 
 ---
 
+## Install
+
+One command. It installs Docker if needed, then starts AIKIDO EMAIL with Postgres:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/nazmulhasanrupom/aikido-email/main/install.sh | bash
+```
+
+**Requirements:** Linux or macOS, `curl`, and internet. The script installs `openssl` and Docker on Linux. On macOS, install [Docker Desktop](https://www.docker.com/products/docker-desktop/) first.
+
+Everything lives in `~/aikido-email`. Run the command again at any time. It keeps your `.env` and your data.
+
+| Task | Command |
+| --- | --- |
+| Stop | `cd ~/aikido-email && docker compose down` |
+| Start again | `cd ~/aikido-email && docker compose up -d` |
+| Update | `cd ~/aikido-email && docker compose pull && docker compose up -d` |
+| Logs | `cd ~/aikido-email && docker compose logs -f app` |
+| Uninstall | `bash ~/aikido-email/uninstall.sh` (it asks before it deletes the database) |
+
+**Change the port:** edit `~/aikido-email/.env`. Set `APP_PORT=9000` and `AIKIDO_PUBLIC_URL=http://your-host:9000`. Then run `docker compose up -d`.
+
+**Back up** `AIKIDO_ENCRYPTION_KEY` in `.env`. Without it, saved inbox passwords cannot be read.
+
+The installer sets `AIKIDO_INSECURE_COOKIES=true`, so login works over plain HTTP. Use a trusted network, or put HTTPS in front and remove that line.
+
+---
+
 ## Table of contents
 
 - [What is it?](#-what-is-it)

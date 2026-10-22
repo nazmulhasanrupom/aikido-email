@@ -1,0 +1,64 @@
+# AIKIDO EMAIL: the one-line installer stack (the app + Postgres), from the ready-made image.
+# install.sh saves this file as ~/aikido-email/docker-compose.yml, next to a .env file.
+# For Coolify or a server with your own HTTPS proxy, use docker-compose.yml in the repo instead.
+
+services:
+  app:
+    image: ghcr.io/nazmulhasanrupom/aikido-email:latest
+    restart: unless-stopped
+    init: true
+    env_file: .env
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      AIKIDO_DATA_DIR: /data
+      AIKIDO_BIND_ADDR: 0.0.0.0:8080
+    volumes:
+      - aikido_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  aikido_data:
+  pgdata:
