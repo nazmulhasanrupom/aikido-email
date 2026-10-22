@@ -27,38 +27,30 @@ async fn first_boot_state_and_setup(pool: PgPool) {
     assert_eq!(s.body["workspace_name"], "Acme");
     // the CSRF token can be read again after a page reload
     assert_eq!(s.body["csrf_token"], owner.csrf);
-    // the setup code file is gone
-    assert!(!state.config.data_dir.join("setup_code.txt").exists());
 }
 
 #[sqlx::test]
-async fn setup_twice_is_409_and_a_wrong_code_is_403(pool: PgPool) {
+async fn setup_twice_is_409(pool: PgPool) {
     let state = app_state(pool);
-    let code = aikido_email::users::setup::ensure_setup_code(&state.pool, &state.config).await.unwrap().unwrap();
-    // the file holds the code
-    let text = std::fs::read_to_string(state.config.data_dir.join("setup_code.txt")).unwrap();
-    assert_eq!(aikido_email::users::setup::normalize_code(&text), code);
+    // an old setup code file is removed when the server starts
+    std::fs::create_dir_all(&state.config.data_dir).unwrap();
+    std::fs::write(state.config.data_dir.join("setup_code.txt"), "ABCD-EFGH-JKMN\n").unwrap();
+    aikido_email::users::setup::remove_file(&state.config);
+    assert!(!state.config.data_dir.join("setup_code.txt").exists());
 
-    let body = |c: &str| json!({ "setup_code": c, "name": "Olivia Owner", "email": "owner@example.com", "password": STRONG, "workspace_name": "Acme" });
-    let bad = call_with(&state, "POST", "/v1/auth/setup", HOME, Some(body("AAAA-BBBB-CCCC"))).await;
-    assert_eq!(bad.status, StatusCode::FORBIDDEN);
-    assert_eq!(bad.body["error"]["code"], "setup_code_wrong");
-    // lower case and dashes are fine
-    let ok = call_with(&state, "POST", "/v1/auth/setup", HOME, Some(body(&code.to_lowercase()))).await;
+    let body = json!({ "name": "Olivia Owner", "email": "owner@example.com", "password": STRONG, "workspace_name": "Acme" });
+    let ok = call_with(&state, "POST", "/v1/auth/setup", HOME, Some(body.clone())).await;
     assert_eq!(ok.status, StatusCode::CREATED, "{:?}", ok.body);
-    let again = call_with(&state, "POST", "/v1/auth/setup", HOME, Some(body(&code))).await;
+    let again = call_with(&state, "POST", "/v1/auth/setup", HOME, Some(body)).await;
     assert_eq!(again.status, StatusCode::CONFLICT);
     assert_eq!(again.body["error"]["code"], "setup_done");
-    // no new code is made once the owner exists
-    assert!(aikido_email::users::setup::ensure_setup_code(&state.pool, &state.config).await.unwrap().is_none());
 }
 
 #[sqlx::test]
 async fn setup_checks_the_password_rules(pool: PgPool) {
     let state = app_state(pool);
-    let code = aikido_email::users::setup::ensure_setup_code(&state.pool, &state.config).await.unwrap().unwrap();
     for (pw, expect) in [("short", "password_too_short"), ("password1234", "password_too_weak"), ("owner@example.com!!", "password_has_personal_info")] {
-        let body = json!({ "setup_code": code, "name": "Olivia", "email": "owner@example.com", "password": pw, "workspace_name": "Acme" });
+        let body = json!({ "name": "Olivia", "email": "owner@example.com", "password": pw, "workspace_name": "Acme" });
         let r = call_with(&state, "POST", "/v1/auth/setup", HOME, Some(body)).await;
         assert_eq!(r.status, StatusCode::UNPROCESSABLE_ENTITY, "{pw}");
         assert_eq!(r.body["error"]["code"], expect, "{pw}");
@@ -524,8 +516,7 @@ async fn insecure_remote_http_is_refused_unless_allowed(pool: PgPool) {
     cfg.insecure_cookies = true;
     state.config = std::sync::Arc::new(cfg);
     let owner = {
-        let code = aikido_email::users::setup::ensure_setup_code(&state.pool, &state.config).await.unwrap().unwrap();
-        let body = json!({"setup_code": code, "name": "Olivia Owner", "email": "owner@example.com", "password": STRONG, "workspace_name": "Acme"});
+        let body = json!({"name": "Olivia Owner", "email": "owner@example.com", "password": STRONG, "workspace_name": "Acme"});
         call_with(&state, "POST", "/v1/auth/setup", &[("origin", "http://mail.example.com")], Some(body)).await
     };
     assert_eq!(owner.status, StatusCode::CREATED, "{:?}", owner.body);

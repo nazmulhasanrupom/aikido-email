@@ -9,26 +9,40 @@ use tokio::net::TcpListener;
 /// `Send + Sync`, so the connect functions can be awaited inside HTTP handlers.
 pub type Res<T> = Result<T, Box<dyn Error + Send + Sync>>;
 
+/// The env var first, then the value saved in Settings → Environment (see `app_settings`).
 pub fn var(name: &str) -> Res<String> {
     // An empty value counts as not set (a deploy tool may pass an empty variable).
-    match std::env::var(name) {
-        Ok(v) if !v.trim().is_empty() => Ok(v),
-        _ => Err(format!("set {name} in .env").into()),
-    }
+    crate::app_settings::get(name).ok_or_else(|| format!("set {name} in Settings → Environment (or in .env)").into())
 }
 
 pub fn var_or(name: &str, default: &str) -> String {
-    match std::env::var(name) {
-        Ok(v) if !v.trim().is_empty() => v,
-        _ => default.to_string(),
+    crate::app_settings::get(name).unwrap_or_else(|| default.to_string())
+}
+
+/// The program that opens a link in the browser, when `BROWSER_CMD` is empty.
+pub fn default_browser_cmd() -> &'static str {
+    if cfg!(target_os = "windows") {
+        "explorer"
+    } else if cfg!(target_os = "macos") {
+        "open"
+    } else {
+        "xdg-open"
     }
 }
 
 /// `~/.config/aikido_email/<file_name>`, unless `env_name` is set.
+/// The home folder is `HOME`, or `USERPROFILE` on Windows.
 pub fn accounts_path(env_name: &str, file_name: &str) -> Res<PathBuf> {
     match std::env::var(env_name) {
         Ok(p) => Ok(PathBuf::from(p)),
-        Err(_) => Ok(PathBuf::from(var("HOME")?).join(".config/aikido_email").join(file_name)),
+        Err(_) => {
+            let home = std::env::var("HOME")
+                .ok()
+                .filter(|v| !v.trim().is_empty())
+                .or_else(|| std::env::var("USERPROFILE").ok().filter(|v| !v.trim().is_empty()))
+                .ok_or("set HOME (or USERPROFILE on Windows)")?;
+            Ok(PathBuf::from(home).join(".config/aikido_email").join(file_name))
+        }
     }
 }
 
@@ -41,13 +55,16 @@ pub fn load_accounts(path: &Path) -> Res<Map<String, Value>> {
 }
 
 pub fn save_accounts(path: &Path, accounts: &Map<String, Value>) -> Res<()> {
-    use std::os::unix::fs::PermissionsExt;
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }
     std::fs::write(path, serde_json::to_string_pretty(accounts)?)?;
     // Refresh tokens are secrets: only the owner may read the file.
-    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
+    }
     Ok(())
 }
 

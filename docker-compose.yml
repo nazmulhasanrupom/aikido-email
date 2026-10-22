@@ -41,7 +41,7 @@ services:
       - MS_CLIENT_ID=${MS_CLIENT_ID:-}
       - MS_CLIENT_SECRET=${MS_CLIENT_SECRET:-}
       - MS_TENANT=${MS_TENANT:-common}
-      # Your own API keys (else they are made on first boot and saved in /data/initial_keys.txt)
+      # Your own API keys (the server makes none by itself; make a master key in the app: Settings -> API)
       - AIKIDO_ADMIN_API_KEY=${AIKIDO_ADMIN_API_KEY:-}
       - AIKIDO_ACCOUNTS_API_KEY=${AIKIDO_ACCOUNTS_API_KEY:-}
       - AIKIDO_SENDING_API_KEY=${AIKIDO_SENDING_API_KEY:-}

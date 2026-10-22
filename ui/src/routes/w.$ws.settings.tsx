@@ -18,7 +18,12 @@ function SettingsLayout() {
             label="Settings pages"
             items={[
               { to: "/w/$ws/settings/account", params: p, label: "Account" },
-              ...(isAdmin ? [{ to: "/w/$ws/settings/api", params: p, label: "API" }] : []),
+              ...(isAdmin
+                ? [
+                    { to: "/w/$ws/settings/api", params: p, label: "API" },
+                    { to: "/w/$ws/settings/environment", params: p, label: "Environment" },
+                  ]
+                : []),
               { to: "/w/$ws/settings/notifications", params: p, label: "Notifications" },
               { to: "/w/$ws/settings/integrations", params: p, label: "Integrations" },
               ...(isAdmin

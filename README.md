@@ -22,13 +22,25 @@ Send, follow up, detect replies, manage leads and write personal text with AI. A
 
 ## Install
 
-One command. It installs Docker if needed, then starts AIKIDO EMAIL with Postgres:
+One command. It installs Docker if needed, then starts AIKIDO EMAIL with Postgres.
+
+**Linux and macOS:**
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/nazmulhasanrupom/aikido-email/main/install.sh | bash
 ```
 
-**Requirements:** Linux or macOS, `curl`, and internet. The script installs `openssl` and Docker on Linux. On macOS, install [Docker Desktop](https://www.docker.com/products/docker-desktop/) first.
+**Windows** (PowerShell):
+
+```powershell
+irm https://raw.githubusercontent.com/nazmulhasanrupom/aikido-email/main/install.ps1 | iex
+```
+
+**Requirements (Linux, macOS):** `curl` and internet. The script installs `openssl` and Docker on Linux. On macOS, install [Docker Desktop](https://www.docker.com/products/docker-desktop/) first.
+
+**Requirements (Windows):** Windows 10 21H2 or newer, or Windows 11, and [Docker Desktop](https://www.docker.com/products/docker-desktop/) with WSL 2. If Docker is missing, the script tries `winget install Docker.DockerDesktop`. If WSL is missing it tells you to run `wsl --install` (a restart is needed), then you run the installer again.
+
+**Make the owner account at once.** The first account you make becomes the owner. There is no setup code. Open the address the installer prints and make your account before you share the address with anyone. A fresh server that is open to the internet can be claimed by the first visitor.
 
 Everything lives in `~/aikido-email`. Run the command again at any time. It keeps your `.env` and your data.
 
@@ -39,6 +51,16 @@ Everything lives in `~/aikido-email`. Run the command again at any time. It keep
 | Update | `cd ~/aikido-email && docker compose pull && docker compose up -d` |
 | Logs | `cd ~/aikido-email && docker compose logs -f app` |
 | Uninstall | `bash ~/aikido-email/uninstall.sh` (it asks before it deletes the database) |
+
+**Windows** (PowerShell): the folder is `$env:USERPROFILE\aikido-email`.
+
+| Task | Command |
+| --- | --- |
+| Stop | `cd $env:USERPROFILE\aikido-email; docker compose down` |
+| Start again | `cd $env:USERPROFILE\aikido-email; docker compose up -d` |
+| Update | `cd $env:USERPROFILE\aikido-email; docker compose pull; docker compose up -d` |
+| Logs | `cd $env:USERPROFILE\aikido-email; docker compose logs -f app` |
+| Uninstall | `& "$env:USERPROFILE\aikido-email\uninstall.ps1"` (it asks before it deletes the database) |
 
 **Change the port:** edit `~/aikido-email/.env`. Set `APP_PORT=9000` and `AIKIDO_PUBLIC_URL=http://your-host:9000`. Then run `docker compose up -d`.
 
@@ -86,7 +108,9 @@ You connect your inboxes (Gmail, Outlook or any IMAP/SMTP). You import leads. Yo
 | **Optimised mode** | Third way to write emails (next to Template and AI): one prompt writes the first email and 3 follow-ups per lead in one call. A PERSONALIZATION page turns your link, CV and notes into a sender profile the prompt uses. |
 | **Open tracking** | Counts opens without a hidden pixel. The tracker is a normal image served from your own domain (a CNAME like `media.acme.com`, free Let's Encrypt certificate). Text-to-image or signature image. Apple, Google proxy and scanner opens are marked. |
 | **AI column mapping** | Upload any CSV. Rules and an AI map the columns. You confirm before anything is saved. |
-| **Web app** | Setup wizard, accounts, leads, campaigns editor, inbox, reports, settings, status page, alerts, `Ctrl K` search. |
+| **Settings → Environment** | Paste the Google and Microsoft keys in the app and save. No `.env` edit and no restart. A key set in `.env` wins and is locked in the app. |
+| **Guide** | An in-app page (account menu → Guide) with step-by-step help for Gmail, Outlook, IMAP, AI models, Reoon, the API key, HTTPS and open tracking. Every part folds open and closed. |
+| **Web app** | Pick-a-design wizard, accounts, leads, campaigns editor, inbox, reports, settings, status page, alerts, `Ctrl K` search. |
 | **Three designs** | **Generic** (the first look: warm and simple), **Indigo** (the same layout in ink, paper and indigo, with an ink menu rail) or **Aikido** (its own layout: the pages in a dark bar at the top, a Home page, a menu per section, details in a side panel and a live status bar). Each has a light and a dark theme. Pick it in **Settings → Account → Appearance** or in the account menu. |
 | **Security** | Secrets encrypted with AES-256-GCM. Scoped API keys (SHA-256 hashed). CSRF protection. Logs never hold tokens or passwords. |
 | **Everything is an API** | 100+ routes with a live OpenAPI spec at `/docs`. |
@@ -123,6 +147,8 @@ Key ideas:
 | [Node.js](https://nodejs.org) | 22 | Build the web app |
 | [pnpm](https://pnpm.io) | 10 | `npm i -g pnpm@10` |
 | `openssl` | any | Make keys |
+
+The server also builds on Windows (`cargo build`). Most people on Windows should use the installer above.
 
 ### 1. Get the code
 
@@ -170,22 +196,19 @@ cd ..
 cargo run -- serve
 ```
 
-The **first boot** prints two things one time. Save them.
-
-| Printed | Saved in | Use |
-| --- | --- | --- |
-| A **setup code** | `./data/setup_code.txt` | Make the owner account in the web app |
-| **8 API keys** (`admin`, `accounts`, `sending`, `replies`, `followups`, `leads`, `campaigns`, `generator`) | `./data/initial_keys.txt` | Call the API |
-
-An **encryption key** is also made at `./data/encryption.key`.
+An **encryption key** is made on the first start at `./data/encryption.key`.
 
 > ⚠️ **Back up `./data/encryption.key`.** If you lose it, every saved inbox password and token is unreadable. You must connect all inboxes again.
+
+There is no setup code and the server makes no API keys. You make your own keys when you need them (see [API keys](#api-keys)).
 
 ### 6. Open the app
 
 1. Go to <http://localhost:8080>.
-2. Type the setup code and make the owner account.
-3. Follow the onboarding steps.
+2. Make the owner account. The first account becomes the owner.
+3. Pick a design. You land on the dashboard.
+
+> ⚠️ **Make the owner account right after the install, before you share the address.** A fresh server that is open to the internet can be claimed by the first visitor.
 
 Tip: set `AIKIDO_DRY_RUN=true` for the first run. The server then logs emails and sends nothing, with real timing.
 
@@ -199,7 +222,7 @@ It prints a one-time link.
 
 ## 📬 Connect your inboxes
 
-You can connect inboxes in the web app (**Email Accounts**) or the API.
+You can connect inboxes in the web app (**Email Accounts**) or the API. Paste the Google and Microsoft keys in **Settings → Environment**, or put them in `.env`. If a key is in `.env`, `.env` wins and the field is locked in the app. The in-app **Guide** (account menu → Guide) shows every step.
 
 | Provider | What you need | Notes |
 | --- | --- | --- |
@@ -211,7 +234,7 @@ You can connect inboxes in the web app (**Email Accounts**) or the API.
 
 1. In Google Cloud Console, make an OAuth client of type **Web application**.
 2. Add the redirect URI: `<AIKIDO_PUBLIC_URL>/v1/accounts/oauth/gmail/callback`
-3. Put `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in `.env`.
+3. Paste the Client ID and secret in **Settings → Environment** (or put `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in `.env`).
 4. Set `AIKIDO_PUBLIC_URL` (for local work: `http://localhost:8080`).
 
 Read this before you go public:
@@ -226,7 +249,7 @@ Read this before you go public:
 1. In Microsoft Entra, register an app.
 2. Add the redirect URI: `<AIKIDO_PUBLIC_URL>/v1/accounts/oauth/microsoft/callback`
 3. Add the delegated permissions listed above.
-4. Put `MS_CLIENT_ID`, `MS_CLIENT_SECRET` and `MS_TENANT` (`common` by default) in `.env`.
+4. Paste the client ID, secret and tenant (`common` by default) in **Settings → Environment** (or put `MS_CLIENT_ID`, `MS_CLIENT_SECRET` and `MS_TENANT` in `.env`).
 
 ### Command line alternative
 
@@ -255,7 +278,7 @@ All settings are environment variables. Put them in `.env` (development) or in y
 | `AIKIDO_PUBLIC_URL` | none | The browser address, e.g. `https://mail.example.com`. Needed for OAuth, invite links and the login check. |
 | `AIKIDO_ENCRYPTION_KEY` | auto-made in data dir | 32 bytes, base64: `openssl rand -base64 32`. **Back it up.** |
 | `AIKIDO_BIND_ADDR` | `0.0.0.0:8080` | Server address |
-| `AIKIDO_DATA_DIR` | `./data` | Holds the key and first API keys (mode `600`) |
+| `AIKIDO_DATA_DIR` | `./data` | Holds the encryption key (mode `600`) |
 | `AIKIDO_TRUST_PROXY` | `false` | `true` behind your own reverse proxy (reads `X-Forwarded-For`) |
 | `AIKIDO_INSECURE_COOKIES` | `false` | `true` allows web login over plain HTTP. Trusted networks only. |
 | `AIKIDO_DRY_RUN` | `false` | Log emails, send nothing |
@@ -265,8 +288,8 @@ All settings are environment variables. Put them in `.env` (development) or in y
 
 | Variable | Use |
 | --- | --- |
-| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Gmail OAuth |
-| `MS_CLIENT_ID`, `MS_CLIENT_SECRET`, `MS_TENANT` | Outlook OAuth |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Gmail OAuth. Can also be saved in **Settings → Environment**. |
+| `MS_CLIENT_ID`, `MS_CLIENT_SECRET`, `MS_TENANT` | Outlook OAuth. Can also be saved in **Settings → Environment**. |
 | `ACCOUNTS_KEY` | Encrypts IMAP passwords of the terminal `imap add` command |
 
 ### Engines
@@ -289,11 +312,13 @@ Set the `*_ENABLED` switches to `false` on a second server copy to split the wor
 
 ### API keys
 
-If you set none, they are made on first boot. To use your own (for Docker or cloud deploys):
+The server makes **no** keys on first boot. Open the web app, go to **Settings → API** and press **Generate master key**. The key is shown one time: copy it. The master key (scope `admin`) works on every route. Section keys are optional. A section key has one scope. A wrong scope gets `403`. Only the SHA-256 hash is stored.
+
+To use your own keys (for Docker or cloud deploys), set these. The server saves them at start:
 
 `AIKIDO_ADMIN_API_KEY`, `AIKIDO_ACCOUNTS_API_KEY`, `AIKIDO_SENDING_API_KEY`, `AIKIDO_REPLIES_API_KEY`, `AIKIDO_FOLLOWUPS_API_KEY`, `AIKIDO_LEADS_API_KEY`, `AIKIDO_CAMPAIGNS_API_KEY`, `AIKIDO_GENERATOR_API_KEY`
 
-Simplest way: in the web app, open **Settings → API** and press **Generate master key**. The master key (scope `admin`) works on every route. Section keys are optional. A section key has one scope. A wrong scope gets `403`. Only the SHA-256 hash is stored.
+Installs from older versions keep the keys they have.
 
 ## 🧰 Using the engines
 
@@ -301,8 +326,8 @@ Set these once in your shell for the examples below:
 
 ```bash
 export BASE=http://localhost:8080
-export FOLLOWUPS_KEY=aik_followups_...   # from ./data/initial_keys.txt
-export GENERATOR_KEY=aik_generator_...
+export FOLLOWUPS_KEY=aik_admin_...       # your master key (Settings → API)
+export GENERATOR_KEY=$FOLLOWUPS_KEY
 ```
 
 ### Follow-up sequences
@@ -439,14 +464,13 @@ If you have no proxy network, publish the port to localhost only: `ports: ["127.
 ### 3. Check it
 
 - `GET /health` answers `{"status":"ok"}` when the database works.
-- Read the app log for the **setup code** (also in `/data/setup_code.txt`).
-- Open your address and make the owner account.
+- Open your address and make the owner account **at once**. The first account becomes the owner, so do it before you share the address.
 
 ### 4. Back up
 
 | Volume | Holds |
 | --- | --- |
-| `aikido_data` | Encryption key, first API keys |
+| `aikido_data` | Encryption key |
 | `pgdata` | The database |
 
 Connect Gmail or Outlook: register `<AIKIDO_PUBLIC_URL>/v1/accounts/oauth/gmail/callback` and `.../microsoft/callback` in the provider apps.
@@ -594,7 +618,7 @@ Please try these on a test account first, and report what you find. `progress.md
 | `CREATE EXTENSION pg_trgm` fails | Enable `pg_trgm` by hand on your managed database. |
 | Page shows a small placeholder | `ui/dist` is not built. Run `pnpm build` in `ui/`, then `cargo build`. |
 | Lost the owner password | `cargo run -- reset-password <email>` |
-| First-boot keys scrolled away | Read `./data/initial_keys.txt` (or `/data/initial_keys.txt` in Docker). |
+| **Connect Gmail** or **Connect Outlook** is greyed out | Add the keys in **Settings → Environment** (guide: account menu → Guide). |
 
 ## 📄 License
 

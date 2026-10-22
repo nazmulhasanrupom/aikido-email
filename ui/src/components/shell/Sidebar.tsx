@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
+  BookOpen,
   ChartColumn,
   ChevronsUpDown,
   Inbox,
@@ -448,6 +449,11 @@ function UserMenu(p: Props & { slim: boolean }): ReactNode {
         <MenuItem asChild>
           <Link to="/w/$ws/status" params={{ ws: p.ws }} onClick={p.onCloseDrawer}>
             Status
+          </Link>
+        </MenuItem>
+        <MenuItem asChild>
+          <Link to="/w/$ws/guide" params={{ ws: p.ws }} onClick={p.onCloseDrawer}>
+            <BookOpen size={16} aria-hidden="true" /> Guide
           </Link>
         </MenuItem>
         <MenuItem onSelect={p.onLogout}>

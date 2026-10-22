@@ -20,6 +20,7 @@ import { Route as WWsIndexRouteImport } from './routes/w.$ws.index'
 import { Route as WWsAccountsRouteImport } from './routes/w.$ws.accounts'
 import { Route as WWsAiRouteImport } from './routes/w.$ws.ai'
 import { Route as WWsCampaignsRouteImport } from './routes/w.$ws.campaigns'
+import { Route as WWsGuideRouteImport } from './routes/w.$ws.guide'
 import { Route as WWsInboxRouteImport } from './routes/w.$ws.inbox'
 import { Route as WWsLeadsRouteImport } from './routes/w.$ws.leads'
 import { Route as WWsPersonalizationRouteImport } from './routes/w.$ws.personalization'
@@ -35,6 +36,7 @@ import { Route as WWsSettingsIndexRouteImport } from './routes/w.$ws.settings.in
 import { Route as WWsSettingsAccountRouteImport } from './routes/w.$ws.settings.account'
 import { Route as WWsSettingsApiRouteImport } from './routes/w.$ws.settings.api'
 import { Route as WWsSettingsDeveloperRouteImport } from './routes/w.$ws.settings.developer'
+import { Route as WWsSettingsEnvironmentRouteImport } from './routes/w.$ws.settings.environment'
 import { Route as WWsSettingsIntegrationsRouteImport } from './routes/w.$ws.settings.integrations'
 import { Route as WWsSettingsNotificationsRouteImport } from './routes/w.$ws.settings.notifications'
 import { Route as WWsSettingsSendingRouteImport } from './routes/w.$ws.settings.sending'
@@ -105,6 +107,11 @@ const WWsAiRoute = WWsAiRouteImport.update({
 const WWsCampaignsRoute = WWsCampaignsRouteImport.update({
   id: '/campaigns',
   path: '/campaigns',
+  getParentRoute: () => WWsRoute,
+} as any)
+const WWsGuideRoute = WWsGuideRouteImport.update({
+  id: '/guide',
+  path: '/guide',
   getParentRoute: () => WWsRoute,
 } as any)
 const WWsInboxRoute = WWsInboxRouteImport.update({
@@ -180,6 +187,11 @@ const WWsSettingsApiRoute = WWsSettingsApiRouteImport.update({
 const WWsSettingsDeveloperRoute = WWsSettingsDeveloperRouteImport.update({
   id: '/developer',
   path: '/developer',
+  getParentRoute: () => WWsSettingsRoute,
+} as any)
+const WWsSettingsEnvironmentRoute = WWsSettingsEnvironmentRouteImport.update({
+  id: '/environment',
+  path: '/environment',
   getParentRoute: () => WWsSettingsRoute,
 } as any)
 const WWsSettingsIntegrationsRoute = WWsSettingsIntegrationsRouteImport.update({
@@ -277,6 +289,7 @@ export interface FileRoutesByFullPath {
   '/w/$ws/accounts': typeof WWsAccountsRouteWithChildren
   '/w/$ws/ai': typeof WWsAiRoute
   '/w/$ws/campaigns': typeof WWsCampaignsRouteWithChildren
+  '/w/$ws/guide': typeof WWsGuideRoute
   '/w/$ws/inbox': typeof WWsInboxRoute
   '/w/$ws/leads': typeof WWsLeadsRoute
   '/w/$ws/personalization': typeof WWsPersonalizationRoute
@@ -290,6 +303,7 @@ export interface FileRoutesByFullPath {
   '/w/$ws/settings/account': typeof WWsSettingsAccountRoute
   '/w/$ws/settings/api': typeof WWsSettingsApiRoute
   '/w/$ws/settings/developer': typeof WWsSettingsDeveloperRoute
+  '/w/$ws/settings/environment': typeof WWsSettingsEnvironmentRoute
   '/w/$ws/settings/integrations': typeof WWsSettingsIntegrationsRouteWithChildren
   '/w/$ws/settings/notifications': typeof WWsSettingsNotificationsRoute
   '/w/$ws/settings/sending': typeof WWsSettingsSendingRoute
@@ -318,6 +332,7 @@ export interface FileRoutesByTo {
   '/onboarding/$step': typeof OnboardingStepRoute
   '/reset/$token': typeof ResetTokenRoute
   '/w/$ws/ai': typeof WWsAiRoute
+  '/w/$ws/guide': typeof WWsGuideRoute
   '/w/$ws/inbox': typeof WWsInboxRoute
   '/w/$ws/leads': typeof WWsLeadsRoute
   '/w/$ws/personalization': typeof WWsPersonalizationRoute
@@ -328,6 +343,7 @@ export interface FileRoutesByTo {
   '/w/$ws/settings/account': typeof WWsSettingsAccountRoute
   '/w/$ws/settings/api': typeof WWsSettingsApiRoute
   '/w/$ws/settings/developer': typeof WWsSettingsDeveloperRoute
+  '/w/$ws/settings/environment': typeof WWsSettingsEnvironmentRoute
   '/w/$ws/settings/notifications': typeof WWsSettingsNotificationsRoute
   '/w/$ws/settings/sending': typeof WWsSettingsSendingRoute
   '/w/$ws/settings/team': typeof WWsSettingsTeamRoute
@@ -359,6 +375,7 @@ export interface FileRoutesById {
   '/w/$ws/accounts': typeof WWsAccountsRouteWithChildren
   '/w/$ws/ai': typeof WWsAiRoute
   '/w/$ws/campaigns': typeof WWsCampaignsRouteWithChildren
+  '/w/$ws/guide': typeof WWsGuideRoute
   '/w/$ws/inbox': typeof WWsInboxRoute
   '/w/$ws/leads': typeof WWsLeadsRoute
   '/w/$ws/personalization': typeof WWsPersonalizationRoute
@@ -372,6 +389,7 @@ export interface FileRoutesById {
   '/w/$ws/settings/account': typeof WWsSettingsAccountRoute
   '/w/$ws/settings/api': typeof WWsSettingsApiRoute
   '/w/$ws/settings/developer': typeof WWsSettingsDeveloperRoute
+  '/w/$ws/settings/environment': typeof WWsSettingsEnvironmentRoute
   '/w/$ws/settings/integrations': typeof WWsSettingsIntegrationsRouteWithChildren
   '/w/$ws/settings/notifications': typeof WWsSettingsNotificationsRoute
   '/w/$ws/settings/sending': typeof WWsSettingsSendingRoute
@@ -405,6 +423,7 @@ export interface FileRouteTypes {
     | '/w/$ws/accounts'
     | '/w/$ws/ai'
     | '/w/$ws/campaigns'
+    | '/w/$ws/guide'
     | '/w/$ws/inbox'
     | '/w/$ws/leads'
     | '/w/$ws/personalization'
@@ -418,6 +437,7 @@ export interface FileRouteTypes {
     | '/w/$ws/settings/account'
     | '/w/$ws/settings/api'
     | '/w/$ws/settings/developer'
+    | '/w/$ws/settings/environment'
     | '/w/$ws/settings/integrations'
     | '/w/$ws/settings/notifications'
     | '/w/$ws/settings/sending'
@@ -446,6 +466,7 @@ export interface FileRouteTypes {
     | '/onboarding/$step'
     | '/reset/$token'
     | '/w/$ws/ai'
+    | '/w/$ws/guide'
     | '/w/$ws/inbox'
     | '/w/$ws/leads'
     | '/w/$ws/personalization'
@@ -456,6 +477,7 @@ export interface FileRouteTypes {
     | '/w/$ws/settings/account'
     | '/w/$ws/settings/api'
     | '/w/$ws/settings/developer'
+    | '/w/$ws/settings/environment'
     | '/w/$ws/settings/notifications'
     | '/w/$ws/settings/sending'
     | '/w/$ws/settings/team'
@@ -486,6 +508,7 @@ export interface FileRouteTypes {
     | '/w/$ws/accounts'
     | '/w/$ws/ai'
     | '/w/$ws/campaigns'
+    | '/w/$ws/guide'
     | '/w/$ws/inbox'
     | '/w/$ws/leads'
     | '/w/$ws/personalization'
@@ -499,6 +522,7 @@ export interface FileRouteTypes {
     | '/w/$ws/settings/account'
     | '/w/$ws/settings/api'
     | '/w/$ws/settings/developer'
+    | '/w/$ws/settings/environment'
     | '/w/$ws/settings/integrations'
     | '/w/$ws/settings/notifications'
     | '/w/$ws/settings/sending'
@@ -609,6 +633,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WWsCampaignsRouteImport
       parentRoute: typeof WWsRoute
     }
+    '/w/$ws/guide': {
+      id: '/w/$ws/guide'
+      path: '/guide'
+      fullPath: '/w/$ws/guide'
+      preLoaderRoute: typeof WWsGuideRouteImport
+      parentRoute: typeof WWsRoute
+    }
     '/w/$ws/inbox': {
       id: '/w/$ws/inbox'
       path: '/inbox'
@@ -712,6 +743,13 @@ declare module '@tanstack/react-router' {
       path: '/developer'
       fullPath: '/w/$ws/settings/developer'
       preLoaderRoute: typeof WWsSettingsDeveloperRouteImport
+      parentRoute: typeof WWsSettingsRoute
+    }
+    '/w/$ws/settings/environment': {
+      id: '/w/$ws/settings/environment'
+      path: '/environment'
+      fullPath: '/w/$ws/settings/environment'
+      preLoaderRoute: typeof WWsSettingsEnvironmentRouteImport
       parentRoute: typeof WWsSettingsRoute
     }
     '/w/$ws/settings/integrations': {
@@ -917,6 +955,7 @@ interface WWsSettingsRouteChildren {
   WWsSettingsAccountRoute: typeof WWsSettingsAccountRoute
   WWsSettingsApiRoute: typeof WWsSettingsApiRoute
   WWsSettingsDeveloperRoute: typeof WWsSettingsDeveloperRoute
+  WWsSettingsEnvironmentRoute: typeof WWsSettingsEnvironmentRoute
   WWsSettingsIntegrationsRoute: typeof WWsSettingsIntegrationsRouteWithChildren
   WWsSettingsNotificationsRoute: typeof WWsSettingsNotificationsRoute
   WWsSettingsSendingRoute: typeof WWsSettingsSendingRoute
@@ -928,6 +967,7 @@ const WWsSettingsRouteChildren: WWsSettingsRouteChildren = {
   WWsSettingsAccountRoute: WWsSettingsAccountRoute,
   WWsSettingsApiRoute: WWsSettingsApiRoute,
   WWsSettingsDeveloperRoute: WWsSettingsDeveloperRoute,
+  WWsSettingsEnvironmentRoute: WWsSettingsEnvironmentRoute,
   WWsSettingsIntegrationsRoute: WWsSettingsIntegrationsRouteWithChildren,
   WWsSettingsNotificationsRoute: WWsSettingsNotificationsRoute,
   WWsSettingsSendingRoute: WWsSettingsSendingRoute,
@@ -943,6 +983,7 @@ interface WWsRouteChildren {
   WWsAccountsRoute: typeof WWsAccountsRouteWithChildren
   WWsAiRoute: typeof WWsAiRoute
   WWsCampaignsRoute: typeof WWsCampaignsRouteWithChildren
+  WWsGuideRoute: typeof WWsGuideRoute
   WWsInboxRoute: typeof WWsInboxRoute
   WWsLeadsRoute: typeof WWsLeadsRoute
   WWsPersonalizationRoute: typeof WWsPersonalizationRoute
@@ -957,6 +998,7 @@ const WWsRouteChildren: WWsRouteChildren = {
   WWsAccountsRoute: WWsAccountsRouteWithChildren,
   WWsAiRoute: WWsAiRoute,
   WWsCampaignsRoute: WWsCampaignsRouteWithChildren,
+  WWsGuideRoute: WWsGuideRoute,
   WWsInboxRoute: WWsInboxRoute,
   WWsLeadsRoute: WWsLeadsRoute,
   WWsPersonalizationRoute: WWsPersonalizationRoute,

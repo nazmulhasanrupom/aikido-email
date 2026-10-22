@@ -38,7 +38,7 @@ async fn hsts_only_for_an_https_public_url(pool: PgPool) {
 #[sqlx::test]
 async fn app_routes_get_the_page_but_the_api_keeps_its_404(pool: PgPool) {
     let state = app_state(pool);
-    for path in ["/w/default/campaigns", "/login", "/invite/abc", "/onboarding/connect-email"] {
+    for path in ["/w/default/campaigns", "/login", "/invite/abc", "/onboarding/design"] {
         let (status, headers, body) = call_raw(&state, path, None).await;
         assert_eq!(status, StatusCode::OK, "{path}");
         assert!(headers["content-type"].to_str().unwrap().starts_with("text/html"), "{path}");

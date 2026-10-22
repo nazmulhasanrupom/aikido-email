@@ -38,5 +38,5 @@ done
 curl -sf "http://127.0.0.1:$PORT/health" >/dev/null || { cat "$DATA/server.log"; exit 1; }
 
 cd ui
-AIKIDO_E2E_URL="http://localhost:$PORT" AIKIDO_E2E_SETUP_CODE_FILE="$DATA/setup_code.txt" \
+AIKIDO_E2E_URL="http://localhost:$PORT" \
   pnpm exec playwright test "$@"

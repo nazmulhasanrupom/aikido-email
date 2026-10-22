@@ -1,6 +1,6 @@
 # AIKIDO EMAIL: Progress
 
-Last updated: 2026-10-22 (Code review fixes, the Indigo design and the Aikido layout)
+Last updated: 2026-10-22 (Easy setup: no setup code, no first-boot keys, Settings → Environment, Guide, Windows installer)
 
 ## Status in one line
 
@@ -989,6 +989,53 @@ Settings → Account → **Appearance** (and the account menu) has three designs
 - `contrast.test.ts` checks all designs (every text color AA on every background, the ink rail of Indigo, the top bar of Aikido). `pnpm typecheck`, `pnpm test` (199 pass) and `pnpm build` pass.
 - Browser test `e2e/phase9_u7_design.spec.ts` updated for three designs (not run).
 - **Not verified:** nothing was opened in a browser (no server was started, as asked). Open the app and click through the pages in each design, on a wide and a narrow screen.
+
+## Easy setup (2026-10-22)
+
+Plan: `easy-setup-plan.md`. A user said the setup was slow and hard. Goals: Windows support, no setup code, no first-boot keys, a one-step wizard, keys typed in the app, and an in-app Guide.
+
+### Parts
+
+| Part | What changed | Where |
+| --- | --- | --- |
+| No setup code | The first account made on a fresh server is the owner. `setup_code` is gone from `POST /v1/auth/setup`. The advisory lock `7306002` and the user count check stay, so only the first person wins (`409 setup_done` after). The IP rate limit stays. An old `setup_code.txt` is deleted at start. | `src/users/setup.rs` (only `remove_file` is left), `src/users/routes.rs`, `src/main.rs`, `ui/src/routes/setup.tsx` |
+| No first-boot keys | `api_keys::bootstrap` saves only keys from `AIKIDO_<SCOPE>_API_KEY` env vars (for scopes that have no active key) and returns nothing. `announce_new_keys` and `initial_keys.txt` are gone. Old installs keep their keys. | `src/auth/api_keys.rs` |
+| One-step wizard | `ONBOARDING_STEPS` is `design`, `done`. Old step names (`connect-email`, `sending-basics`, `ai`, `import`) are accepted and read as `design`. The page shows three design cards (the same `DesignPicker` as Settings → Account → Appearance), and one **Go to dashboard** button. Any `$step` shows it. | `src/ui_api/routes.rs`, `ui/src/routes/onboarding.$step.tsx`, `ui/src/features/settings/DesignPicker.tsx` |
+| Get started card | Four links on Home (Aikido) and on the Campaigns page. It hides when an email account exists. | `ui/src/features/home/GetStarted.tsx` |
+| Settings → Environment | Table `app_settings` (migration `0024`). Secrets are sealed (AES-256-GCM, the key name is the AAD). A process-wide overlay is loaded at start and re-read every 60 s. `app_settings::get(name)`: the env var wins when set and not empty, else the saved value. `oauth_common::var` and `var_or` use it, so the Gmail and Microsoft code did not change. `GET /v1/ui/config` follows a save at once. Routes: `GET` and `PUT /v1/settings/environment`, `POST /v1/settings/environment/test/{group}`. | `src/app_settings/`, `ui/src/features/settings/EnvironmentForm.tsx`, `ui/src/routes/w.$ws.settings.environment.tsx` |
+| Guide | Account menu → Guide (both menus). `<details>` parts, Open all / Close all, `#google` opens and scrolls, live redirect addresses with Copy, a green Done pill. The text is data in one file. | `ui/src/features/guide/` |
+| Windows | `install.ps1`, `uninstall.ps1`, `.gitattributes`. The Rust code has `#[cfg(unix)]` where it needs it (see below). | repo root, `src/crypto.rs`, `src/main.rs`, `src/email_management/oauth_common.rs` |
+
+### Decisions
+
+- **The env var wins** over a saved value. The field shows "Set in .env" and is locked (`409 set_by_env`). Docker and Coolify users keep control.
+- **Skipped: Sending (`AIKIDO_DRY_RUN`) and Open tracking (`AIKIDO_TRACKING_CNAME_TARGET`, `AIKIDO_ACME_EMAIL`).** The code reads them one time at start: `dry_run` goes into `RealSenders` in `main.rs`, and the tracking values are in `Config.tracking`, which the tracking tasks hold. A live value needs a bigger change. They show in the read-only table. The catalog has only text settings, so the `bool` and `select` kinds of the plan were not built.
+- **Setup code removed fully** (open question 1 of the plan). The risk is written in the README, in the installer output and in `docs/API.md`: make the owner account right after the install.
+- `BROWSER_CMD` is empty by default now. The default is `xdg-open` (Linux), `open` (macOS) or `explorer` (Windows).
+- The home folder for the old file store is `HOME`, else `USERPROFILE`.
+- `install.ps1` does not set `AIKIDO_INSECURE_COOKIES`: the address is `http://localhost:<port>`, which browsers accept. Change it if you use another host on plain HTTP.
+- `.gitattributes` has `*.ps1 text eol=crlf`. GitHub raw serves the file as stored (LF). The script is ASCII only and works with both.
+- Tests that used bootstrap keys now make keys with `api_keys::create` (`tests/common/mod.rs` `bootstrap_keys`). The tests "an old database gets only the new X key" were deleted: they tested the key making that is gone.
+
+### Checked (real results)
+
+- `cargo build`: pass. `cargo test --lib`: 318 pass (new: env-wins rule, catalog and value checks, secret last 4, step names, Environment request checks).
+- `cargo test --no-run` (all test files compile): pass.
+- UI: `npx tsc --noEmit` pass. `pnpm test` 204 pass (new: `guide.test.ts`).
+- `npx vite build` pass (it also made `routeTree.gen.ts`).
+- Biome: the new files are clean. The repo already had format and import-order errors in older files (for example `contrast.test.ts`, `Sidebar.tsx`, `AikidoShell.tsx`, `Home.tsx`). I did not reformat them.
+
+### Not run
+
+- **All DB tests.** No database or Docker was started (as asked). New or changed: `tests/app_settings.rs` (new), `tests/users.rs`, `tests/api_keys.rs`, `tests/followups.rs`, `tests/ui_api.rs`, `tests/web.rs`, `tests/common/mod.rs`. They compile.
+- **Browser tests.** `e2e/phase2.spec.ts` and `e2e/phase3to8.spec.ts` were changed for the new flow (no setup code, the design screen, a guide test, an Environment test). Not run.
+- **`pnpm gen:api`.** `ui/src/api/schema.d.ts` was edited by hand (new routes, `SetupBody`, the step text). Run `pnpm gen:api` against a running server and check the diff.
+- **`pnpm lint`.** It crashed in this shell ("possibly out of memory"). `biome check` on single files worked.
+- **Windows.** `install.ps1` was not run on Windows and not checked with PSScriptAnalyzer (no `pwsh` here). The Rust Windows build was not checked: `rustup target add x86_64-pc-windows-gnu` worked, but `cargo check --target x86_64-pc-windows-gnu` stops in the `ring` build script (no `x86_64-w64-mingw32-gcc`). I searched the code for `os::unix`, `PermissionsExt`, `OpenOptionsExt` and `signal::unix`: all are behind `#[cfg(unix)]` now.
+- **Real Google and Microsoft login with keys saved in the app.** The Test button only checks the shape of the keys (Google) and the tenant address (Microsoft).
+- **The look of the new pages** (wizard, Environment, Guide, Get started) in the three designs: nothing was opened in a browser.
+- **A UI test that renders the Guide.** The repo has no DOM test library (tests run in `node`). The unit test covers the data and the open/close logic. The browser test covers the page.
+- The overlay is one copy per process, so `tests/app_settings.rs` runs its tests one at a time (a mutex).
 
 ### Still open
 

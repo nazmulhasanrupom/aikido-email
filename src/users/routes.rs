@@ -14,7 +14,6 @@ use axum::response::{IntoResponse, Response};
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, PgPool};
-use subtle::ConstantTimeEq;
 use utoipa::ToSchema;
 use utoipa_axum::{router::OpenApiRouter, routes};
 use uuid::Uuid;
@@ -200,8 +199,6 @@ async fn auth_state(State(st): State<AppState>, headers: HeaderMap) -> ApiResult
 
 #[derive(Deserialize, ToSchema)]
 pub struct SetupBody {
-    /// Printed in the server log on first start, and saved in `./data/setup_code.txt`.
-    pub setup_code: String,
     pub name: String,
     pub email: String,
     pub password: String,
@@ -217,8 +214,8 @@ pub struct LoginReply {
 /// Make the owner account on a fresh server. Works one time.
 #[utoipa::path(post, path = "/v1/auth/setup", tag = "auth",
     request_body = SetupBody,
-    responses((status = 201, body = LoginReply), (status = 403, description = "wrong setup code"), (status = 409, description = "setup_done")),
-    description = "No key needed. Needs the one-time setup code. Logs the new owner in.")]
+    responses((status = 201, body = LoginReply), (status = 409, description = "setup_done")),
+    description = "No key needed. The first account made on a fresh server becomes the owner. Logs the new owner in.")]
 async fn setup(
     State(st): State<AppState>,
     ClientIp(ip): ClientIp,
@@ -239,7 +236,7 @@ async fn setup(
     }
     password::check_policy(&b.password, &email, &b.name).map_err(policy)?;
 
-    let keys = [rate::ip_key(&ip), rate::email_key("setup-code")];
+    let keys = [rate::ip_key(&ip)];
     if let Some(secs) = rate::blocked_for(&st.pool, &keys, now).await? {
         return Err(ApiError::too_many("too_many_attempts", format!("Too many tries. Try again in {}.", wait_text(secs)), secs));
     }
@@ -250,13 +247,6 @@ async fn setup(
     let (users,): (i64,) = sqlx::query_as("SELECT count(*) FROM users").fetch_one(&mut *tx).await?;
     if users > 0 {
         return Err(ApiError::conflict("setup_done", "The owner account exists already. Log in."));
-    }
-    let stored: Option<Vec<u8>> = sqlx::query_scalar("SELECT setup_code_hash FROM app_state WHERE id = 1").fetch_one(&mut *tx).await?;
-    let right = stored.as_deref().is_some_and(|s| bool::from(s.ct_eq(&super::setup::hash_code(&b.setup_code))));
-    if !right {
-        drop(tx);
-        rate::record_failure(&st.pool, &ip, "setup-code", now).await?;
-        return Err(ApiError::forbidden("setup_code_wrong", "The setup code is wrong. Look in the server log, or in ./data/setup_code.txt."));
     }
     let id = repo::insert_user(&mut *tx, &email, &b.name, &hash, "owner").await?;
     sqlx::query("UPDATE app_state SET workspace_name = $1, setup_done_at = $2, setup_code_hash = NULL WHERE id = 1")

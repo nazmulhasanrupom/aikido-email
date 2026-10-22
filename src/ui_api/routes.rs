@@ -68,8 +68,9 @@ pub struct UiConfig {
     pub features: Features,
 }
 
+/// Set in the env, or saved in Settings → Environment.
 fn env_set(name: &str) -> bool {
-    std::env::var(name).ok().is_some_and(|v| !v.trim().is_empty())
+    crate::app_settings::get(name).is_some()
 }
 
 /// What the app needs to know about the server. No secrets.
@@ -99,11 +100,22 @@ async fn get_config(State(st): State<AppState>) -> ApiJson<UiConfig> {
 
 // ---------- onboarding ----------
 
-pub const ONBOARDING_STEPS: &[&str] = &["connect-email", "sending-basics", "ai", "import", "done"];
+pub const ONBOARDING_STEPS: &[&str] = &["design", "done"];
+
+/// Step names of older versions (a 5-step wizard). Saved state and old clients may still send them.
+const OLD_STEPS: &[&str] = &["connect-email", "sending-basics", "ai", "import"];
+
+/// `design` or `done`. An old step name becomes `design`. `None` for a name that was never a step.
+fn normalize_step(s: &str) -> Option<&'static str> {
+    if let Some(step) = ONBOARDING_STEPS.iter().find(|x| **x == s) {
+        return Some(step);
+    }
+    OLD_STEPS.contains(&s).then_some("design")
+}
 
 #[derive(Serialize, ToSchema)]
 pub struct OnboardingState {
-    /// `connect-email`, `sending-basics`, `ai`, `import` or `done`.
+    /// `design` or `done`.
     pub step: String,
     pub done: bool,
     /// Steps the user chose to skip.
@@ -130,7 +142,7 @@ pub struct OnboardingReply {
 
 fn parse_onboarding(v: &Value) -> OnboardingState {
     OnboardingState {
-        step: v["step"].as_str().filter(|s| ONBOARDING_STEPS.contains(s)).unwrap_or("connect-email").to_string(),
+        step: v["step"].as_str().and_then(normalize_step).unwrap_or("design").to_string(),
         done: v["done"].as_bool().unwrap_or(false),
         skipped: v["skipped"].as_array().map(|a| a.iter().filter_map(|s| s.as_str().map(str::to_string)).collect()).unwrap_or_default(),
     }
@@ -176,14 +188,14 @@ async fn patch_onboarding(
     ApiJson(b): ApiJson<PatchOnboarding>,
 ) -> ApiResult<ApiJson<OnboardingReply>> {
     need_admin(&session, &key)?;
-    let bad = |s: &str| !ONBOARDING_STEPS.contains(&s);
+    let bad = |s: &str| normalize_step(s).is_none();
     if b.step.as_deref().is_some_and(bad) || b.skipped.as_ref().is_some_and(|l| l.iter().any(|s| bad(s))) {
         return Err(ApiError::unprocessable("invalid_step", format!("Steps are: {}.", ONBOARDING_STEPS.join(", "))));
     }
     let current = repo::app_state(&st.pool).await?;
     let mut now = parse_onboarding(&current.onboarding);
-    if let Some(s) = b.step {
-        now.step = s;
+    if let Some(s) = b.step.as_deref().and_then(normalize_step) {
+        now.step = s.to_string();
     }
     if let Some(d) = b.done {
         now.done = d;
@@ -316,8 +328,19 @@ mod tests {
     #[test]
     fn onboarding_defaults() {
         let s = parse_onboarding(&json!({}));
-        assert_eq!((s.step.as_str(), s.done, s.skipped.len()), ("connect-email", false, 0));
+        assert_eq!((s.step.as_str(), s.done, s.skipped.len()), ("design", false, 0));
         let s = parse_onboarding(&json!({"step": "nope", "done": true, "skipped": ["ai"]}));
-        assert_eq!((s.step.as_str(), s.done, s.skipped), ("connect-email", true, vec!["ai".to_string()]));
+        assert_eq!((s.step.as_str(), s.done, s.skipped), ("design", true, vec!["ai".to_string()]));
+    }
+
+    #[test]
+    fn old_step_names_become_design() {
+        for old in ["connect-email", "sending-basics", "ai", "import"] {
+            assert_eq!(parse_onboarding(&json!({ "step": old })).step, "design");
+            assert_eq!(normalize_step(old), Some("design"));
+        }
+        assert_eq!(normalize_step("done"), Some("done"));
+        assert_eq!(normalize_step("design"), Some("design"));
+        assert_eq!(normalize_step("nope"), None);
     }
 }

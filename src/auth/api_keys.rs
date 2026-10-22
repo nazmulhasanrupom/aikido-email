@@ -8,14 +8,12 @@ use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use sqlx::{FromRow, PgPool};
-use std::io::Write;
-use std::os::unix::fs::OpenOptionsExt;
 use subtle::ConstantTimeEq;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
 /// One scope per step. Add a variant here (and to `ALL`) for a later step.
-/// The bootstrap makes one key for every scope in `ALL` that has no active key.
+/// The bootstrap saves the env-var key of every scope in `ALL` that has no active key.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum Scope {
@@ -241,15 +239,17 @@ pub async fn rotate(pool: &PgPool, id: Uuid, grace_hours: i64) -> Result<(KeyInf
     Ok((info, key))
 }
 
-/// First boot: make one key for each scope that has no active key.
-/// Returns the new (scope, plain key) pairs that were made by the server itself.
-/// Keys from env vars are used as they are and are never printed.
-pub async fn bootstrap(pool: &PgPool, cfg: &Config) -> anyhow::Result<Vec<(Scope, String)>> {
+/// Start: save the keys that come from env vars (`AIKIDO_<SCOPE>_API_KEY`) for the scopes that have no active key.
+/// The server never makes a key by itself. People make keys in Settings → API.
+pub async fn bootstrap(pool: &PgPool, cfg: &Config) -> anyhow::Result<()> {
+    if cfg.env_api_keys.is_empty() {
+        return Ok(());
+    }
     let mut tx = pool.begin().await?;
-    // One server at a time, so two copies booting together do not both make an admin key.
+    // One server at a time, so two copies booting together do not both save a key.
     sqlx::query("SELECT pg_advisory_xact_lock(7306001)").execute(&mut *tx).await?;
-    let mut made = Vec::new();
     for &scope in Scope::ALL {
+        let Some(env_key) = cfg.env_api_keys.get(&scope) else { continue };
         let (active,): (i64,) = sqlx::query_as(&format!(
             "SELECT count(*) FROM api_keys WHERE scope = $1 AND {ACTIVE}"
         ))
@@ -259,61 +259,20 @@ pub async fn bootstrap(pool: &PgPool, cfg: &Config) -> anyhow::Result<Vec<(Scope
         if active > 0 {
             continue;
         }
-        let (key, prefix, hash, from_env) = match cfg.env_api_keys.get(&scope) {
-            Some(env_key) => {
-                let prefix: String = env_key.chars().take(12).collect();
-                (env_key.clone(), prefix, hash_key(env_key), true)
-            }
-            None => {
-                let (k, p, h) = generate_key(scope);
-                (k, p, h, false)
-            }
-        };
+        let prefix: String = env_key.chars().take(12).collect();
         sqlx::query(
             "INSERT INTO api_keys (id, name, scope, key_prefix, key_hash) VALUES ($1, $2, $3, $4, $5)
              ON CONFLICT (key_hash) DO NOTHING",
         )
         .bind(Uuid::now_v7())
-        .bind(if from_env { "bootstrap (env)" } else { "bootstrap" })
+        .bind("bootstrap (env)")
         .bind(scope.as_str())
         .bind(prefix)
-        .bind(hash)
+        .bind(hash_key(env_key))
         .execute(&mut *tx)
         .await?;
-        if !from_env {
-            made.push((scope, key));
-        }
     }
     tx.commit().await?;
-    Ok(made)
-}
-
-/// Print new keys ONE time in a box, and save them to `<data_dir>/initial_keys.txt` (mode 600).
-pub fn announce_new_keys(cfg: &Config, keys: &[(Scope, String)]) -> anyhow::Result<()> {
-    if keys.is_empty() {
-        return Ok(());
-    }
-    let mut lines = vec!["AIKIDO EMAIL: NEW API KEYS (shown one time only)".to_string(), String::new()];
-    for (scope, key) in keys {
-        lines.push(format!("{:<9} {}", scope.as_str(), key));
-    }
-    lines.push(String::new());
-    lines.push("Lost a key? Rotate it with the admin key. It is not stored in plain form.".into());
-    let width = lines.iter().map(|l| l.chars().count()).max().unwrap_or(0);
-    let bar = format!("+{}+", "-".repeat(width + 2));
-    println!("{bar}");
-    for l in &lines {
-        println!("| {l:<width$} |");
-    }
-    println!("{bar}");
-
-    std::fs::create_dir_all(&cfg.data_dir)?;
-    let path = cfg.data_dir.join("initial_keys.txt");
-    let mut file = std::fs::OpenOptions::new().write(true).create(true).append(true).mode(0o600).open(&path)?;
-    for (scope, key) in keys {
-        writeln!(file, "{}={}", scope.env_var(), key)?;
-    }
-    println!("Also saved to {} (mode 600).", path.display());
     Ok(())
 }
 

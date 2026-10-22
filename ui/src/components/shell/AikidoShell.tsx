@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, Outlet, useRouterState } from "@tanstack/react-router";
 import {
   Activity,
+  BookOpen,
   ChevronDown,
   LogOut,
   Mail,
@@ -352,6 +353,11 @@ function AccountMenu(p: FrameProps) {
         <MenuItem asChild>
           <Link to="/w/$ws/status" params={{ ws: p.ws }}>
             <Activity size={16} aria-hidden="true" /> Status
+          </Link>
+        </MenuItem>
+        <MenuItem asChild>
+          <Link to="/w/$ws/guide" params={{ ws: p.ws }}>
+            <BookOpen size={16} aria-hidden="true" /> Guide
           </Link>
         </MenuItem>
         <MenuSeparator />

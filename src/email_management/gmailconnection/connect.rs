@@ -40,7 +40,7 @@ impl Config {
             .map(str::to_string)
             .collect(),
             accounts_file: accounts_path("ACCOUNTS_FILE", "accounts.json")?,
-            browser_cmd: var_or("BROWSER_CMD", "xdg-open"),
+            browser_cmd: var_or("BROWSER_CMD", default_browser_cmd()),
         })
     }
 }

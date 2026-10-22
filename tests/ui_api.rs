@@ -38,7 +38,7 @@ async fn onboarding_saves_the_step_and_reports_the_facts(pool: PgPool) {
     let owner = setup_owner(&state).await;
     let member = add_user(&state, &owner, "member@example.com", "member").await;
     let r = owner.call(&state, "GET", "/v1/ui/onboarding", None).await;
-    assert_eq!(r.body["state"], json!({"step": "connect-email", "done": false, "skipped": []}));
+    assert_eq!(r.body["state"], json!({"step": "design", "done": false, "skipped": []}));
     assert_eq!(r.body["facts"], json!({"accounts": 0, "readable_accounts": 0, "providers": 0, "leads": 0, "sending_defaults_changed": false}));
 
     add_account(&state, "a@example.com").await;
@@ -49,10 +49,11 @@ async fn onboarding_saves_the_step_and_reports_the_facts(pool: PgPool) {
 
     let r = owner.call(&state, "PATCH", "/v1/ui/onboarding", Some(json!({"step": "ai", "skipped": ["import", "ai", "ai"]}))).await;
     assert_eq!(r.status, StatusCode::OK, "{:?}", r.body);
-    assert_eq!(r.body["state"], json!({"step": "ai", "done": false, "skipped": ["ai", "import"]}));
+    // an old step name is read as `design`
+    assert_eq!(r.body["state"], json!({"step": "design", "done": false, "skipped": ["ai", "import"]}));
     assert_eq!(r.body["facts"], json!({"accounts": 1, "readable_accounts": 1, "providers": 0, "leads": 1, "sending_defaults_changed": true}));
     // it survives a reload
-    assert_eq!(owner.call(&state, "GET", "/v1/ui/onboarding", None).await.body["state"]["step"], "ai");
+    assert_eq!(owner.call(&state, "GET", "/v1/ui/onboarding", None).await.body["state"]["step"], "design");
     let done = owner.call(&state, "PATCH", "/v1/ui/onboarding", Some(json!({"step": "done", "done": true}))).await;
     assert_eq!(done.body["state"]["done"], true);
 

@@ -5,6 +5,7 @@ import { useState } from "react";
 import { q } from "@/api/queries";
 import { Button, EmptyState, ErrorNote, Page, PageHeader, Pill, Skeleton } from "@/components/ui";
 import { statsQuery, tone } from "@/features/campaigns/hooks";
+import { GetStarted } from "@/features/home/GetStarted";
 import { NewCampaign } from "@/features/campaigns/NewCampaign";
 import { ProgressBar, progressOf } from "@/features/campaigns/Progress";
 import { fmtDate, fmtInt, fmtPct } from "@/lib/format";
@@ -29,6 +30,7 @@ function Campaigns() {
   return (
     <Page wide>
       <PageHeader title="Campaigns" actions={newButton} />
+      <GetStarted ws={ws} />
       {list.isPending && <Skeleton />}
       {list.isError && <ErrorNote error={list.error} onRetry={() => list.refetch()} />}
       {list.data?.campaigns.length === 0 && (

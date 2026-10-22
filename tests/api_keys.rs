@@ -6,34 +6,37 @@ use serde_json::json;
 use sqlx::PgPool;
 
 #[sqlx::test]
-async fn first_boot_makes_ten_keys_second_boot_none(pool: PgPool) {
+async fn first_boot_makes_no_keys(pool: PgPool) {
     let state = app_state(pool);
-    let first = api_keys::bootstrap(&state.pool, &state.config).await.unwrap();
-    assert_eq!(first.len(), 11);
-    for (scope, key) in &first {
-        assert!(key.starts_with(&format!("aik_{}_", scope.as_str())));
-    }
-    let second = api_keys::bootstrap(&state.pool, &state.config).await.unwrap();
-    assert!(second.is_empty());
-    // Only hashes are stored.
-    let (plain_stored,): (i64,) = sqlx::query_as("SELECT count(*) FROM api_keys WHERE key_hash = convert_to($1, 'UTF8')")
-        .bind(&first[0].1)
-        .fetch_one(&state.pool)
-        .await
-        .unwrap();
-    assert_eq!(plain_stored, 0);
+    api_keys::bootstrap(&state.pool, &state.config).await.unwrap();
+    assert!(api_keys::list(&state.pool).await.unwrap().is_empty());
 }
 
 #[sqlx::test]
-async fn keys_from_env_are_used_and_not_printed(pool: PgPool) {
+async fn keys_from_env_are_saved_and_the_rest_are_not_made(pool: PgPool) {
     let mut state = app_state(pool);
     let mut cfg = (*state.config).clone();
     cfg.env_api_keys.insert(Scope::Admin, "my-own-admin-key-from-env-0123456789".into());
     state.config = std::sync::Arc::new(cfg);
-    let made = api_keys::bootstrap(&state.pool, &state.config).await.unwrap();
-    assert_eq!(made.len(), 10, "every scope except admin is made by the server");
+    api_keys::bootstrap(&state.pool, &state.config).await.unwrap();
+    api_keys::bootstrap(&state.pool, &state.config).await.unwrap();
+    let list = api_keys::list(&state.pool).await.unwrap();
+    assert_eq!(list.len(), 1, "only the env key is saved, and only one time");
+    assert_eq!(list[0].scope, "admin");
     let r = call(&state, "GET", "/v1/keys", Some("my-own-admin-key-from-env-0123456789"), None).await;
     assert_eq!(r.status, StatusCode::OK);
+}
+
+#[sqlx::test]
+async fn an_env_key_is_skipped_when_the_scope_has_a_key(pool: PgPool) {
+    let mut state = app_state(pool);
+    let (_, made) = api_keys::create(&state.pool, Scope::Admin, "mine").await.unwrap();
+    let mut cfg = (*state.config).clone();
+    cfg.env_api_keys.insert(Scope::Admin, "my-own-admin-key-from-env-0123456789".into());
+    state.config = std::sync::Arc::new(cfg);
+    api_keys::bootstrap(&state.pool, &state.config).await.unwrap();
+    assert_eq!(api_keys::list(&state.pool).await.unwrap().len(), 1);
+    assert_eq!(call(&state, "GET", "/v1/keys", Some(&made), None).await.status, StatusCode::OK);
 }
 
 #[sqlx::test]
@@ -156,40 +159,6 @@ async fn error_shape_is_stable(pool: PgPool) {
 }
 
 #[sqlx::test]
-async fn an_old_database_gets_only_the_new_replies_key(pool: PgPool) {
-    let state = app_state(pool);
-    let first = api_keys::bootstrap(&state.pool, &state.config).await.unwrap();
-    // Pretend this database was made before the Reply Check step: no `replies` key yet.
-    sqlx::query("DELETE FROM api_keys WHERE scope = 'replies'").execute(&state.pool).await.unwrap();
-    let next = api_keys::bootstrap(&state.pool, &state.config).await.unwrap();
-    assert_eq!(next.len(), 1);
-    assert_eq!(next[0].0, Scope::Replies);
-    assert!(next[0].1.starts_with("aik_replies_"));
-    // The old keys still work.
-    let sending = &first.iter().find(|(s, _)| *s == Scope::Sending).unwrap().1;
-    assert_eq!(call(&state, "GET", "/v1/sending/engine/status", Some(sending), None).await.status, StatusCode::OK);
-}
-
-#[sqlx::test]
-async fn an_old_database_gets_only_the_new_leads_and_campaigns_keys(pool: PgPool) {
-    let state = app_state(pool);
-    api_keys::bootstrap(&state.pool, &state.config).await.unwrap();
-    sqlx::query("DELETE FROM api_keys WHERE scope IN ('leads', 'campaigns')").execute(&state.pool).await.unwrap();
-    let mut next: Vec<_> = api_keys::bootstrap(&state.pool, &state.config).await.unwrap().into_iter().map(|k| k.0.as_str()).collect();
-    next.sort();
-    assert_eq!(next, ["campaigns", "leads"]);
-}
-
-#[sqlx::test]
-async fn an_old_database_gets_only_the_new_generator_key(pool: PgPool) {
-    let state = app_state(pool);
-    api_keys::bootstrap(&state.pool, &state.config).await.unwrap();
-    sqlx::query("DELETE FROM api_keys WHERE scope = 'generator'").execute(&state.pool).await.unwrap();
-    let next: Vec<_> = api_keys::bootstrap(&state.pool, &state.config).await.unwrap().into_iter().map(|k| k.0.as_str()).collect();
-    assert_eq!(next, ["generator"]);
-}
-
-#[sqlx::test]
 async fn the_generator_key_works_on_generator_routes_only(pool: PgPool) {
     let state = app_state(pool);
     let keys = bootstrap_keys(&state).await;
@@ -202,29 +171,3 @@ async fn the_generator_key_works_on_generator_routes_only(pool: PgPool) {
     assert_eq!(call(&state, "GET", "/v1/generator/status", None, None).await.status, StatusCode::UNAUTHORIZED);
 }
 
-#[sqlx::test]
-async fn an_old_database_gets_only_the_new_integrations_key(pool: PgPool) {
-    let state = app_state(pool);
-    api_keys::bootstrap(&state.pool, &state.config).await.unwrap();
-    sqlx::query("DELETE FROM api_keys WHERE scope = 'integrations'").execute(&state.pool).await.unwrap();
-    let next: Vec<_> = api_keys::bootstrap(&state.pool, &state.config).await.unwrap().into_iter().map(|k| k.0.as_str()).collect();
-    assert_eq!(next, ["integrations"]);
-}
-
-#[sqlx::test]
-async fn an_old_database_gets_only_the_new_personalization_key(pool: PgPool) {
-    let state = app_state(pool);
-    api_keys::bootstrap(&state.pool, &state.config).await.unwrap();
-    sqlx::query("DELETE FROM api_keys WHERE scope = 'personalization'").execute(&state.pool).await.unwrap();
-    let next: Vec<_> = api_keys::bootstrap(&state.pool, &state.config).await.unwrap().into_iter().map(|k| k.0.as_str()).collect();
-    assert_eq!(next, ["personalization"]);
-}
-
-#[sqlx::test]
-async fn an_old_database_gets_only_the_new_tracking_key(pool: PgPool) {
-    let state = app_state(pool);
-    api_keys::bootstrap(&state.pool, &state.config).await.unwrap();
-    sqlx::query("DELETE FROM api_keys WHERE scope = 'tracking'").execute(&state.pool).await.unwrap();
-    let next: Vec<_> = api_keys::bootstrap(&state.pool, &state.config).await.unwrap().into_iter().map(|k| k.0.as_str()).collect();
-    assert_eq!(next, ["tracking"]);
-}

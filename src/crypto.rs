@@ -6,6 +6,7 @@ use aes_gcm::aead::{Aead, AeadCore, KeyInit, OsRng, Payload};
 use aes_gcm::{Aes256Gcm, Key, Nonce};
 use base64::{Engine, engine::general_purpose::STANDARD as B64};
 use std::io::Write;
+#[cfg(unix)]
 use std::os::unix::fs::OpenOptionsExt;
 use zeroize::Zeroizing;
 
@@ -77,12 +78,11 @@ impl Crypto {
         let io = |e: std::io::Error| CryptoError::KeyFile(e.to_string());
         std::fs::create_dir_all(&cfg.data_dir).map_err(io)?;
         let key = Zeroizing::new(Aes256Gcm::generate_key(&mut OsRng).to_vec());
-        let mut file = std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(0o600)
-            .open(&path)
-            .map_err(io)?;
+        let mut options = std::fs::OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        options.mode(0o600);
+        let mut file = options.open(&path).map_err(io)?;
         file.write_all(B64.encode(&*key).as_bytes()).map_err(io)?;
         eprintln!(
             "\n!!! NEW ENCRYPTION KEY MADE: {}\n!!! Back up this file. If you lose it, every connected account must be connected again.\n",

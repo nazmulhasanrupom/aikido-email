@@ -142,6 +142,8 @@ async fn serve() -> anyhow::Result<()> {
     db::migrate(&pool).await?;
     let crypto = Crypto::load_or_create(&cfg)?;
 
+    // Keys that people saved in Settings → Environment. Read again every minute (other copies may save).
+    aikido_email::app_settings::store::refresh(&pool, &crypto).await?;
     // Old enrollments join Lead Management (a no-op when there is nothing to do).
     match aikido_email::leads::backfill::run(&pool, chrono::Utc::now()).await {
         Ok(r) if r.linked > 0 => tracing::info!(linked = r.linked, leads_created = r.leads_created, "old enrollments linked to leads"),
@@ -149,14 +151,11 @@ async fn serve() -> anyhow::Result<()> {
         Err(e) => tracing::error!(error = %e, "lead backfill failed"),
     }
 
-    // First boot: one key per scope. Printed one time only.
-    let new_keys = api_keys::bootstrap(&pool, &cfg).await?;
-    api_keys::announce_new_keys(&cfg, &new_keys)?;
+    // Keys from env vars are saved. The server makes no key by itself.
+    api_keys::bootstrap(&pool, &cfg).await?;
 
-    // No user yet: print the one-time setup code for the web app.
-    if let Some(code) = aikido_email::users::setup::ensure_setup_code(&pool, &cfg).await? {
-        aikido_email::users::setup::announce(&cfg, &code);
-    }
+    // An old setup code file from a version that had one is not needed any more.
+    aikido_email::users::setup::remove_file(&cfg);
     if cfg.insecure_cookies {
         tracing::warn!("AIKIDO_INSECURE_COOKIES is on: the login cookie is not marked Secure. Use this only on a trusted network.");
     }
@@ -167,6 +166,7 @@ async fn serve() -> anyhow::Result<()> {
     }
 
     let mut state = AppState::new(pool, crypto, cfg.clone());
+    aikido_email::app_settings::store::spawn_reload_loop(state.pool.clone(), state.crypto.clone());
     state.dev = dev;
     state.load_site_url().await?;
     if cfg.public_url.is_none() {
@@ -334,6 +334,7 @@ async fn serve() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[cfg(unix)]
 async fn shutdown_signal() {
     use tokio::signal::unix::{SignalKind, signal};
     let mut term = signal(SignalKind::terminate()).expect("can listen for SIGTERM");
@@ -341,4 +342,9 @@ async fn shutdown_signal() {
         _ = term.recv() => {}
         _ = tokio::signal::ctrl_c() => {}
     }
+}
+
+#[cfg(not(unix))]
+async fn shutdown_signal() {
+    let _ = tokio::signal::ctrl_c().await;
 }

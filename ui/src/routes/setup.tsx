@@ -23,7 +23,6 @@ export const Route = createFileRoute("/setup")({
 });
 
 const schema = z.object({
-  setup_code: z.string().trim().min(1, "Type the setup code."),
   name: z.string().trim().min(1, "Type your name.").max(100, "Use up to 100 characters."),
   email: z
     .string()
@@ -44,7 +43,6 @@ type Values = z.infer<typeof schema>;
 
 /** Which field a server error belongs to. */
 const FIELD_OF: Record<string, keyof Values> = {
-  setup_code_wrong: "setup_code",
   invalid_name: "name",
   invalid_email: "email",
   invalid_workspace_name: "workspace_name",
@@ -72,7 +70,7 @@ function SetupPage() {
     try {
       await setup(values);
       await refreshAuthState(queryClient);
-      await navigate({ to: "/onboarding/$step", params: { step: "connect-email" } });
+      await navigate({ to: "/onboarding/$step", params: { step: "design" } });
     } catch (e) {
       const field = e instanceof ApiProblem ? FIELD_OF[e.code] : undefined;
       if (field) setError(field, { message: messageOf(e) });
@@ -81,26 +79,12 @@ function SetupPage() {
   }
 
   return (
-    <AuthLayout title="Set up AIKIDO EMAIL" intro="Make the owner account. You do this one time.">
+    <AuthLayout title="Set up AIKIDO EMAIL" intro="Make the owner account. The first account becomes the owner.">
       <form onSubmit={handleSubmit(onSubmit)} noValidate className="flex flex-col gap-4">
-        <Field
-          label="Setup code"
-          autoComplete="off"
-          autoFocus
-          spellCheck={false}
-          className="font-mono uppercase"
-          help={
-            <>
-              Printed in the server log on first start, and saved in{" "}
-              <code className="font-mono">./data/setup_code.txt</code>.
-            </>
-          }
-          error={errors.setup_code?.message}
-          {...register("setup_code")}
-        />
         <Field
           label="Your name"
           autoComplete="name"
+          autoFocus
           error={errors.name?.message}
           {...register("name")}
         />

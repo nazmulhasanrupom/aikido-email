@@ -28,6 +28,7 @@ The engine stores connected email accounts and sends queued emails one at a time
 19. [Campaigns (`campaigns`)](#19-campaigns-campaigns)
 20. [Email Generator (`generator`)](#20-email-generator-generator)
 21. [Web app: login, team, helpers, reports](#21-web-app-login-team-helpers-reports)
+29. [Settings → Environment (`admin`)](#29-settings--environment-admin)
 25. [Email optimization (`personalization`, `campaigns`, `leads`)](#25-email-optimization-personalization-campaigns-leads)
 
 ---
@@ -35,12 +36,13 @@ The engine stores connected email accounts and sends queued emails one at a time
 ## 1. Quick start
 
 ```bash
-# 1. Start the server. On first boot it prints eight API keys ONE time.
+# 1. Start the server. Open it in a browser, make the owner account,
+#    then press Settings -> API -> Generate master key. The key is shown one time.
 DATABASE_URL=postgres://aikido:aikido@127.0.0.1:55432/aikido cargo run -- serve
 
 export BASE=http://localhost:8080
-export ACCOUNTS_KEY=aik_accounts_...   # from the first-boot output
-export SENDING_KEY=aik_sending_...
+export ACCOUNTS_KEY=aik_admin_...   # the master key opens every route
+export SENDING_KEY=$ACCOUNTS_KEY
 
 # 2. Connect an SMTP account. The login is tested before it is saved.
 curl -s -X POST $BASE/v1/accounts/smtp \
@@ -121,7 +123,7 @@ Section keys are optional. A section key works only on routes of its own scope.
 
 **Key format:** `aik_<scope>_<random>`, for example `aik_sending_7fK2...`. The scope in the text is only for humans. The server always checks the scope stored in the database.
 
-**First boot.** The server makes one key for every scope that has no active key, prints them once in a box on stdout, and writes them to `<AIKIDO_DATA_DIR>/initial_keys.txt` (mode `600`). It never prints a key again. A lost key is replaced by rotating it with the admin key ([section 6](#6-api-keys-admin)). For Docker and cloud deploys, set `AIKIDO_ADMIN_API_KEY`, `AIKIDO_ACCOUNTS_API_KEY`, `AIKIDO_SENDING_API_KEY`, `AIKIDO_REPLIES_API_KEY`, `AIKIDO_FOLLOWUPS_API_KEY`, `AIKIDO_LEADS_API_KEY`, `AIKIDO_CAMPAIGNS_API_KEY`, `AIKIDO_GENERATOR_API_KEY` and the server uses those instead of making keys.
+**First boot.** The server makes no key by itself. Make a master key (scope `admin`) in the web app (**Settings → API → Generate master key**) or with `POST /v1/keys` ([section 6](#6-api-keys-admin)); the key is shown one time. Older installs keep the keys they already have. A lost key is replaced by rotating it with the admin key. For Docker and cloud deploys, you can set `AIKIDO_ADMIN_API_KEY`, `AIKIDO_ACCOUNTS_API_KEY`, `AIKIDO_SENDING_API_KEY`, `AIKIDO_REPLIES_API_KEY`, `AIKIDO_FOLLOWUPS_API_KEY`, `AIKIDO_LEADS_API_KEY`, `AIKIDO_CAMPAIGNS_API_KEY`, `AIKIDO_GENERATOR_API_KEY` and the server saves those at start (for each scope that has no active key).
 
 Only the SHA-256 hash of a key is stored. `last_used_at` is updated at most once a minute per key.
 
@@ -1698,7 +1700,7 @@ The web app (`ui/`, served at `/` by this server) uses these routes. They are in
 | Route | Auth | What it does |
 | --- | --- | --- |
 | `GET /v1/auth/state` | none | `{ setup_needed, logged_in, user, csrf_token, workspace_name, workspace_logo, insecure_connection }`. The app calls it first. |
-| `POST /v1/auth/setup` | none | `{ setup_code, name, email, password, workspace_name }`. Makes the owner and logs in (`201`). `409 setup_done` after the first time, `403 setup_code_wrong`. |
+| `POST /v1/auth/setup` | none | `{ name, email, password, workspace_name }`. The first account made on a fresh server becomes the owner and is logged in (`201`). `409 setup_done` after the first time. There is no setup code: make the owner right after the install, before you share the address. |
 | `POST /v1/auth/login` | none | `{ email, password }` gives `{ user, csrf_token }` and sets the cookie. |
 | `POST /v1/auth/logout` | session | Deletes the session (`204`). |
 | `GET /v1/auth/invites/{token}`, `POST /v1/auth/invites/{token}/accept` | none | The invite page: shows the email and role, then `{ name, password }` makes the user and logs in. `404 invite_invalid` when used or expired. |
@@ -1713,7 +1715,7 @@ The web app (`ui/`, served at `/` by this server) uses these routes. They are in
 
 **Roles.** `owner` (exactly one) and `admin` can do everything. `member`: campaigns, leads, inbox, accounts, reports; not API keys, the team, the system defaults or the engine switches.
 
-**First boot.** While no user exists the server prints a one-time **setup code** (12 characters) next to the API keys and saves it to `<AIKIDO_DATA_DIR>/setup_code.txt` (mode `600`). The setup page asks for it. It dies when the owner is made.
+**First boot.** While no user exists, the first visitor of the setup page can make the owner account. A fresh server on the internet can be claimed by whoever opens it first, so make the account right after you start the server. (Older versions asked for a setup code. It is gone, and the server deletes an old `setup_code.txt` at start.)
 
 **Lost owner password.** On the server: `aikido_email reset-password <email>` prints a one-time link (valid 1 hour). Open it in the browser.
 
@@ -1723,8 +1725,8 @@ A key of any scope, or a session, can read. `PATCH` needs an owner, an admin, or
 
 | Route | What it does |
 | --- | --- |
-| `GET /v1/ui/config` | No secrets: `{ version, public_url_set, oauth: { gmail, microsoft }, redirect_uris, dry_run, features: { replies, followups, leads, generator } }`. `oauth.*` is true when the client id and secret are set. `redirect_uris` are the addresses to enter in the Google or Microsoft console. |
-| `GET /v1/ui/onboarding`, `PATCH /v1/ui/onboarding` | `{ state: { step, done, skipped }, facts: { accounts, readable_accounts, providers, leads, sending_defaults_changed } }`. Steps: `connect-email`, `sending-basics`, `ai`, `import`, `done`. `PATCH` takes `step`, `done`, `skipped`. |
+| `GET /v1/ui/config` | No secrets: `{ version, public_url_set, oauth: { gmail, microsoft }, redirect_uris, dry_run, features: { replies, followups, leads, generator } }`. `oauth.*` is true when the client id and secret are set, in the env or in Settings → Environment. `redirect_uris` are the addresses to enter in the Google or Microsoft console. |
+| `GET /v1/ui/onboarding`, `PATCH /v1/ui/onboarding` | `{ state: { step, done, skipped }, facts: { accounts, readable_accounts, providers, leads, sending_defaults_changed } }`. Steps: `design`, `done`. An old step name (`connect-email`, `sending-basics`, `ai`, `import`) is read as `design`. `PATCH` takes `step`, `done`, `skipped`. |
 | `GET /v1/ui/workspace`, `PATCH /v1/ui/workspace` | `{ name, logo }`. The logo is a PNG, JPEG, WebP, GIF or SVG data URL up to 200 KB; `"logo": null` removes it. |
 | `GET /v1/ui/alerts` | The alerts for the bell, newest problems from the current state (nothing is stored): `{ id, kind, severity, title, detail, link, since }`, most serious first. Kinds: `account_disconnected`, `account_error`, `account_reconnect_needed`, `campaign_warning`, `campaign_no_healthy_account`, `generation_awaiting_review`, `provider_auth_failed`, `ai_budget_reached`, `import_failed`, `jobs_stuck`, `engine_paused`. With a session, kinds the user turned off (`preferences.notifications.<kind> = false`) are left out. |
 
@@ -1949,3 +1951,21 @@ Settings > Developer turns on a panel at the bottom of the web app (off by defau
 | POST | `/v1/dev/actions/{name}` | Run one round now: `followups_tick`, `feeder_tick`, `sending_tick` (respects the rules), `tracking_tick`, `reload_certs`, `test_log`. |
 
 **The log.** A tracing layer keeps the last 5000 events in memory with a growing id: time, level, target, message, fields and the request they happened in (`http{method=POST path=/v1/...}`). It is empty after a restart. Lines that exist now: every request (`error` for 5xx, `warn` for 4xx, `info` for changes, `debug` for reads; the panel's own polling and `/health` are left out), each send and its result, retries and failures, follow-up, feeder and reply-check rounds, stored inbound emails (label and match), imports, AI calls, verification runs, tracking domain changes, certificate steps, tracker inserted or skipped, opens, "Send now", and every SQL run of the panel.
+
+## 29. Settings → Environment (`admin`)
+
+The keys that used to live in `.env` (Google and Microsoft login) can be saved in the web app: **Settings → Environment**. A saved value works at once, with no restart. Other server copies read it within 60 seconds. Secrets are sealed with AES-256-GCM (the setting name is the AAD). Values are never logged.
+
+**The env var wins.** A key that is set (and not empty) in the env of the server is used, and the app cannot change it (`source: "env"`, `409 set_by_env` on a save). This keeps Docker and Coolify deploys in control.
+
+Scope `admin` (owner and admin sessions, or an `admin` key).
+
+| Method | Path | Use |
+| --- | --- | --- |
+| GET | `/v1/settings/environment` | `{ items, read_only }`. Each item: `key`, `group` (`google` or `microsoft`), `label`, `help`, `secret`, `source` (`env`, `app` or `unset`), `value` (never for a secret), `is_set`, `last4` (secrets only), `default`, `restart_needed` (always `false`). `read_only` lists the settings that only `.env` can change (value or `null`; secrets are never sent). |
+| PUT | `/v1/settings/environment` | `{ "values": { "KEY": "value" \| null } }`. A string saves (trimmed). `null` removes the saved value. Nothing is saved if one entry is wrong: `422 unknown_setting`, `422 invalid_value`, `409 set_by_env`. Answers like `GET`. |
+| POST | `/v1/settings/environment/test/{group}` | `google` or `microsoft`. `{ ok, message }`. Google: the Client ID ends in `.apps.googleusercontent.com`, the secret is set and `AIKIDO_PUBLIC_URL` is set. Microsoft: the keys are set and the tenant answers on `https://login.microsoftonline.com/{tenant}/v2.0/.well-known/openid-configuration`. No real login is tried. `404 unknown_group`. |
+
+Keys the app can save: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` (secret), `MS_CLIENT_ID`, `MS_CLIENT_SECRET` (secret), `MS_TENANT` (default `common`; letters, digits, dots and dashes). `GET /v1/ui/config` (`oauth.gmail`, `oauth.microsoft`) follows a save at once.
+
+Not in the app, because the server needs them before it can read the database or they change the listener: `DATABASE_URL`, `AIKIDO_ENCRYPTION_KEY`, `AIKIDO_DATA_DIR`, `AIKIDO_BIND_ADDR`, `AIKIDO_PUBLIC_URL`, `AIKIDO_INSECURE_COOKIES`, `AIKIDO_TRUST_PROXY`, the tracking addresses, the `*_ENABLED` switches and the tick numbers. Also `AIKIDO_DRY_RUN` and the open-tracking values (`AIKIDO_TRACKING_CNAME_TARGET`, `AIKIDO_ACME_EMAIL`) stay in `.env`: the sender and the tracking server read them one time at start.

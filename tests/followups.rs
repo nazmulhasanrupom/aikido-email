@@ -178,19 +178,6 @@ async fn the_followups_scope_guards_every_route(pool: PgPool) {
 }
 
 #[sqlx::test]
-async fn an_old_database_gets_only_the_new_followups_key(pool: PgPool) {
-    let state = app_state(pool);
-    let first = aikido_email::auth::api_keys::bootstrap(&state.pool, &state.config).await.unwrap();
-    sqlx::query("DELETE FROM api_keys WHERE scope = 'followups'").execute(&state.pool).await.unwrap();
-    let next = aikido_email::auth::api_keys::bootstrap(&state.pool, &state.config).await.unwrap();
-    assert_eq!(next.len(), 1);
-    assert_eq!(next[0].0, Scope::Followups);
-    assert!(next[0].1.starts_with("aik_followups_"));
-    let sending = &first.iter().find(|(s, _)| *s == Scope::Sending).unwrap().1;
-    assert_eq!(call(&state, "GET", "/v1/sending/engine/status", Some(sending), None).await.status, StatusCode::OK);
-}
-
-#[sqlx::test]
 async fn settings_have_defaults_and_bad_values_get_422(pool: PgPool) {
     let f = F::new(pool).await;
     let r = f.api("GET", "/v1/followups/settings", None).await;

@@ -11,11 +11,22 @@ const CSV = [
   "cy@gamma.test,Cy,Gamma,COO,tired",
 ].join("\n");
 
-test("the setup wizard connects a mail server, sets sending basics and ends in the app", async ({
-  page,
-}) => {
+test("the setup wizard shows three designs and ends in the app", async ({ page }) => {
+  await page.goto("/onboarding/design");
+  await expect(page.getByRole("heading", { name: "Pick a design" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Generic/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Indigo/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Aikido/ })).toBeVisible();
+  // an old step name shows the same screen
   await page.goto("/onboarding/connect-email");
-  await page.getByRole("button", { name: "Connect account" }).click();
+  await expect(page.getByRole("heading", { name: "Pick a design" })).toBeVisible();
+  await page.getByRole("button", { name: "Go to dashboard" }).click();
+  await expect(page).toHaveURL(/\/w\/default\/campaigns/);
+});
+
+test("a mail server is connected in Email Accounts", async ({ page }) => {
+  await page.goto("/w/default/accounts");
+  await page.getByRole("button", { name: "Connect account" }).first().click();
   await page.getByRole("button", { name: /^Other/ }).click();
   await page.getByLabel("Email address").fill("sales@acme.test");
   await page.getByLabel("Host", { exact: true }).first().fill("127.0.0.1");
@@ -24,27 +35,32 @@ test("the setup wizard connects a mail server, sets sending basics and ends in t
   await page.getByLabel("Password", { exact: true }).first().fill("secret");
   await page.getByLabel("Also read replies").uncheck();
   await page.getByRole("button", { name: "Test and save" }).click();
-  await expect(page.getByText("sales@acme.test")).toBeVisible();
-  await expect(page.getByText(/we cannot see replies/i)).toBeVisible();
-  await page.getByRole("button", { name: "Next" }).click();
+  await expect(page.getByText("sales@acme.test").first()).toBeVisible();
+});
 
-  await expect(page.getByRole("heading", { name: "Sending basics" })).toBeVisible();
-  await page.getByLabel("Emails per day per account").fill("25");
-  await page.getByRole("button", { name: "Next" }).click();
+test("the guide opens the part named in the address, and Open all works", async ({ page }) => {
+  await page.goto("/w/default/guide#google");
+  await expect(page.locator("details#google")).toHaveAttribute("open", "");
+  await expect(page.locator("details#microsoft")).not.toHaveAttribute("open", "");
+  await page.getByRole("button", { name: "Open all" }).click();
+  await expect(page.locator("details#microsoft")).toHaveAttribute("open", "");
+  await page.getByRole("button", { name: "Close all" }).click();
+  await expect(page.locator("details#google")).not.toHaveAttribute("open", "");
+});
 
-  await expect(page.getByRole("heading", { name: /Connect an AI model/ })).toBeVisible();
-  await page.getByRole("button", { name: "Skip for now" }).click();
-  await expect(page.getByRole("heading", { name: /Import leads/ })).toBeVisible();
-  await page.getByRole("button", { name: "Skip for now" }).click();
-  await page.getByRole("button", { name: "Go to dashboard" }).click();
-  await expect(page).toHaveURL(/\/w\/default\/campaigns/);
+test("Settings → Environment saves a Google client id", async ({ page }) => {
+  await page.goto("/w/default/settings/environment");
+  await page.getByLabel("Client ID").fill("e2e.apps.googleusercontent.com");
+  await page.getByRole("button", { name: "Save" }).first().click();
+  await expect(page.getByText("Saved", { exact: true }).first()).toBeVisible();
+  await page.reload();
+  await expect(page.getByLabel("Client ID")).toHaveValue("e2e.apps.googleusercontent.com");
 });
 
 test("an account setting is saved and read back", async ({ page }) => {
   await page.goto("/w/default/accounts");
   await page.getByRole("link", { name: "sales@acme.test" }).click();
   await page.getByRole("link", { name: "Sending" }).click();
-  await expect(page.getByLabel("Emails per day")).toHaveValue("25");
   await page.getByLabel("Emails per day").fill("12");
   await page.getByRole("button", { name: "Save" }).click();
   await expect(page.getByRole("status").filter({ hasText: "Saved" })).toBeVisible();

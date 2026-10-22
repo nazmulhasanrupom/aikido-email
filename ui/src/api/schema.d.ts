@@ -2976,6 +2976,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/settings/environment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The settings the app can save, and the ones that only `.env` can change.
+         * @description Scope: `admin` (owner and admin sessions). A secret is never sent: only `is_set` and the last 4 characters. A value set in the env wins over a saved one (`source` is `env`) and cannot be changed here.
+         */
+        get: operations["get_environment"];
+        /**
+         * Save or remove settings.
+         * @description Scope: `admin`. Nothing is saved when one key is wrong. A saved value works at once. Other server copies read it within 60 seconds. Values are never logged.
+         */
+        put: operations["put_environment"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/settings/environment/test/{group}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Check a group of keys. Makes no login.
+         * @description Scope: `admin`. Google: the Client ID has the right shape, the secret is set, `AIKIDO_PUBLIC_URL` is set. Microsoft: the keys are set and the tenant answers on its OpenID address. Real logins are not tried.
+         */
+        post: operations["test_group"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/ui/onboarding": {
         parameters: {
             query?: never;
@@ -4430,6 +4474,47 @@ export interface components {
         EnginePauseReply: {
             paused: boolean;
         };
+        EnvReadOnlyItem: {
+            key: string;
+            /** @description `None` for a secret, and for a value that is not set. */
+            value?: string | null;
+            secret: boolean;
+        };
+        EnvSettingItem: {
+            default?: string | null;
+            /** @description `google` or `microsoft`. */
+            group: string;
+            help: string;
+            /** @description A value exists, from the env or from the app. */
+            is_set: boolean;
+            key: string;
+            label: string;
+            /** @description Secrets only: the last 4 characters. */
+            last4?: string | null;
+            /** @description Always `false`: a saved value works at once. */
+            restart_needed: boolean;
+            secret: boolean;
+            /** @description `env` (set on the server, locked), `app` (saved in the app) or `unset`. */
+            source: string;
+            /** @description The value. Never sent for a secret. */
+            value?: string | null;
+        };
+        EnvSettingsPut: {
+            /** @description `KEY: "value"` saves. `KEY: null` removes the saved value. */
+            values: {
+                [key: string]: string | null;
+            };
+        };
+        EnvSettingsReply: {
+            items: components["schemas"]["EnvSettingItem"][];
+            /** @description Settings that only the `.env` file on the server can change (the server needs them before it can read the database). */
+            read_only: components["schemas"]["EnvReadOnlyItem"][];
+        };
+        EnvTestReply: {
+            /** @description What was checked, in plain words. */
+            message: string;
+            ok: boolean;
+        };
         EngineStatus: {
             accounts: {
                 [key: string]: number;
@@ -5736,7 +5821,7 @@ export interface components {
             done: boolean;
             /** @description Steps the user chose to skip. */
             skipped: string[];
-            /** @description `connect-email`, `sending-basics`, `ai`, `import` or `done`. */
+            /** @description `design` or `done`. */
             step: string;
         };
         /**
@@ -6615,8 +6700,6 @@ export interface components {
             email: string;
             name: string;
             password: string;
-            /** @description Printed in the server log on first start, and saved in `./data/setup_code.txt`. */
-            setup_code: string;
             workspace_name: string;
         };
         /**
@@ -12291,6 +12374,91 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["UiConfig"];
                 };
+            };
+        };
+    };
+    get_environment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvSettingsReply"];
+                };
+            };
+        };
+    };
+    put_environment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EnvSettingsPut"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvSettingsReply"];
+                };
+            };
+            /** @description set_by_env */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description unknown_setting, invalid_value */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    test_group: {
+        parameters: {
+            query?: never;
+            header?: never;
+            /** @description `google` or `microsoft` */
+            path: {
+                group: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvTestReply"];
+                };
+            };
+            /** @description unknown_group */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

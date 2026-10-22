@@ -48,6 +48,10 @@ export const q = {
     queryKey: ["ui", "onboarding"],
     queryFn: () => http.get<S["OnboardingReply"]>("/v1/ui/onboarding"),
   }),
+  environment: queryOptions({
+    queryKey: ["settings", "environment"],
+    queryFn: () => http.get<S["EnvSettingsReply"]>("/v1/settings/environment"),
+  }),
   alerts: queryOptions({
     queryKey: ["ui", "alerts"],
     queryFn: () => http.get<S["Alert"][]>("/v1/ui/alerts"),

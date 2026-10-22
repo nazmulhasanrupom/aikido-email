@@ -1,4 +1,5 @@
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { Mail } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { ApiProblem, messageOf } from "@/api/errors";
@@ -182,8 +183,11 @@ function OAuthFlow({
     }
   }
 
-  const cfg = useConfig();
-  const notReady = error instanceof ApiProblem && error.code === "oauth_not_configured";
+  const config = useQuery(q.config).data;
+  const oauth = config?.oauth;
+  const ready = oauth ? (provider === "gmail" ? oauth.gmail : oauth.microsoft) : true;
+  const redirect = config?.redirect_uris[provider] ?? null;
+  const notReady = !ready || (error instanceof ApiProblem && error.code === "oauth_not_configured");
   return (
     <div className="flex flex-col gap-4">
       <p className="text-muted">
@@ -192,16 +196,31 @@ function OAuthFlow({
       {state === "waiting" && <Notice>Waiting for {label}...</Notice>}
       {notReady && (
         <Notice tone="warning">
-          <p className="mb-2">{PROBLEM_WORDS.oauth_not_configured}</p>
-          <p>
-            Set the {label} client id and secret in the server settings (see the API guide, section
-            7). In the {label} console, use this redirect address:
+          <p className="mb-2">
+            Add your {label} keys in{" "}
+            <Link
+              to="/w/$ws/settings/environment"
+              params={{ ws: "default" }}
+              className="font-medium underline"
+            >
+              Settings → Environment
+            </Link>
+            . The{" "}
+            <Link
+              to="/w/$ws/guide"
+              params={{ ws: "default" }}
+              hash={provider === "gmail" ? "google" : "microsoft"}
+              className="underline"
+            >
+              Guide
+            </Link>{" "}
+            shows how to get them. In the {label} console, use this redirect address:
           </p>
           <div className="mt-2 flex items-center gap-2">
             <code className="min-w-0 flex-1 truncate rounded bg-surface-2 px-2 py-1 font-mono text-xs">
-              {cfg?.[provider] ?? ""}
+              {redirect ?? "Set AIKIDO_PUBLIC_URL in .env first"}
             </code>
-            {cfg?.[provider] && <CopyButton text={cfg[provider] as string} />}
+            {redirect && <CopyButton text={redirect} />}
           </div>
           {provider === "gmail" && (
             <p className="mt-2 text-xs">
@@ -218,7 +237,7 @@ function OAuthFlow({
         <Button variant="secondary" onClick={onBack}>
           Back
         </Button>
-        <Button busy={state === "waiting"} onClick={start}>
+        <Button busy={state === "waiting"} disabled={!ready} onClick={start}>
           Connect {label}
         </Button>
       </div>
@@ -230,17 +249,6 @@ function OAuthFlow({
 function isNewOrChanged(a: S["AccountView"], before: Map<string, string>): boolean {
   const old = before.get(a.id);
   return old === undefined || old !== a.updated_at;
-}
-
-function useConfig(): S["RedirectUris"] | undefined {
-  const [uris, setUris] = useState<S["RedirectUris"]>();
-  useEffect(() => {
-    http
-      .get<S["UiConfig"]>("/v1/ui/config")
-      .then((c) => setUris(c.redirect_uris))
-      .catch(() => {});
-  }, []);
-  return uris;
 }
 
 export interface Server {

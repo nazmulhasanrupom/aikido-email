@@ -1,30 +1,22 @@
 import { expect, test } from "@playwright/test";
-import { authed, expectInApp, newPage, OWNER, setupCode, theme } from "./helpers";
+import { authed, expectInApp, newPage, OWNER, theme } from "./helpers";
 
 // These tests build on each other: the first one makes the owner account.
 test.describe.configure({ mode: "serial" });
 
-test("a fresh server sends you to the setup page, and a wrong code is refused", async ({
+test("a fresh server sends you to the setup page, and it asks for no setup code", async ({
   page,
 }) => {
   await page.goto("/");
   await expect(page).toHaveURL(/\/setup$/);
   await expect(page.getByRole("heading", { name: "Set up AIKIDO EMAIL" })).toBeVisible();
-
-  await page.getByLabel("Setup code").fill("AAAA-BBBB-CCCC");
-  await page.getByLabel("Your name").fill(OWNER.name);
-  await page.getByLabel("Email", { exact: true }).fill(OWNER.email);
-  await page.getByLabel("Password", { exact: true }).fill(OWNER.password);
-  await page.getByLabel("Workspace name").fill(OWNER.workspace);
-  await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page.getByText("The setup code is wrong")).toBeVisible();
-  await expect(page).toHaveURL(/\/setup$/);
+  await expect(page.getByText("The first account becomes the owner.")).toBeVisible();
+  await expect(page.getByLabel("Setup code")).toHaveCount(0);
 });
 
 test("setup checks the form before it asks the server", async ({ page }) => {
   await page.goto("/setup");
   await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page.getByText("Type the setup code.")).toBeVisible();
   await expect(page.getByText("Type your name.")).toBeVisible();
   await page.getByLabel("Password", { exact: true }).fill("short");
   await page.getByRole("button", { name: "Create account" }).click();
@@ -43,7 +35,6 @@ test("the password meter and the show button work, and a weak password is refuse
   await page.getByRole("button", { name: "Hide password" }).click();
   await expect(password).toHaveAttribute("type", "password");
 
-  await page.getByLabel("Setup code").fill(setupCode());
   await page.getByLabel("Your name").fill(OWNER.name);
   await page.getByLabel("Email", { exact: true }).fill(OWNER.email);
   await page.getByLabel("Workspace name").fill(OWNER.workspace);
@@ -53,17 +44,16 @@ test("the password meter and the show button work, and a weak password is refuse
   await expect(page.getByText("Strength: Strong")).toBeVisible();
 });
 
-test("setup with the code makes the owner and shows the app", async ({ page }) => {
+test("setup makes the owner and shows the design screen", async ({ page }) => {
   await page.goto("/setup");
-  await page.getByLabel("Setup code").fill(setupCode());
   await page.getByLabel("Your name").fill(OWNER.name);
   await page.getByLabel("Email", { exact: true }).fill(OWNER.email);
   await page.getByLabel("Password", { exact: true }).fill(OWNER.password);
   await page.getByLabel("Workspace name").fill(OWNER.workspace);
   await page.getByRole("button", { name: "Create account" }).click();
 
-  await expect(page).toHaveURL(/\/onboarding\/connect-email$/);
-  await expect(page.getByRole("heading", { name: "Connect an email account" })).toBeVisible();
+  await expect(page).toHaveURL(/\/onboarding\/design$/);
+  await expect(page.getByRole("heading", { name: "Pick a design" })).toBeVisible();
   await page.goto("/w/default/campaigns");
   await expect(page).toHaveURL(/\/w\/default\/campaigns$/);
   await expectInApp(page);

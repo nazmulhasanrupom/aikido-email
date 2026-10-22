@@ -58,13 +58,14 @@ pub fn app_state(pool: PgPool) -> AppState {
     state
 }
 
-/// Make the three keys and return them by scope.
+/// Make one key per scope and return them by scope. The server makes no keys by itself.
 pub async fn bootstrap_keys(state: &AppState) -> HashMap<Scope, String> {
-    api_keys::bootstrap(&state.pool, &state.config)
-        .await
-        .unwrap()
-        .into_iter()
-        .collect()
+    let mut keys = HashMap::new();
+    for &scope in Scope::ALL {
+        let (_, key) = api_keys::create(&state.pool, scope, "test").await.unwrap();
+        keys.insert(scope, key);
+    }
+    keys
 }
 
 pub struct Response {
@@ -147,11 +148,10 @@ pub fn shared_clock(state: &mut AppState, start: DateTime<Utc>) -> Arc<Mutex<Dat
     clock
 }
 
-/// First boot: make the setup code, set up the owner, return the owner's session.
+/// First boot: set up the owner, return the owner's session.
 pub async fn setup_owner(state: &AppState) -> Web {
-    let code = aikido_email::users::setup::ensure_setup_code(&state.pool, &state.config).await.unwrap().expect("a code on a fresh database");
     let body = serde_json::json!({
-        "setup_code": code, "name": "Olivia Owner", "email": "owner@example.com", "password": STRONG, "workspace_name": "Acme"
+        "name": "Olivia Owner", "email": "owner@example.com", "password": STRONG, "workspace_name": "Acme"
     });
     let resp = call_with(state, "POST", "/v1/auth/setup", &[("origin", ORIGIN)], Some(body)).await;
     assert_eq!(resp.status, StatusCode::CREATED, "{:?}", resp.body);

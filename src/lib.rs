@@ -2,6 +2,7 @@
 //! `email_management` is the existing connector code (OAuth and IMAP/SMTP connect flows).
 pub mod accounts;
 pub mod admin;
+pub mod app_settings;
 pub mod auth;
 pub mod campaigns;
 pub mod config;

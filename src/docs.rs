@@ -50,6 +50,7 @@ impl Modify for SecurityAddon {
         (name = "tracking", description = "Open tracking: tracking domains, campaign settings, previews, open numbers. Scope: tracking. The image routes `/i/...` and `/p/...` need no key"),
         (name = "dev", description = "Developer tools: live log, SQL console, tables, controls. Scope: admin (owner and admin)"),
         (name = "admin", description = "API keys. Scope: admin"),
+        (name = "settings", description = "Settings that the app can save: Google and Microsoft keys. Scope: admin (owner and admin)"),
         (name = "auth", description = "Web login, first-boot setup, invites. No key needed"),
         (name = "users", description = "Web users, sessions, team. Needs a web session"),
         (name = "ui", description = "Helpers for the web app: config, onboarding, alerts. A key or a session"),
@@ -97,6 +98,7 @@ pub fn api_router(state: AppState) -> (axum::Router<AppState>, utoipa::openapi::
         .merge(crate::devtools::routes::router(state.clone()))
         .merge(crate::reports::routes::router(state.clone()))
         .merge(crate::admin::routes::router(state.clone()))
+        .merge(crate::app_settings::routes::router(state.clone()))
         .merge(crate::users::routes::public_router())
         .merge(crate::users::routes::router(state.clone()))
         .merge(crate::ui_api::routes::router(state))

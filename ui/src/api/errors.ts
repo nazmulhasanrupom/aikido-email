@@ -27,7 +27,6 @@ const WORDS: Record<string, string> = {
   invalid_credentials: "Email or password is wrong.",
   too_many_attempts: "Too many tries. Wait a little, then try again.",
   setup_done: "The owner account exists already. Log in instead.",
-  setup_code_wrong: "The setup code is wrong. Look in the server log, or in ./data/setup_code.txt.",
   password_too_short: "Use at least 12 characters.",
   password_too_long: "Use at most 128 characters.",
   password_too_weak: "This password is too easy to guess. Try a longer phrase of unrelated words.",

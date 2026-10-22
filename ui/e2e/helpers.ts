@@ -1,4 +1,3 @@
-import { readFileSync } from "node:fs";
 import {
   type Browser,
   type BrowserContext,
@@ -13,13 +12,6 @@ export const OWNER = {
   password: "correct horse battery staple",
   workspace: "Acme Outreach",
 };
-
-/** The setup code that the server wrote to its data folder. */
-export function setupCode(): string {
-  const file = process.env.AIKIDO_E2E_SETUP_CODE_FILE;
-  if (!file) throw new Error("AIKIDO_E2E_SETUP_CODE_FILE is not set. Use e2e/run.sh.");
-  return readFileSync(file, "utf8").trim();
-}
 
 export async function logIn(page: Page, email = OWNER.email, password = OWNER.password) {
   await page.goto("/login");

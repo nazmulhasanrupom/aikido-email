@@ -13,6 +13,7 @@ import { ImportModal } from "@/features/leads/ImportModal";
 import { dailyQuery } from "@/features/reports/DailyChart";
 import { presetRange } from "@/features/reports/parts";
 import { useUser } from "@/features/settings/useUser";
+import { GetStarted } from "./GetStarted";
 import { cn } from "@/lib/cn";
 import { fmtAgo, fmtInt, fmtPct } from "@/lib/format";
 import { say } from "@/lib/words";
@@ -49,6 +50,7 @@ export function Home({ ws }: { ws: string }) {
           </>
         }
       />
+      <GetStarted ws={ws} />
       <Week />
       <div className="grid gap-5 lg:grid-cols-3">
         <Campaigns ws={ws} onNew={() => setOpen("campaign")} className="lg:col-span-2" />
