@@ -67,12 +67,13 @@ interface NavItem {
   label: string;
   icon: typeof Send;
   soon?: boolean;
+  beta?: boolean;
 }
 
 const NAV: NavItem[] = [
   { to: "/w/$ws/ai", label: "Aikido AI", icon: Sparkles, soon: true },
   { to: "/w/$ws/campaigns", label: "Campaigns", icon: Send },
-  { to: "/w/$ws/automations", label: "Automations", icon: Workflow },
+  { to: "/w/$ws/automations", label: "Automations", icon: Workflow, beta: true },
   { to: "/w/$ws/leads", label: "Leads", icon: Users },
   { to: "/w/$ws/inbox", label: "Inbox", icon: Inbox },
   { to: "/w/$ws/accounts", label: "Email Accounts", icon: Mail },
@@ -172,6 +173,16 @@ export function Sidebar(p: Props) {
                   )}
                 >
                   Soon
+                </span>
+              )}
+              {item.beta && (
+                <span
+                  className={cn(
+                    "rounded bg-(--sidebar-hover) px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-(--sidebar-muted)",
+                    slim && "md:hidden",
+                  )}
+                >
+                  Beta
                 </span>
               )}
               {item.to === "/w/$ws/inbox" && inboxCount > 0 ? (

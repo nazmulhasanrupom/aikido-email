@@ -84,7 +84,12 @@ export function ListPage({ ws }: { ws: string }) {
   return (
     <Page wide>
       <PageHeader
-        title="Automations"
+        title={
+          <span className="inline-flex items-center gap-2">
+            Automations
+            <Pill tone="info">Beta</Pill>
+          </span>
+        }
         sub="Node workflows for work that needs outside steps."
         actions={actions}
       />

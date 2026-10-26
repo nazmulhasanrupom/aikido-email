@@ -66,12 +66,13 @@ interface NavItem {
     | "/w/$ws/reports";
   label: string;
   exact?: boolean;
+  beta?: boolean;
 }
 
 const NAV: NavItem[] = [
   { to: "/w/$ws", label: "Home", exact: true },
   { to: "/w/$ws/campaigns", label: "Campaigns" },
-  { to: "/w/$ws/automations", label: "Automations" },
+  { to: "/w/$ws/automations", label: "Automations", beta: true },
   { to: "/w/$ws/leads", label: "Leads" },
   { to: "/w/$ws/inbox", label: "Inbox" },
   { to: "/w/$ws/accounts", label: "Accounts" },
@@ -142,6 +143,7 @@ function TopNav(p: FrameProps) {
             className={NAV_LINK}
           >
             {item.label}
+            {item.beta && <BetaMark />}
             {item.to === "/w/$ws/inbox" && inbox > 0 && <Count n={inbox} />}
           </Link>
         ))}
@@ -165,6 +167,15 @@ function TopNav(p: FrameProps) {
         <AccountMenu {...p} />
       </div>
     </header>
+  );
+}
+
+/** A small "Beta" tag after a page name. */
+function BetaMark() {
+  return (
+    <span className="ml-1 rounded border border-current px-1 text-[9px] font-semibold uppercase leading-4 tracking-wide opacity-70">
+      Beta
+    </span>
   );
 }
 
@@ -284,6 +295,7 @@ function PhoneMenu({ ws, inbox }: { ws: string; inbox: number }) {
               activeProps={{ className: "font-semibold" }}
             >
               {item.label}
+              {item.beta && <BetaMark />}
               {item.to === "/w/$ws/inbox" && inbox > 0 && (
                 <span className="ml-auto text-xs text-muted">{inbox > 99 ? "99+" : inbox} new</span>
               )}

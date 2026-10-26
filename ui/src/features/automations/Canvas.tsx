@@ -313,36 +313,56 @@ const WfEdgeView = memo(function WfEdgeView({
     targetPosition,
   });
   const d = data as EdgeData | undefined;
+  // the cross shows while the pointer is on the line or on the cross (a short delay lets it cross the gap)
+  const [hover, setHover] = useState(false);
+  const leave = useRef<number | undefined>(undefined);
+  const enter = () => {
+    window.clearTimeout(leave.current);
+    setHover(true);
+  };
+  const out = () => {
+    leave.current = window.setTimeout(() => setHover(false), 150);
+  };
+  useEffect(() => () => window.clearTimeout(leave.current), []);
+  const canCut = !ed.readOnly && !!d && (hover || selected);
   return (
     <>
-      <BaseEdge
-        id={id}
-        path={path}
-        {...(markerEnd ? { markerEnd } : {})}
-        className={d?.live ? "wf-edge-live" : ""}
-        interactionWidth={24}
-      />
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: hover only; the cross is a real button */}
+      <g onMouseEnter={enter} onMouseLeave={out}>
+        <BaseEdge
+          id={id}
+          path={path}
+          {...(markerEnd ? { markerEnd } : {})}
+          className={d?.live ? "wf-edge-live" : ""}
+          {...(canCut && hover ? { style: { stroke: "var(--danger)" } } : {})}
+          interactionWidth={24}
+        />
+      </g>
       <EdgeLabelRenderer>
+        {/* biome-ignore lint/a11y/noStaticElementInteractions: hover only; the cross is a real button */}
         <div
           className="nodrag nopan absolute flex items-center gap-1"
           style={{
             transform: `translate(-50%, -50%) translate(${lx}px, ${ly}px)`,
             pointerEvents: "all",
           }}
+          onMouseEnter={enter}
+          onMouseLeave={out}
         >
           {d?.count !== undefined && (
             <span className="rounded-full border border-border bg-surface px-1.5 text-[10px] leading-4 text-muted">
               {d.count} {d.count === 1 ? "item" : "items"}
             </span>
           )}
-          {selected && !ed.readOnly && d && (
+          {canCut && d && (
             <button
               type="button"
-              aria-label="Delete the line"
+              aria-label="Cut the line"
+              title="Cut the line"
               onClick={() => del({ from: d.from, port: d.port, to: d.to })}
-              className="flex size-5 items-center justify-center rounded-full border border-border bg-surface text-muted hover:text-danger"
+              className="flex size-6 items-center justify-center rounded-full border border-danger bg-surface text-danger shadow-(--shadow-button) hover:bg-danger hover:text-white"
             >
-              <X size={12} />
+              <X size={14} aria-hidden="true" />
             </button>
           )}
         </div>
