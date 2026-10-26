@@ -17,7 +17,6 @@
 //! - `transfer.rs`, `transfer_routes.rs`, `templates.rs`, `workprocess.rs`: export, import (with fix-ups), the 4 templates, `workprocess.md`
 pub mod actor;
 pub mod catalog;
-pub mod copilot;
 pub mod definition;
 pub mod editor;
 pub mod engine;

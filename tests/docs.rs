@@ -298,12 +298,6 @@ const EXPECTED: &[(&str, &str, Option<&str>)] = &[
     ("post", "/v1/automations/templates/{id}/create", Some("automations")),
     ("get", "/v1/automations/workprocess.md", Some("automations")),
     // automations phase 8: the AI box
-    ("get", "/v1/automations/copilot/threads", Some("automations")),
-    ("post", "/v1/automations/copilot/threads", Some("automations")),
-    ("delete", "/v1/automations/copilot/threads/{id}", Some("automations")),
-    ("get", "/v1/automations/copilot/threads/{id}/messages", Some("automations")),
-    ("post", "/v1/automations/copilot/threads/{id}/messages", Some("automations")),
-    ("post", "/v1/automations/copilot/messages/{id}/undo", Some("automations")),
     // settings in the app (admin) and the public unsubscribe page
     ("get", "/v1/settings/environment", Some("admin")),
     ("put", "/v1/settings/environment", Some("admin")),

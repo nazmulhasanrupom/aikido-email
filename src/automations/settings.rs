@@ -33,9 +33,6 @@ pub struct AutomationSettings {
     pub event_tick_secs: i64,
     /// A run waits this many hours for the AI budget before it fails (0 to 168).
     pub ai_budget_wait_hours: i64,
-    /// The AI provider of the copilot: a provider name, `default_draft` or `default_slot`.
-    pub copilot_provider: String,
-    pub copilot_enabled: bool,
     /// Runs at the same time on one server copy (1 to 100). The env var `AIKIDO_AUTOMATIONS_MAX_PARALLEL` wins.
     pub max_parallel_runs: i64,
 }
@@ -52,8 +49,6 @@ impl Default for AutomationSettings {
             webhook_rate_per_min: 60,
             event_tick_secs: 5,
             ai_budget_wait_hours: 24,
-            copilot_provider: "default_draft".into(),
-            copilot_enabled: true,
             max_parallel_runs: 10,
         }
     }
@@ -69,8 +64,6 @@ const KEYS: &[&str] = &[
     "webhook_rate_per_min",
     "event_tick_secs",
     "ai_budget_wait_hours",
-    "copilot_provider",
-    "copilot_enabled",
     "max_parallel_runs",
 ];
 
@@ -112,17 +105,12 @@ impl AutomationSettings {
             "allow_private_network" => self.allow_private_network = flag(v)?,
             "allow_lead_erase" => self.allow_lead_erase = flag(v)?,
             "fetch_respect_robots" => self.fetch_respect_robots = flag(v)?,
-            "copilot_enabled" => self.copilot_enabled = flag(v)?,
             "retention_days" => self.retention_days = num(v, 1, 365)?,
             "test_runs_kept" => self.test_runs_kept = num(v, 1, 100)?,
             "webhook_rate_per_min" => self.webhook_rate_per_min = num(v, 1, 6000)?,
             "event_tick_secs" => self.event_tick_secs = num(v, 1, 300)?,
             "ai_budget_wait_hours" => self.ai_budget_wait_hours = num(v, 0, 168)?,
             "max_parallel_runs" => self.max_parallel_runs = num(v, 1, 100)?,
-            "copilot_provider" => {
-                let s = v.as_str().map(str::trim).filter(|s| !s.is_empty() && s.len() <= 200).ok_or_else(|| bad(k, "must be a provider name, 1 to 200 characters."))?;
-                self.copilot_provider = s.to_string();
-            }
             "fetch_blocked_domains" => {
                 let list = v.as_array().filter(|a| a.len() <= 200).ok_or_else(|| bad(k, "must be a list of up to 200 host names."))?;
                 let mut out = vec![];

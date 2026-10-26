@@ -2,7 +2,6 @@ import { queryOptions, useQuery } from "@tanstack/react-query";
 import { problemFrom } from "@/api/errors";
 import { http } from "@/api/http";
 import { q } from "@/api/queries";
-import type { ChatMessage, Thread } from "./copilot";
 import type { ImportCheckReply, ImportReply, ImportSource, TemplateInfo } from "./transfer";
 import type {
   ApiOperation,
@@ -264,36 +263,4 @@ export const call = {
   saveSettings: (body: Obj) => http.patch<Obj>(`${base}/settings`, { body }),
   pause: () => http.post<EngineStatus>(`${base}/engine/pause`),
   resume: () => http.post<EngineStatus>(`${base}/engine/resume`),
-};
-
-export interface SendReply {
-  thread: Thread;
-  user_message: ChatMessage;
-  message: ChatMessage;
-  workflow_id: string | null;
-  draft_hash: string | null;
-}
-
-const cp = `${base}/copilot`;
-
-/** The AI box (map 16). */
-export const copilot = {
-  threads: (workflowId?: string) =>
-    http.get<{ threads: Thread[] }>(`${cp}/threads`, {
-      query: workflowId ? { workflow_id: workflowId } : {},
-    }),
-  createThread: (workflowId?: string) =>
-    http.post<Thread>(`${cp}/threads`, { body: workflowId ? { workflow_id: workflowId } : {} }),
-  deleteThread: (id: string) => http.delEmpty(`${cp}/threads/{id}`, { path: { id } }),
-  messages: (id: string) =>
-    http.get<{ thread: Thread; messages: ChatMessage[] }>(`${cp}/threads/{id}/messages`, {
-      path: { id },
-      query: { limit: 200 },
-    }),
-  send: (id: string, body: { text: string; workflow_id?: string; apply?: boolean }) =>
-    http.post<SendReply>(`${cp}/threads/{id}/messages`, { path: { id }, body }),
-  undo: (messageId: number) =>
-    http.post<{ message: ChatMessage; workflow: WorkflowDetail }>(`${cp}/messages/{id}/undo`, {
-      path: { id: messageId },
-    }),
 };

@@ -24,6 +24,9 @@ use utoipa::{IntoParams, ToSchema};
 use utoipa_axum::{router::OpenApiRouter, routes};
 use uuid::Uuid;
 
+/// The most data (JSON text) a node that runs alone takes from earlier test runs.
+const LONE_SEED_BYTES: usize = 2 * 1024 * 1024;
+
 /// A run page shows this many items per port. The rest is read with the node route.
 const ITEMS_ON_RUN_PAGE: usize = 20;
 
@@ -69,7 +72,7 @@ pub struct TestBody {
     pub trigger_item: Option<Value>,
     /// Build the trigger item from a real lead, campaign, list or message, the way a real event would.
     pub test_event: Option<TestEvent>,
-    /// Test only this node: the engine runs the path from the trigger to it and stops there. Pins replace the nodes on the way.
+    /// Test only this node: the engine runs the path from the trigger to it and stops there. Pins replace the nodes on the way. A node that no trigger reaches runs alone: its input is the output of the node before it (a pin, else the newest test run), else `trigger_item`, else an empty item.
     pub only_node: Option<String>,
     /// `true`: nodes that change data really do it. Default `false`: they say what they would do.
     pub real_writes: Option<bool>,
@@ -122,21 +125,49 @@ pub(crate) async fn queue_test(st: &AppState, id: Uuid, b: TestBody, user_id: Op
         Err(_) => return Ok(Err(invalid("workflow_has_errors", "The draft has errors. Fix them first.", &validation))),
     };
 
+    // a node that no trigger reaches (or a workflow without a trigger) runs alone
+    let is_trigger_node = |n: &Node| Registry::global().spec(&n.type_id).is_some_and(|s| s.is_trigger());
+    let lone: Option<String> = match &b.only_node {
+        Some(only) => match def.node(only) {
+            None => return Err(ApiError::unprocessable("invalid_only_node", format!("There is no node `{only}`."))),
+            Some(n) if is_trigger_node(n) => None,
+            Some(_) => {
+                let reaches = |t: &Node| graph::reachable(&def, &t.id).contains(only);
+                let wanted = b.trigger_node_id.as_deref().and_then(|t| def.node(t));
+                let reached = match wanted {
+                    Some(t) => is_trigger_node(t) && reaches(t),
+                    None => def.nodes.iter().any(|t| is_trigger_node(t) && reaches(t)),
+                };
+                if reached { None } else { Some(only.clone()) }
+            }
+        },
+        None => None,
+    };
+
     // the trigger
-    let trigger_id = match &b.trigger_node_id {
-        Some(t) => t.clone(),
-        None => {
-            let is_trigger = |n: &&Node| Registry::global().spec(&n.type_id).is_some_and(|s| s.is_trigger());
-            def.nodes.iter().find(|n| n.type_id == "trigger.manual").or_else(|| def.nodes.iter().find(is_trigger)).map(|n| n.id.clone()).unwrap_or_default()
+    let trigger_id = match (&lone, &b.trigger_node_id) {
+        (Some(only), _) => only.clone(),
+        (None, Some(t)) => t.clone(),
+        (None, None) => {
+            let is_trigger = |n: &&Node| is_trigger_node(n);
+            match &b.only_node {
+                // the first trigger that leads to the node
+                Some(only) => def.nodes.iter().filter(is_trigger).find(|t| graph::reachable(&def, &t.id).contains(only)).map(|n| n.id.clone()),
+                None => def.nodes.iter().find(|n| n.type_id == "trigger.manual").or_else(|| def.nodes.iter().find(is_trigger)).map(|n| n.id.clone()),
+            }
+            .or_else(|| def.nodes.iter().find(|n| n.type_id == "trigger.manual").or_else(|| def.nodes.iter().find(is_trigger)).map(|n| n.id.clone()))
+            .unwrap_or_default()
         }
     };
     let trigger_type = def.node(&trigger_id).map(|n| n.type_id.clone());
-    if !trigger_type.as_deref().and_then(|t| Registry::global().spec(t)).is_some_and(|s| s.is_trigger()) {
-        return Err(ApiError::unprocessable("invalid_trigger_node", format!("`{trigger_id}` is not a trigger node of this workflow.")));
-    }
-    if let Some(only) = &b.only_node {
-        if def.node(only).is_none() || !graph::reachable(&def, &trigger_id).contains(only) {
-            return Err(ApiError::unprocessable("invalid_only_node", format!("The trigger `{trigger_id}` does not reach the node `{only}`.")));
+    if lone.is_none() {
+        if !trigger_type.as_deref().and_then(|t| Registry::global().spec(t)).is_some_and(|s| s.is_trigger()) {
+            return Err(ApiError::unprocessable("invalid_trigger_node", format!("`{trigger_id}` is not a trigger node of this workflow.")));
+        }
+        if let Some(only) = &b.only_node {
+            if def.node(only).is_none() || !graph::reachable(&def, &trigger_id).contains(only) {
+                return Err(ApiError::unprocessable("invalid_only_node", format!("The trigger `{trigger_id}` does not reach the node `{only}`.")));
+            }
         }
     }
 
@@ -146,7 +177,11 @@ pub(crate) async fn queue_test(st: &AppState, id: Uuid, b: TestBody, user_id: Op
         let up = graph::ancestors(&def, only);
         path.retain(|n| up.contains(n));
     }
-    validation.errors.retain(|e| e.node_id.as_ref().is_none_or(|n| path.contains(n)));
+    if lone.is_some() {
+        validation.errors.retain(|e| e.node_id.as_deref() == lone.as_deref());
+    } else {
+        validation.errors.retain(|e| e.node_id.as_ref().is_none_or(|n| path.contains(n)));
+    }
     validation.ok = validation.errors.is_empty();
     if !validation.ok {
         return Ok(Err(invalid("workflow_has_errors", "The workflow has errors on the tested path. Fix them first.", &validation)));
@@ -165,10 +200,56 @@ pub(crate) async fn queue_test(st: &AppState, id: Uuid, b: TestBody, user_id: Op
         return Err(ApiError::unprocessable("variable_missing", format!("Give a value for: {}. Set it in the workflow or send it in `variables`.", missing.join(", "))));
     }
 
+    // a lone node gets the output of the node before it (a pin, else the newest test), else an empty item
+    let mut lone_seed = Map::new();
+    let mut lone_input: Option<Value> = None;
+    let mut lone_item: Option<Map<String, Value>> = None;
+    if let Some(only) = &lone {
+        let mut ups = graph::ancestors(&def, only);
+        ups.remove(only);
+        let mut ids: Vec<&String> = ups.iter().collect();
+        ids.sort();
+        for nid in &ids {
+            if let Some(pin) = def.pins.get(*nid).filter(|p| !p.is_empty()) {
+                let port = def.node(nid).and_then(|n| Registry::global().spec(&n.type_id)).and_then(|s| s.ports.first().copied()).unwrap_or("main");
+                lone_seed.insert((*nid).clone(), json!({ port: pin }));
+            }
+        }
+        let want: Vec<String> = ids.iter().filter(|n| !lone_seed.contains_key(n.as_str())).map(|n| (*n).clone()).collect();
+        if !want.is_empty() {
+            let rows: Vec<(String, Value)> = sqlx::query_as(
+                "SELECT DISTINCT ON (n.node_id) n.node_id, n.output FROM automation_run_nodes n JOIN automation_runs r ON r.id = n.run_id \
+                 WHERE r.workflow_id = $1 AND r.mode = 'test' AND n.node_id = ANY($2) AND n.output IS NOT NULL AND n.status IN ('success', 'dry') \
+                 ORDER BY n.node_id, r.queued_at DESC, n.seq DESC",
+            )
+            .bind(id)
+            .bind(&want)
+            .fetch_all(&st.pool)
+            .await?;
+            let mut size = 0usize;
+            for (nid, out) in rows {
+                size += out.to_string().len();
+                if size > LONE_SEED_BYTES {
+                    break;
+                }
+                lone_seed.insert(nid, out);
+            }
+        }
+        for e in def.edges.iter().filter(|e| &e.to == only) {
+            let first = lone_seed.get(&e.from).and_then(|o| o.get(e.port())).and_then(Value::as_array).and_then(|a| a.first()).and_then(Value::as_object);
+            if let Some(first) = first {
+                lone_item = Some(first.clone());
+                lone_input = Some(json!({ "node": e.from, "port": e.port() }));
+                break;
+            }
+        }
+    }
+
     // the item the trigger gives
     let trigger_item: Map<String, Value> = match &b.trigger_item {
         Some(Value::Object(o)) => o.clone(),
         Some(_) => return Err(ApiError::unprocessable("invalid_trigger_item", "`trigger_item` must be a JSON object.")),
+        None if lone.is_some() => lone_item.unwrap_or_default(),
         None => {
             // a real lead, campaign, list or message the user picked
             let from_event = match (&b.test_event, trigger_type.as_deref()) {
@@ -202,7 +283,7 @@ pub(crate) async fn queue_test(st: &AppState, id: Uuid, b: TestBody, user_id: Op
     .bind(snapshot)
     .bind(&trigger_id)
     .bind(Value::Object(trigger_item))
-    .bind(json!({ "real_writes": b.real_writes.unwrap_or(false), "only_node": b.only_node }))
+    .bind(json!({ "real_writes": b.real_writes.unwrap_or(false), "only_node": b.only_node, "lone_seed": lone_seed, "lone_input": lone_input }))
     .bind(c.user_id)
     .bind(st.now())
     .execute(&st.pool)

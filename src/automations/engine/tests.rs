@@ -808,6 +808,33 @@ async fn only_node_that_the_trigger_cannot_reach_is_an_error() {
 }
 
 #[tokio::test]
+async fn a_node_no_trigger_reaches_runs_alone_with_the_seeded_output_of_its_parent() {
+    // `b` has no trigger before it; `a` is its parent in the file
+    let d = def(
+        json!([{ "id": "a", "type": "flow.noop" }, { "id": "b", "type": "data.set", "params": { "fields": { "got": "${{ json.x }}", "again": "${{ nodes.a.json.x }}" } } }, { "id": "c", "type": "flow.noop" }]),
+        json!([{ "from": "a", "to": "b" }, { "from": "b", "to": "c" }]),
+    );
+    let mut spec = spec_for(d, json!({ "x": 7 }));
+    spec.facts.trigger_node_id = "b".into();
+    spec.only_node = Some("b".into());
+    let mut state = RunState::default();
+    let lineage = super::run::seed_output(
+        &mut state,
+        "a",
+        std::collections::BTreeMap::from([("main".to_string(), vec![crate::automations::registry::Item::new(obj(json!({ "x": 7 })))])]),
+        "main",
+    );
+    spec.trigger_lineage = lineage;
+    let store = MemStore::new();
+    let outcome = execute(&spec, &mut state, &store, &Control::new()).await.expect("the store works");
+    assert_eq!(outcome, Outcome::Success);
+    let r = Res { outcome, state, store };
+    assert_eq!(r.items("b", "main")[0]["got"], 7);
+    assert_eq!(r.items("b", "main")[0]["again"], 7);
+    assert!(r.store.records_of("c").is_empty(), "nodes after the node do not run");
+}
+
+#[tokio::test]
 async fn the_trigger_item_is_the_start_of_every_lineage() {
     let d = def(json!([start(), { "id": "a", "type": "flow.noop" }]), edges(&["start", "a"]));
     let r = go(d, json!({ "k": 1 })).await;

@@ -122,23 +122,3 @@ test("download asks about pins only when there are some, and the LLM guide downl
   await page.getByRole("menuitem", { name: "Download" }).click();
   expect((await file).suggestedFilename()).toMatch(/\.aikido-workflow\.json$/);
 });
-
-test("the AI box opens a chat, and an answer shows a chip (needs an AI provider)", async ({
-  page,
-}) => {
-  await page.goto("/w/default/automations");
-  await page.getByRole("button", { name: /More for Hello flow/ }).waitFor();
-  await page
-    .getByRole("link", { name: /Hello flow/ })
-    .first()
-    .click();
-  await page.getByRole("button", { name: "Ask AI to build or change this workflow" }).click();
-  const chat = page.getByRole("complementary", { name: "AI chat" });
-  await expect(chat).toBeVisible();
-  await chat.getByLabel("Message to the AI").fill("Add a wait node of 1 second at the end");
-  await chat.getByRole("button", { name: "Send" }).click();
-  // with a provider: a chip with Undo; without one: the "Set up an AI provider" note
-  await expect(chat.getByText(/Applied:|Set up an AI provider/)).toBeVisible({ timeout: 90_000 });
-  await chat.getByRole("button", { name: "Close the chat" }).click();
-  await expect(chat).toBeHidden();
-});

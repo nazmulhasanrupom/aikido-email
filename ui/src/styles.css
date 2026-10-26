@@ -431,15 +431,3 @@ dialog[open]::backdrop {
   border-radius: var(--radius-control);
   overflow: hidden;
 }
-@keyframes wf-flash {
-  0%,
-  60% {
-    box-shadow: 0 0 0 4px var(--accent);
-  }
-  100% {
-    box-shadow: 0 0 0 0 transparent;
-  }
-}
-.wf-flash {
-  animation: wf-flash 2s ease-out 1;
-}

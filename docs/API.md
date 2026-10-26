@@ -2089,7 +2089,7 @@ Ids (`lead_id`, `campaign_id`, ...) must be UUIDs: a value like `../keys` is ref
 
 A secret is used as `${{ secret('NAME') }}` in any param, or in the `auth.secret` of HTTP Request (better). A missing secret is the node error `secret_not_found`. **Redaction:** before a node output, an error or a log line of a run is stored or shown, every secret value the run can use, and its base64, base64url and URL-encoded forms (and, for basic auth, the base64 of `user:secret`), is replaced with `[secret:NAME]`. The same holds for the data that later nodes read. A dry run shows the redacted call. An export never has secret values.
 
-Settings: `allow_private_network` (false), `allow_lead_erase` (false), `fetch_respect_robots` (true: forces robots.txt on for every Fetch page node), `fetch_blocked_domains` (`linkedin.com`, `www.linkedin.com`; up to 200), `retention_days` (30; 1 to 365), `test_runs_kept` (20; 1 to 100), `webhook_rate_per_min` (60), `event_tick_secs` (5), `ai_budget_wait_hours` (24), `copilot_provider` (`default_draft`), `copilot_enabled` (true), `max_parallel_runs` (10). The retention and test-run settings are read by the cleanup job. The others are used by later phases.
+Settings: `allow_private_network` (false), `allow_lead_erase` (false), `fetch_respect_robots` (true: forces robots.txt on for every Fetch page node), `fetch_blocked_domains` (`linkedin.com`, `www.linkedin.com`; up to 200), `retention_days` (30; 1 to 365), `test_runs_kept` (20; 1 to 100), `webhook_rate_per_min` (60), `event_tick_secs` (5), `ai_budget_wait_hours` (24), `max_parallel_runs` (10). The retention and test-run settings are read by the cleanup job. The others are used by later phases.
 
 ### The AI Agent node (phase 4)
 
@@ -2113,7 +2113,7 @@ Output: text gives `{ "text": "..." }`. JSON gives the declared keys only (an ex
 
 **Other node errors:** `ai_provider_unavailable` (rate limit, server error, connection; the client already retried), `ai_timeout`, `ai_auth_failed` (the provider is marked `auth_failed`, like the generator does), `ai_bad_request`, `ai_refused`, `ai_bad_response`. Each call counts as one outside call of the run (limit 2000).
 
-**`llm_calls`.** Every call writes one row with purpose `automation`, the provider, model, token counts, and the new nullable columns `automation_run_id`, `workflow_id`, `node_id` (migration 0026). No prompt and no answer is stored. `GET /v1/generator/usage` groups them as `automation` in `by_purpose`. The purposes `automation_copilot` and `automation_copilot_summary` are allowed by the table now and used by phase 8.
+**`llm_calls`.** Every call writes one row with purpose `automation`, the provider, model, token counts, and the new nullable columns `automation_run_id`, `workflow_id`, `node_id` (migration 0026). No prompt and no answer is stored. `GET /v1/generator/usage` groups them as `automation` in `by_purpose`. The purposes `automation_copilot` and `automation_copilot_summary` stay in the table but nothing writes them any more.
 
 **Daily token budget.** The calls count in the generator's `daily_token_budget` (input + output tokens of today, UTC, over all purposes). The budget is checked before every call. When it is used up, the node does **not** fail: the run goes to `waiting` with `resume_at` 10 minutes ahead, the node row has status `waiting` (error `ai_budget_reached`), and the node runs again from the start when the run wakes up (items the node already wrote in that try are written again). `on_error` and `retry` do not apply. After `ai_budget_wait_hours` (setting, default 24) of waiting in total, the run fails with `ai_budget_reached`. With `0` it fails at once. The wait is counted per run, and it is cleared when the node finishes. In a test run the node calls the model for real (it costs tokens but changes no data, so "Real writes" is not needed).
 
@@ -2257,28 +2257,9 @@ Stops: `stop_when` true, no next address or cursor, the next address was seen be
 
 **Also fixed:** every trigger node (`trigger.webhook`, `trigger.schedule`, ...) was a stub that answered `not_implemented` when a production run started at it; they now give their item on, like the manual trigger.
 
-### Phase 8: the AI box (copilot)
+### Phase 8: the AI box (removed)
 
-A chat that builds and changes workflows. All routes need scope `automations`. A session sees its own chats; an API key sees all chats. Setting `copilot_provider` (a provider name, `default_draft` or `default_slot`; default `default_draft`) picks the model; `copilot_enabled` turns the box off.
-
-| Method | Path | Use |
-| --- | --- | --- |
-| GET | `/v1/automations/copilot/threads` | `?workflow_id=`. `{ threads: [{ id, workflow_id, title, message_count, created_at, updated_at }] }`, newest first. Open the first one of a workflow. |
-| POST | `/v1/automations/copilot/threads` | Body (optional) `{ workflow_id? }`. `201` thread. No `workflow_id`: a chat for the list page. "New chat" is this call. `404 workflow_not_found`. |
-| DELETE | `/v1/automations/copilot/threads/{id}` | `204`. `404 thread_not_found`. Changes already applied stay. |
-| GET | `/v1/automations/copilot/threads/{id}/messages` | `?after=<message id>&limit=`. `{ thread, messages: [{ id, role, content, applied, has_workflow, created_at }] }`, oldest first. |
-| POST | `/v1/automations/copilot/threads/{id}/messages` | `{ text, workflow_id?, apply? }`. Answer `{ thread, user_message, message, workflow_id, draft_hash }`. |
-| POST | `/v1/automations/copilot/messages/{id}/undo` | `{ message, workflow }` (the `WorkflowDetail` after the undo). |
-
-**A turn.** The model gets the guide (`workprocess.md` with this install's names), a rolling summary, the chat, and a state block: the real current draft (hand edits included; pins are left out and kept by the server), its validation, and the newest test run (node errors and item counts per node). It answers `{ reply, action: "none"|"create"|"replace", workflow }`. A bad answer (no JSON, or a workflow with validation errors) gets one repair try. When the chat grows past about 24000 tokens the old turns are folded into the summary (one extra call, purpose `automation_copilot_summary`) and the newest 12 messages stay.
-
-**Apply.** `replace` saves the old draft in the draft history (source `copilot`), then the new draft; nodes that still exist keep their `position` and `pins`, new nodes are placed right of their parent. `create` makes a new workflow (draft history source `copilot`) and binds the chat to it (`workflow_id` in the answer; open it in the editor). The AI never publishes, activates, runs, or adds secrets. `apply: false` changes nothing and returns `applied.mode = "proposed"`.
-
-`message.applied` of an assistant message: `null` (only an answer), or `{ workflow_id, mode: "create"|"replace"|"proposed", diff: { added, removed, changed, edges_added, edges_removed, fields_changed }, draft_history_id?, undone? }`, or on failure (HTTP 200) `{ error, error_code: "invalid_workflow"|"bad_answer", errors: [{ code, node_id?, path?, message }] }`. For the "Try to fix" button, send the errors as the next message.
-
-**Undo** restores the draft saved in `applied.draft_history_id` (the draft before the change); the draft as it is now goes to the history first (source `restore`). Sets `applied.undone: true`. Only `replace` messages can be undone (`409 nothing_to_undo`); `404 history_not_found` if the 50-entry history no longer holds it.
-
-**Errors of send.** `422 empty_message`, `422 message_too_long` (8000 characters), `429 rate_limited` (10 messages a minute per user, `Retry-After`), `409 ai_not_configured` ("Set up an AI provider in Settings > AI."), `409 ai_provider_not_found`, `409 ai_provider_auth_failed`, `409 daily_budget_reached` (shared with the generator), `409 copilot_disabled`, `409 thread_workflow_mismatch`, `404 thread_not_found`, `404 workflow_not_found`, `502 ai_provider_unavailable | ai_bad_request | ai_refused | ai_bad_response`. Every call writes `llm_calls` (purpose `automation_copilot`).
+The AI box (chat that builds workflows) was removed on 2026-10-27. The routes under `/v1/automations/copilot/*` and the settings `copilot_provider` and `copilot_enabled` no longer exist. The LLM guide (`workprocess.md`) stays: use it with any AI chat outside the app.
 
 ### Not built yet
 

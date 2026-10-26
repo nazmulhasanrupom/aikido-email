@@ -131,12 +131,6 @@ function ParamsTab(p: PanelProps) {
   const providers = useQuery({ ...q.providers, enabled: node.type === "ai.agent" });
   const issues = ed.issues.get(node.id) ?? [];
   const params = node.params ?? {};
-  const providerName = (() => {
-    const v = params.provider;
-    if (typeof v !== "string" || v === "" || v === "default_draft") return "the default draft provider";
-    if (v === "default_slot") return "the default slot provider";
-    return v.includes("${{") ? "the chosen provider" : v;
-  })();
   if (!spec) {
     return <Notice tone="danger">The node type {node.type} is not known on this server.</Notice>;
   }
@@ -144,15 +138,8 @@ function ParamsTab(p: PanelProps) {
     <div className="flex flex-col gap-4">
       <p className="text-sm text-muted">{spec.description}</p>
       {spec.admin_only && <Notice tone="warning">Only an owner or admin can publish a workflow with this node.</Notice>}
-      {spec.side_effect && node.type !== "aikido.api" && (
-        <p className="text-xs text-muted">In tests this node runs dry unless Real writes is on.</p>
-      )}
-      {node.type === "ai.agent" && (
-        providers.data && providers.data.length === 0 ? (
-          <Notice tone="warning">Set up an AI provider in Settings &gt; AI to run this node.</Notice>
-        ) : (
-          <p className="text-xs text-muted">Text in this prompt is sent to {providerName}.</p>
-        )
+      {node.type === "ai.agent" && providers.data && providers.data.length === 0 && (
+        <Notice tone="warning">Set up an AI provider in Settings &gt; AI to run this node.</Notice>
       )}
       {node.type === "http.request" && String(params.method ?? "GET") !== "GET" && (
         <p className="text-xs text-warning">A test run really sends this {String(params.method)} request.</p>
@@ -175,7 +162,6 @@ function ParamsTab(p: PanelProps) {
       {node.type === "trigger.cron" && typeof params.expression === "string" && (
         <CronPreview expression={params.expression} timezone={String(params.timezone || ed.def.settings?.timezone || "UTC")} />
       )}
-      {spec.docs_notes && <p className="text-xs text-muted">{spec.docs_notes}</p>}
       <NodeSettings {...p} />
     </div>
   );

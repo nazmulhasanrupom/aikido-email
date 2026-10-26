@@ -1,18 +1,18 @@
 import { useQuery } from "@tanstack/react-query";
-import { Link, useNavigate } from "@tanstack/react-router";
-import { ArrowLeft, FilePlus2, FileUp, LayoutTemplate, Sparkles } from "lucide-react";
+import { useNavigate } from "@tanstack/react-router";
+import { FilePlus2, FileUp, LayoutTemplate } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { toast } from "sonner";
 import { messageOf } from "@/api/errors";
 import { Button, ErrorNote, Page, PageHeader, Pill, Skeleton } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { aq, call } from "./api";
-import { AskAiCreate } from "./Copilot";
+import { Titled } from "./ConfigPages";
 import { CONTROL } from "./ParamForm";
 import { ImportDialog } from "./Transfer";
 import { keepReport, type TemplateInfo } from "./transfer";
 
-/** `/automations/new`: Blank, From template, Import file, Ask AI (map 17.1). */
+/** `/automations/new`: Blank, From template, Import file (map 17.1). */
 export function NewPage({ ws }: { ws: string }) {
   const navigate = useNavigate();
   const [name, setName] = useState("New workflow");
@@ -34,14 +34,7 @@ export function NewPage({ ws }: { ws: string }) {
 
   return (
     <Page>
-      <Link
-        to="/w/$ws/automations"
-        params={{ ws }}
-        className="mb-3 inline-flex items-center gap-1 text-sm text-muted hover:text-text"
-      >
-        <ArrowLeft size={14} aria-hidden="true" /> Automations
-      </Link>
-      <PageHeader title="New workflow" sub="Start empty, or bring a file." />
+      <PageHeader title={<Titled ws={ws}>New workflow</Titled>} sub="Start empty, or bring a file." />
       <div className="grid gap-4 sm:grid-cols-2">
         <Card
           icon={FilePlus2}
@@ -80,13 +73,6 @@ export function NewPage({ ws }: { ws: string }) {
           >
             {templates ? "Hide templates" : "Browse templates"}
           </Button>
-        </Card>
-        <Card
-          icon={Sparkles}
-          title="Ask AI"
-          text="Describe what you want. The AI builds the workflow."
-        >
-          <AskAiCreate ws={ws} />
         </Card>
       </div>
       {templates && <Templates onOpen={open} />}

@@ -3,6 +3,8 @@
 use super::env::NodeEnv;
 use super::eval::{RunFacts, RunMode};
 use super::run::{Outcome, RunSpec, execute};
+use crate::automations::registry::Item;
+use std::collections::BTreeMap;
 use super::state::RunState;
 use super::store::{NodeRecord, RunStore, StoreError};
 use super::Control;
@@ -461,6 +463,23 @@ async fn process(st: &AppState, row: Claimed, opts: &WorkerOpts, worker: &str) -
     spec.secrets = secrets;
     spec.env = Some(Arc::new(env));
     spec.only_node = row.options.get("only_node").and_then(Value::as_str).map(str::to_string);
+    // a node that runs alone: the data of the nodes before it
+    if state.outputs.is_empty() {
+        if let Some(seed) = row.options.get("lone_seed").and_then(Value::as_object) {
+            let from = row.options.get("lone_input").and_then(|v| v.get("node")).and_then(Value::as_str).map(str::to_string);
+            let from_port = row.options.get("lone_input").and_then(|v| v.get("port")).and_then(Value::as_str).unwrap_or("main").to_string();
+            for (node_id, ports) in seed {
+                let ports: BTreeMap<String, Vec<Item>> = ports
+                    .as_object()
+                    .map(|o| o.iter().map(|(p, list)| (p.clone(), list.as_array().map(|a| a.iter().filter_map(|x| x.as_object().cloned()).map(Item::new).collect()).unwrap_or_default())).collect())
+                    .unwrap_or_default();
+                let lineage = super::run::seed_output(&mut state, node_id, ports, if from.as_deref() == Some(node_id) { &from_port } else { "main" });
+                if from.as_deref() == Some(node_id) {
+                    spec.trigger_lineage = lineage;
+                }
+            }
+        }
+    }
     spec.node_timeout = opts.node_timeout;
 
     let store = DbStore::new(st, row.id, worker);

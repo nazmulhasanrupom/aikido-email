@@ -26,7 +26,6 @@ import { cn } from "@/lib/cn";
 import { fmtDateTime } from "@/lib/format";
 import { aq, call } from "./api";
 import { Canvas } from "./Canvas";
-import { AskAiBox, CopilotPanel, takeWantChat } from "./Copilot";
 import { EditorProvider, groupIssues } from "./ctx";
 import { ActiveDialog, AskVariables, PublishDialog, WorkflowSettings } from "./Dialogs";
 import {
@@ -141,9 +140,6 @@ function Editor({
   >(null);
   const [askVars, setAskVars] = useState<{ body: TestRequest } | null>(null);
   const [saveTick, setSaveTick] = useState(0);
-  const [chat, setChat] = useState(() => takeWantChat(id));
-  const [aiBusy, setAiBusy] = useState(false);
-  const [flash, setFlash] = useState<string[]>([]);
   const [mode, setMode] = useState("");
   const [status, setStatus] = useState("");
   const paletteInput = useRef<HTMLInputElement>(null);
@@ -254,7 +250,7 @@ function Editor({
     () => groupIssues(draft.validation.errors, draft.validation.warnings),
     [draft.validation],
   );
-  const readOnly = viewing || meta.archived || aiBusy;
+  const readOnly = viewing || meta.archived;
 
   // ---- editing helpers ----
   const panelNode =
@@ -264,23 +260,6 @@ function Editor({
         : undefined
       : undefined;
   const panelSpec = panelNode ? specs.get(panelNode.type) : undefined;
-
-  /** The AI changed the draft on the server (or Undo did): take it and flash what changed. */
-  function takeServerDraft(w: WorkflowDetail, ids: string[]) {
-    draft.adopt(w);
-    setSaveTick((t) => t + 1);
-    setSelected([]);
-    setFlash(ids);
-    setTimeout(() => setFlash([]), 2500);
-  }
-
-  async function aiChanged(ids: string[]) {
-    try {
-      takeServerDraft(await call.get(id), ids);
-    } catch (e) {
-      toast.error(messageOf(e));
-    }
-  }
 
   function setParams(nodeId: string, params: Obj) {
     update(
@@ -374,16 +353,28 @@ function Editor({
     only_node?: string;
   }
 
-  async function startTest(onlyNode?: string) {
+  /** Run the whole workflow from a trigger, or one node (`onlyNode`). A node that no trigger reaches runs alone. */
+  async function startTest(onlyNode?: string, fromTrigger?: string) {
     if (busy || readOnly) return;
     const triggers = def.nodes.filter((n) => isTrigger(n.type));
+    const reach = onlyNode ? new Set(upstream(def, onlyNode)) : null;
+    const candidates = onlyNode ? triggers.filter((t) => reach?.has(t.id)) : triggers;
+    if (onlyNode && candidates.length === 0 && !isTrigger(findNode(def, onlyNode)?.type ?? "")) {
+      // no trigger leads here: the node runs alone with the data of the node before it
+      const alone: TestRequest = { only_node: onlyNode };
+      const missing = (def.variables ?? []).filter(
+        (v) => v.required && (v.value === null || v.value === undefined || v.value === ""),
+      );
+      if (missing.length > 0) setAskVars({ body: alone });
+      else await sendTest(alone, undefined);
+      return;
+    }
     if (triggers.length === 0) {
       toast.error("Add a trigger first.");
       return;
     }
-    const reach = onlyNode ? new Set(upstream(def, onlyNode)) : null;
-    const candidates = onlyNode ? triggers.filter((t) => reach?.has(t.id)) : triggers;
     const picked =
+      (fromTrigger ? candidates.find((t) => t.id === fromTrigger) : undefined) ??
       (selected.length === 1 ? candidates.find((t) => t.id === selected[0]) : undefined) ??
       candidates[0];
     if (!picked) {
@@ -539,7 +530,6 @@ function Editor({
         live: live.live,
         readOnly,
         saveTick,
-        flash,
         isAdmin,
       }}
     >
@@ -563,9 +553,6 @@ function Editor({
           />
           <span className="text-xs text-muted">{status0}</span>
           <SaveLabel state={draft.state} />
-          <div className="ml-auto flex items-center gap-2">
-            <AskAiBox active={chat} onClick={() => setChat((c) => !c)} />
-          </div>
           <div className="flex w-full flex-wrap items-center gap-2">
             <nav aria-label="Views" className="flex gap-1">
               <TabLink active={tab === "editor"} onClick={goEditor}>
@@ -766,21 +753,15 @@ function Editor({
                   onSelect={setSelected}
                   onAdded={(nid) => setSelected([nid])}
                   onPasteWorkflow={(t) => void pasteWorkflow(t)}
+                  onRunNode={(nid) => {
+                    const n = findNode(def, nid);
+                    if (n && isTrigger(n.type)) void startTest(undefined, nid);
+                    else void startTest(nid);
+                  }}
+                  runBusy={busy}
                 />
               </div>
-              {chat && tab === "editor" && (
-                <CopilotPanel
-                  ws={ws}
-                  workflowId={id}
-                  flush={draft.flush}
-                  onChanged={(ids) => void aiChanged(ids)}
-                  onUndone={(w) => takeServerDraft(w, [])}
-                  onBusy={setAiBusy}
-                  onSelectNode={(nid) => setSelected([nid])}
-                  onClose={() => setChat(false)}
-                />
-              )}
-              {panelNode && !chat && (
+              {panelNode && (
                 <div className="fixed inset-0 z-40 bg-surface md:static md:z-auto md:w-[420px] md:shrink-0">
                   <NodePanel
                     key={panelNode.id}

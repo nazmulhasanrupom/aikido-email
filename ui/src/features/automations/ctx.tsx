@@ -18,8 +18,6 @@ export interface EditorCtx {
   readOnly: boolean;
   /** Goes up after every good save, so previews read the saved draft. */
   saveTick: number;
-  /** Node ids that flash once (the AI just added or changed them). */
-  flash: string[];
   isAdmin: boolean;
 }
 

@@ -18,10 +18,20 @@ import {
   Position,
   ReactFlow,
   ReactFlowProvider,
+  SelectionMode,
   useReactFlow,
 } from "@xyflow/react";
 import "@xyflow/react/dist/base.css";
-import { AlignHorizontalSpaceAround, StickyNote, X } from "lucide-react";
+import {
+  AlignHorizontalSpaceAround,
+  Copy,
+  Loader2,
+  Play,
+  Power,
+  StickyNote,
+  Trash2,
+  X,
+} from "lucide-react";
 import {
   createContext,
   memo,
@@ -69,8 +79,60 @@ const RING: Record<string, string> = {
   skipped: "opacity-60",
 };
 
+/** What the buttons over a node do. Set by the canvas. */
+interface NodeActions {
+  run: (id: string) => void;
+  toggle: (id: string) => void;
+  duplicate: (id: string) => void;
+  remove: (id: string) => void;
+  /// A test is running.
+  busy: boolean;
+}
+const NodeActionsCtx = createContext<NodeActions>({
+  run: () => {},
+  toggle: () => {},
+  duplicate: () => {},
+  remove: () => {},
+  busy: false,
+});
+
+function BarBtn({
+  label,
+  onClick,
+  disabled,
+  danger,
+  children,
+}: {
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+  danger?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      disabled={disabled}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      onDoubleClick={(e) => e.stopPropagation()}
+      className={cn(
+        "nodrag nopan flex size-7 items-center justify-center rounded-md text-muted hover:bg-surface-2 disabled:opacity-40",
+        danger ? "hover:text-danger" : "hover:text-text",
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
 const WfNodeCard = memo(function WfNodeCard({ id, selected }: NodeProps) {
   const ed = useEditor();
+  const act = useContext(NodeActionsCtx);
   const node = ed.def.nodes.find((n) => n.id === id);
   if (!node) return null;
   const spec = ed.specs.get(node.type);
@@ -84,16 +146,49 @@ const WfNodeCard = memo(function WfNodeCard({ id, selected }: NodeProps) {
   return (
     <div
       className={cn(
-        "relative w-55 border bg-surface text-left shadow-(--shadow-card)",
+        "group relative w-55 border bg-surface text-left shadow-(--shadow-card)",
         trigger ? "rounded-r-[10px] rounded-l-sm" : "rounded-[10px]",
         selected ? "border-accent" : "border-border",
         node.disabled && "opacity-50",
-        ed.flash.includes(id) && "wf-flash",
         row && RING[row.status],
       )}
       style={{ minHeight: Math.max(NODE_H - 8, ports.length * 22 + 14) }}
     >
       {!trigger && <Handle type="target" position={Position.Left} id="in" className="wf-handle" />}
+      {!ed.readOnly && (
+        <div
+          className={cn(
+            "absolute bottom-full left-1/2 z-10 -translate-x-1/2 pb-1.5 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100",
+            selected ? "opacity-100" : "opacity-0",
+          )}
+        >
+          <div className="flex items-center gap-0.5 rounded-lg border border-border bg-surface p-0.5 shadow-(--shadow-card)">
+            <BarBtn
+              label={trigger ? "Run the workflow from here" : "Run this node"}
+              disabled={act.busy || node.disabled === true}
+              onClick={() => act.run(id)}
+            >
+              {act.busy ? (
+                <Loader2 size={14} className="animate-spin" aria-hidden="true" />
+              ) : (
+                <Play size={14} aria-hidden="true" />
+              )}
+            </BarBtn>
+            <BarBtn
+              label={node.disabled ? "Turn the node on" : "Turn the node off"}
+              onClick={() => act.toggle(id)}
+            >
+              <Power size={14} aria-hidden="true" />
+            </BarBtn>
+            <BarBtn label="Duplicate" onClick={() => act.duplicate(id)}>
+              <Copy size={14} aria-hidden="true" />
+            </BarBtn>
+            <BarBtn label="Delete" danger onClick={() => act.remove(id)}>
+              <Trash2 size={14} aria-hidden="true" />
+            </BarBtn>
+          </div>
+        </div>
+      )}
       <div className="flex items-center gap-2.5 p-2.5">
         <span
           className={cn(
@@ -259,6 +354,7 @@ const WfEdgeView = memo(function WfEdgeView({
 const nodeTypes = { wf: WfNodeCard, note: NoteCard };
 const DELETE_KEYS = ["Backspace", "Delete"];
 const MULTI_KEYS = ["Shift", "Meta", "Control"];
+const PAN_BUTTONS = [1, 2];
 const FIT = { padding: 0.25, maxZoom: 1 };
 const edgeTypes = { wf: WfEdgeView };
 
@@ -273,6 +369,10 @@ export interface CanvasProps {
   onAdded: (id: string) => void;
   /** Called with the text of a whole workflow file that was pasted (not the node clipboard). */
   onPasteWorkflow?: (text: string) => void;
+  /** Run one node (a trigger starts the whole workflow). */
+  onRunNode: (id: string) => void;
+  /** A test is running. */
+  runBusy: boolean;
 }
 
 function isTyping(el: Element | null): boolean {
@@ -286,7 +386,31 @@ function isTyping(el: Element | null): boolean {
   );
 }
 
-function Flow({ update, mark, selected, onSelect, onAdded, onPasteWorkflow }: CanvasProps) {
+/** A touch screen cannot hold a key or press the middle button, so it keeps the simple drag-to-pan mode. */
+function useCoarsePointer(): boolean {
+  const [coarse, setCoarse] = useState(
+    () => typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches === true,
+  );
+  useEffect(() => {
+    const m = window.matchMedia?.("(pointer: coarse)");
+    if (!m) return;
+    const on = () => setCoarse(m.matches);
+    m.addEventListener("change", on);
+    return () => m.removeEventListener("change", on);
+  }, []);
+  return coarse;
+}
+
+function Flow({
+  update,
+  mark,
+  selected,
+  onSelect,
+  onAdded,
+  onPasteWorkflow,
+  onRunNode,
+  runBusy,
+}: CanvasProps) {
   const ed = useEditor();
   const rf = useReactFlow();
   const box = useRef<HTMLDivElement>(null);
@@ -302,6 +426,7 @@ function Flow({ update, mark, selected, onSelect, onAdded, onPasteWorkflow }: Ca
   const selRef = useRef(sel);
   selRef.current = sel;
   const specList = useMemo(() => [...specs.values()], [specs]);
+  const coarse = useCoarsePointer();
 
   // the definition is the truth; the flow state only adds what a drag needs
   useEffect(() => {
@@ -443,15 +568,74 @@ function Flow({ update, mark, selected, onSelect, onAdded, onPasteWorkflow }: Ca
     }));
   }
 
-  // copy and paste (the browser's own events, so they work with the system clipboard)
+  const nodeIds = (ids: string[]) => ids.filter((s) => !s.startsWith(NOTE_PREFIX));
+
+  function removeSelection(ids: string[]) {
+    const real = nodeIds(ids);
+    const notes = ids.filter((i) => i.startsWith(NOTE_PREFIX)).map((i) => i.slice(NOTE_PREFIX.length));
+    update((d) => {
+      let next = real.length ? removeNodes(d, real) : d;
+      if (notes.length)
+        next = { ...next, notes: (next.notes ?? []).filter((n) => !notes.includes(n.id)) };
+      return next;
+    });
+    onSelect([]);
+  }
+
+  function duplicateNodes(ids: string[]) {
+    const real = nodeIds(ids);
+    if (real.length === 0) return;
+    let made: string[] = [];
+    update((d) => {
+      const r = pasteFragment(d, fragmentOf(d, real));
+      made = r.ids;
+      return r.def;
+    });
+    if (made.length) onSelect(made);
+  }
+
+  function toggleNodes(ids: string[]) {
+    const real = new Set(nodeIds(ids));
+    if (real.size === 0) return;
+    update((d) => {
+      // all on -> all off; else all on
+      const off = d.nodes.filter((n) => real.has(n.id)).every((n) => !n.disabled);
+      return {
+        ...d,
+        nodes: d.nodes.map((n) => (real.has(n.id) ? { ...n, disabled: off } : n)),
+      };
+    });
+  }
+
+  const actions = useMemo<NodeActions>(
+    () => ({
+      run: onRunNode,
+      toggle: (id) => toggleNodes(selRef.current.has(id) ? [...selRef.current] : [id]),
+      duplicate: (id) => duplicateNodes(selRef.current.has(id) ? [...selRef.current] : [id]),
+      remove: (id) => removeSelection(selRef.current.has(id) ? [...selRef.current] : [id]),
+      busy: runBusy,
+    }),
+    [onRunNode, runBusy, update, onSelect],
+  );
+
+  // copy, cut and paste (the browser's own events, so they work with the system clipboard)
   useEffect(() => {
     if (ed.readOnly) return;
+    const textOf = (ids: string[]) => JSON.stringify(fragmentOf(ed.def, ids), null, 2);
     const onCopy = (e: ClipboardEvent) => {
       if (isTyping(document.activeElement) || window.getSelection()?.toString()) return;
-      const ids = selected.filter((s) => !s.startsWith(NOTE_PREFIX));
+      const ids = nodeIds(selected);
       if (ids.length === 0) return;
-      e.clipboardData?.setData("text/plain", JSON.stringify(fragmentOf(ed.def, ids), null, 2));
+      e.clipboardData?.setData("text/plain", textOf(ids));
       e.preventDefault();
+    };
+    const onCut = (e: ClipboardEvent) => {
+      if (isTyping(document.activeElement) || window.getSelection()?.toString()) return;
+      const ids = nodeIds(selected);
+      if (ids.length === 0) return;
+      e.clipboardData?.setData("text/plain", textOf(ids));
+      e.preventDefault();
+      removeSelection(ids);
     };
     const onPaste = (e: ClipboardEvent) => {
       if (isTyping(document.activeElement)) return;
@@ -473,12 +657,41 @@ function Flow({ update, mark, selected, onSelect, onAdded, onPasteWorkflow }: Ca
       if (ids.length) onSelect(ids);
     };
     document.addEventListener("copy", onCopy);
+    document.addEventListener("cut", onCut);
     document.addEventListener("paste", onPaste);
     return () => {
       document.removeEventListener("copy", onCopy);
+      document.removeEventListener("cut", onCut);
       document.removeEventListener("paste", onPaste);
     };
   }, [ed.def, ed.readOnly, selected, update, onSelect, onPasteWorkflow]);
+
+  // keys, as in n8n: Ctrl+A select all, Ctrl+D duplicate, D turn off or on, Esc clear, Delete
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (isTyping(document.activeElement) || e.defaultPrevented) return;
+      // a dialog or the node panel's own controls are not the canvas
+      if ((document.activeElement as HTMLElement | null)?.closest?.("[role=dialog]")) return;
+      const mod = e.ctrlKey || e.metaKey;
+      const key = e.key.toLowerCase();
+      if (mod && key === "a") {
+        e.preventDefault();
+        onSelect([
+          ...ed.def.nodes.map((n) => n.id),
+          ...(ed.def.notes ?? []).map((n) => `${NOTE_PREFIX}${n.id}`),
+        ]);
+      } else if (!ed.readOnly && mod && key === "d") {
+        e.preventDefault();
+        duplicateNodes(selected);
+      } else if (!ed.readOnly && !mod && !e.altKey && !e.shiftKey && key === "d") {
+        toggleNodes(selected);
+      } else if (!mod && key === "escape") {
+        if (selected.length) onSelect([]);
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [ed.def, ed.readOnly, selected, update, onSelect]);
 
   const onConnectEnd: OnConnectEnd = (event, state) => {
     if (ed.readOnly || state.isValid || !state.fromNode || state.fromHandle?.type !== "source")
@@ -542,6 +755,7 @@ function Flow({ update, mark, selected, onSelect, onAdded, onPasteWorkflow }: Ca
       onDragOver={(e) => e.preventDefault()}
       onDrop={onDrop}
     >
+      <NodeActionsCtx.Provider value={actions}>
       <NoteSetter.Provider value={setNote}>
         <EdgeDeleter.Provider value={deleteEdge}>
           <ReactFlow
@@ -578,22 +792,7 @@ function Flow({ update, mark, selected, onSelect, onAdded, onPasteWorkflow }: Ca
               connectProblem(ed.def, c.source, c.sourceHandle ?? "main", c.target) === null
             }
             onConnectEnd={onConnectEnd}
-            onNodesDelete={(del) => {
-              const ids = del.map((n) => n.id);
-              const real = ids.filter((i) => !i.startsWith(NOTE_PREFIX));
-              const notes = ids
-                .filter((i) => i.startsWith(NOTE_PREFIX))
-                .map((i) => i.slice(NOTE_PREFIX.length));
-              update((d) => {
-                let next = real.length ? removeNodes(d, real) : d;
-                if (notes.length)
-                  next = {
-                    ...next,
-                    notes: (next.notes ?? []).filter((n) => !notes.includes(n.id)),
-                  };
-                return next;
-              });
-            }}
+            onNodesDelete={(del) => removeSelection(del.map((n) => n.id))}
             onEdgesDelete={(del) => {
               const gone = new Set(del.map((e) => e.id));
               update((d) => ({
@@ -602,12 +801,21 @@ function Flow({ update, mark, selected, onSelect, onAdded, onPasteWorkflow }: Ca
               }));
             }}
             onPaneClick={() => setQuick(null)}
+            onPaneContextMenu={(e) => e.preventDefault()}
             nodesDraggable={!ed.readOnly}
             nodesConnectable={!ed.readOnly}
             elementsSelectable
             deleteKeyCode={ed.readOnly ? null : DELETE_KEYS}
             multiSelectionKeyCode={MULTI_KEYS}
-            selectionOnDrag={false}
+            // a mouse, as in n8n: drag on empty space draws a box, the middle or right button (or
+            // Space + drag) moves the canvas, the wheel moves it, Ctrl + wheel zooms
+            selectionOnDrag={!coarse}
+            selectionMode={SelectionMode.Partial}
+            panOnDrag={coarse ? true : PAN_BUTTONS}
+            panOnScroll={!coarse}
+            zoomOnScroll={coarse}
+            zoomOnDoubleClick={false}
+            panActivationKeyCode="Space"
             fitView
             fitViewOptions={FIT}
             minZoom={0.2}
@@ -638,6 +846,7 @@ function Flow({ update, mark, selected, onSelect, onAdded, onPasteWorkflow }: Ca
           </ReactFlow>
         </EdgeDeleter.Provider>
       </NoteSetter.Provider>
+      </NodeActionsCtx.Provider>
       {quick && (
         <QuickAdd
           specs={specList}

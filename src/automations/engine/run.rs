@@ -36,6 +36,8 @@ pub struct RunSpec {
     pub facts: RunFacts,
     /// Test step: run only the path from the trigger to this node.
     pub only_node: Option<String>,
+    /// Where the item of the first node comes from, when that node runs alone (the node before it in the file).
+    pub trigger_lineage: Vec<(String, usize)>,
     /// How long one node call may take.
     pub node_timeout: Duration,
     /// Node types that are not in the registry. Empty in production; tests put fake nodes here.
@@ -48,7 +50,7 @@ pub struct RunSpec {
 
 impl RunSpec {
     pub fn new(def: WorkflowDefinition, facts: RunFacts) -> Self {
-        RunSpec { def, facts, only_node: None, node_timeout: Duration::from_secs(120), custom: BTreeMap::new(), secrets: Arc::new(Secrets::default()), env: None }
+        RunSpec { def, facts, only_node: None, trigger_lineage: vec![], node_timeout: Duration::from_secs(120), custom: BTreeMap::new(), secrets: Arc::new(Secrets::default()), env: None }
     }
 
     fn node_type(&self, type_id: &str) -> Option<&dyn NodeType> {
@@ -171,7 +173,9 @@ async fn step(
     let ins = plan.incoming.get(id).cloned().unwrap_or_default();
     let per_edge: Vec<Vec<Item>> = ins.iter().map(|(from, port)| state.port_items(from, port)).collect();
     let groups: Vec<Group> = if id == spec.facts.trigger_node_id {
-        let items = vec![Item::new(spec.facts.trigger.clone())];
+        let mut first = Item::new(spec.facts.trigger.clone());
+        first.lineage = spec.trigger_lineage.clone();
+        let items = vec![first];
         vec![Group { inputs: vec![items.clone()], items }]
     } else if node.type_id == "flow.merge" {
         if per_edge.iter().all(Vec::is_empty) { vec![] } else { vec![Group { items: per_edge.iter().flatten().cloned().collect(), inputs: per_edge }] }
@@ -378,6 +382,13 @@ async fn save(store: &dyn RunStore, records: &[NodeRecord], state: &RunState) ->
 }
 
 /// Put the items of a node execution into the run state. The item gets the lineage `(node, position)`.
+/// Put the output of a node into the state without running it (a node that runs alone reads it).
+/// Returns the lineage of the first item on `port`.
+pub fn seed_output(state: &mut RunState, id: &str, ports: BTreeMap<String, Vec<Item>>, port: &str) -> Vec<(String, usize)> {
+    commit(state, id, ports);
+    state.outputs.get(id).and_then(|o| o.port_items(port).into_iter().next()).map(|i| i.lineage).unwrap_or_default()
+}
+
 fn commit(state: &mut RunState, id: &str, ports: BTreeMap<String, Vec<Item>>) -> BTreeMap<String, usize> {
     let out = state.outputs.entry(id.to_string()).or_default();
     let mut counts = BTreeMap::new();

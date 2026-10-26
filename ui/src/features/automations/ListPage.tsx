@@ -7,7 +7,6 @@ import {
   Plus,
   Search,
   Settings,
-  Sparkles,
   Upload,
   Workflow,
 } from "lucide-react";
@@ -30,7 +29,6 @@ import {
 import { useUser } from "@/features/settings/useUser";
 import { fmtAgo } from "@/lib/format";
 import { aq, call } from "./api";
-import { AskAiCreate } from "./Copilot";
 import { ActiveDialog } from "./Dialogs";
 import { RunPill } from "./Executions";
 import { ImportDialog, LlmGuideButton, useDownloader } from "./Transfer";
@@ -121,12 +119,6 @@ export function ListPage({ ws }: { ws: string }) {
           </Notice>
         </div>
       ))}
-      <section aria-label="Ask AI" className="mb-4 max-w-2xl">
-        <p className="mb-1 flex items-center gap-1.5 text-sm font-medium">
-          <Sparkles size={14} aria-hidden="true" className="text-ai" /> Ask AI to build a workflow
-        </p>
-        <AskAiCreate ws={ws} />
-      </section>
       <div className="mb-3 flex flex-wrap items-center gap-3">
         <label className="relative inline-flex items-center">
           <span className="sr-only">Search</span>

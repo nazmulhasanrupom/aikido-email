@@ -45,7 +45,6 @@ pub fn router(state: AppState) -> OpenApiRouter<AppState> {
         .merge(super::production::routes::router(state2.clone()))
         .merge(super::production::webhooks::router(state2.clone()))
         .merge(super::transfer_routes::router(state2.clone()))
-        .merge(super::copilot::routes::router(state2.clone()))
         .merge(super::secrets::router(state2.clone()))
         .merge(super::settings::router(state2))
 }
