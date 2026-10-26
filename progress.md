@@ -1041,3 +1041,103 @@ Plan: `easy-setup-plan.md`. A user said the setup was slow and hard. Goals: Wind
 
 - Run the DB tests (`tests/tracking.rs`, `tests/docs.rs` may still be out of date for routes added earlier) and the browser tests.
 - The things listed as "not verified" in the sections above (real Gmail/Outlook, real LLM, real DNS and certificates) are unchanged.
+
+## Automations, phase 1 (2026-10-25)
+
+Plan: `AIKIDO_EMAIL_Automations_Build_Map.md`. Progress by phase: `automationsetp.md`. API: `docs/API.md` section 30.
+
+Built: the workflow file format (`src/automations/definition.rs`), 59 stub node types with real specs (`registry.rs`, `catalog.rs`, `schema_kit.rs`), the validator with all codes of the map (`validate.rs`), the `${{ }}` expression engine on MiniJinja (`expr.rs`), migration `0025_automations.sql` (all tables of the feature), routes `/v1/automations/*` (workflows draft CRUD, validate, node catalog, `schema.json`), new scope `automations`. **Nothing runs yet** (phase 2).
+
+Differences from the map: param schemas come from a small builder, not `schemars` structs; `NodeSpec` has `open_output`; the undefined mode is `Chainable` plus a formatter that rejects undefined; `default` treats `null` as missing; `truncate` is our own; user-id columns use `ON DELETE SET NULL`. Details in `automationsetp.md`.
+
+Checked: `cargo test --lib` 379 pass (60 new); `cargo test --no-run` compiles; `npx tsc --noEmit` passes.
+**Not run:** migration 0025 and all SQL in `routes.rs` on a database; `tests/automations.rs` and `tests/docs.rs` (DB tests); `pnpm gen:api`. No server was started.
+
+
+## Automations, phase 2 (2026-10-25)
+
+Plan: `AIKIDO_EMAIL_Automations_Build_Map.md`. Progress by phase: `automationsetp.md`. API: `docs/API.md` section 30.
+
+Built: the engine in `src/automations/engine/`: executor (items, lineage, checkpoints, retry, `on_error`, batch, timeout, cancel, Wait, pins, dry runs, test step), worker (lease, `SKIP LOCKED`, pause, `max_concurrent_runs`, wake waiting runs, take back dead-copy runs, hourly cleanup), nodes (`trigger.manual`, 7 `flow.*`, 8 `data.*`), routes (test run, runs, run node, events, cancel, status, pause/resume). The worker starts in `main.rs` (`AIKIDO_AUTOMATIONS_ENABLED`, `_MAX_PARALLEL`, `_TICK_MS`).
+
+Differences from the map: checkpoint is gzip (no zstd in the project); the test step runs the path from the trigger instead of reusing the newest test run; dry runs return a generic `would_call`; expressions are not cached per run.
+
+Checked: `cargo test --lib` 424 pass (45 new engine tests, no database); `cargo build` passes.
+**Not run:** all engine SQL, `tests/automations_engine.rs` (15 DB tests), `tests/automations.rs`, `tests/docs.rs`; `pnpm gen:api`. No server was started.
+
+
+## Automations, phase 3 (2026-10-25)
+
+Plan: `AIKIDO_EMAIL_Automations_Build_Map.md`. Progress by phase: `automationsetp.md`. API: `docs/API.md` section 30.
+
+Built: the nodes that talk to the outside. 25 curated `aikido.*` nodes and the generic `aikido.api` (calls to the app's own routes in the same process, as the user of the run; deny list for keys, login, users, dev, environment, automations, apps, OAuth and lead erase), `http.request`, `web.fetch_page` (robots.txt, blocked domains, user agent), secrets (sealed, routes, redaction of every stored output, error and log) and the settings routes. Dry test runs show the real method, path and body. Changes to existing code (map section 18): `InternalPrincipal` in the auth layer, the `actor` tag on lead timeline events (`leads/events.rs`, `leads/repo.rs`, `leads/upsert.rs`, `leads/routes.rs`, `campaigns/routes.rs`), `safe_fetch::request` with options, `tower` is now a normal dependency.
+
+Differences from the map: the canonical operation id of `aikido.api` is `METHOD /path` (the function-name `operationId` is an alias when unique; 66 of them are shared); a test started with an API key acts as the oldest active owner with member rights; the catalog was fixed where it did not match the real routes (`dedupe_mode`, `set_label`, `campaign_test`); settings routes were built in this phase. Details in `automationsetp.md`.
+
+Checked: `cargo test --lib` 475 pass (51 new, no database); `cargo test --no-run` compiles every test file.
+**Not run:** migration 0025, all SQL of phases 1 to 3 (including the changed lead-event SQL), `tests/automations_nodes.rs` (6 DB tests), the older automation DB tests, `tests/leads.rs`, `tests/campaigns.rs`, `tests/docs.rs`; `pnpm gen:api`. No server was started.
+
+
+## Automations, phase 4 (2026-10-25)
+
+Plan: `AIKIDO_EMAIL_Automations_Build_Map.md`. Progress by phase: `automationsetp.md`. API: `docs/API.md` section 30.
+
+Built: the `ai.agent` node (`src/automations/engine/ai_nodes.rs`, `ai_backend.rs`) on the generator's provider client: text or JSON output (field builder, schema in the system text, one repair try, `ai_bad_output`), dash stripping, per-call `llm_calls` rows with the run, workflow and node ids (migration `0026_automation_llm_calls.sql`), and the shared daily token budget: when it is used up the run waits 10 minutes at a time (`waiting`, node status `waiting`) up to `ai_budget_wait_hours`, then fails. Small changes to the engine: `NodeType::timeout` (a node may need more than the 120 s default), `RunState.budget_wait_since`, `NodeStatus::Waiting`. The validator accepts a provider id and checks the output field keys.
+
+Differences from the map: no new `call_provider` function in the generator (its `providers::load_config` + `LlmFactory::build` already are that function, so nothing in the generator changed); `llm_calls` rows are written by the automation code with its own `INSERT` (the generator's `CallRecord` is unchanged); the rows of items that were already done in a node are written again after a budget wait. Engine tests that used `ai.agent` as the "not built" stub now use `web.fetch_page` without an environment. Details in `automationsetp.md`.
+
+Checked: `cargo test --lib` 493 pass (18 new, no database); `cargo test --no-run` compiles every test file.
+**Not run:** migrations 0025 and 0026, all SQL of phases 1 to 4, `tests/automations_ai.rs` (6 DB tests) and the older automation DB tests, `tests/docs.rs`; `pnpm gen:api`. No server was started.
+
+
+## Automations, phase 5 (2026-10-26)
+
+Plan: `AIKIDO_EMAIL_Automations_Build_Map.md`. Progress by phase: `automationsetp.md`. API: `docs/API.md` section 30.
+
+Built (`src/automations/production/`): publish, versions, restore, draft history; activate and deactivate with `automation_triggers` (rows are kept on publish: cursor, generated webhook path, next time); time triggers (`schedule.rs`, `croner` 4.0.1, time zones, daylight saving, catch-up `once`/`skip`); event triggers for all 11 kinds (`events.rs`, `tick.rs`: cursor, filters, loop guard through `detail.actor`, back-pressure at 500 queued runs, `max_runs_per_hour`, one transaction per trigger with `SKIP LOCKED`); webhooks (`webhooks.rs`: production URL, test URL with listen, secret header, rate limit per path, `when_done`); manual production run, retry, cron preview, test events for the pickers (`test_event` in `POST .../test`); status route extras, five alert kinds, two developer actions. The trigger loop is started in `main.rs` next to the worker.
+
+Changes to existing code (map section 18): item 4 (campaign status changes are recorded in the new table `campaign_events`, written in `campaigns/routes.rs` `set_status` and `campaigns/feeder.rs` `complete_if_done`; migration `0027`), item 3 (nothing to do: the `updated` lead event already lists `detail.fields`), item 8 (`/hooks` is a server path in `web/mod.rs`; the hook routes are merged in `docs.rs`), item 9 (alerts in `ui_api/alerts.rs`, dev actions in `devtools/routes.rs`). `engine/routes.rs`: the test route was split so the test webhook can queue a test run (`queue_test`); `TestBody` got `test_event`.
+
+Differences from the map: see `automationsetp.md`. Item 10 (`features.automations` in the UI config) is still for phase 6.
+
+Checked: `cargo test --lib` 525 pass (32 new, no database: cron and daylight saving, daily times, intervals and catch-up, trigger plans, event filters, webhook helpers, rate limit); `cargo test --no-run` compiles every test file, including `tests/automations_production.rs` (30 DB tests).
+**Not run:** migration 0027 and migrations 0025 and 0026, all SQL of phases 1 to 5 (the trigger loops, publish, activate, webhooks, the `campaign_events` inserts), `tests/automations_production.rs`, `tests/campaigns.rs` (the status change SQL changed), `tests/docs.rs`; `pnpm gen:api`. No server was started.
+
+## Automations, phase 6 (2026-10-26)
+
+Plan: `AIKIDO_EMAIL_Automations_Build_Map.md`. Progress by phase: `automationsetp.md`. API: `docs/API.md` section 30.
+
+Built (`ui/src/features/automations/`, routes `ui/src/routes/w.$ws.automations*.tsx`): the editor UI. List page, New page, the node canvas (`@xyflow/react 12.12.0`, `@dagrejs/dagre 3.1.1`), palette (drag, click, drop on a line, quick-add), node panel with Parameters / Input / Output, expression field with autocomplete and live preview, rule builder, AI field builder, `aikido.api` operation picker, test event pickers and webhook listen, test bar with polling, Executions and a read-only run view, Publish and Active dialogs, versions, workflow settings and variables, Secrets and Settings pages, autosave with conflict and offline handling, undo. Sidebar entry and `features.automations` in `GET /v1/ui/config` (map section 18 item 10). Two small routes in `src/automations/editor.rs`: `POST /v1/automations/expression/preview` and `GET /v1/automations/nodes/aikido-api/operations`.
+
+Differences from the map: see `automationsetp.md` (the page is `/executions`, not `/runs`; import and download are client side until phase 7; the expression preview is a guide because stored items have no lineage).
+
+Checked: `cargo test --lib` 527 pass; `npx tsc --noEmit` clean; `npx vitest run` 249 pass (45 new); `npx vite build` passes; a browser check against a fake API (no server, no database) found and fixed two bugs.
+**Not run:** every call of the UI against the real server, the two new routes, `ui/e2e/phase9_u8_automations.spec.ts`, all DB tests and migrations of phases 1 to 5; the Indigo and Aikido designs, dark theme and phone width were not looked at; `pnpm gen:api`. No server was started.
+
+## Automations, phase 7 backend (2026-10-26)
+
+Plan: `AIKIDO_EMAIL_Automations_Build_Map.md` sections 14, 15, Appendix A and C. API: `docs/API.md` section 30 ("Import, export, templates, LLM guide").
+
+Built: `src/automations/transfer.rs` (export, import fix-ups and mapping, pure), `transfer_routes.rs` (7 routes: `GET /workflows/{id}/export`, `POST /import`, `POST /import/check`, `GET /templates`, `GET /templates/{id}`, `POST /templates/{id}/create`, `GET /workprocess.md`), `templates.rs` + `templates/*.aikido-workflow.json` (the 4 templates, embedded), `workprocess.rs` (pure `merge(doc, registry, install)`; the catalog and the "This install" part), `docs/workprocess.md`. `schema.json` already existed (phase 1). Shared files touched with small edits: `mod.rs`, `routes.rs` (router merge, `insert_workflow` made `pub(super)`), `tests/docs.rs`, `docs/API.md`.
+
+Differences from the map: the 4 templates were changed to the real catalog (webhook `auth` is `"header"` with `header_name` and `secret` params; the Slack digest reads `reply_text`, the field of stored messages; time zone UTC). `POST /workflows` with `template` still answers `unknown_template` (use the new create route). Import check is `POST /import/check`.
+
+Checked: `cargo test --lib` (see the final report for the count); `cargo test --no-run` for `tests/automations_transfer.rs` (7 DB tests).
+**Not run:** all DB tests (`tests/automations_transfer.rs`, `tests/docs.rs`), the SQL of `load_names` (tables `campaigns`, `lead_lists`, `sequences`, `email_accounts`, `llm_providers`, `lead_fields`, `automation_secrets`, `integrations`), the URL import over the network, and any call from the UI. No server was started.
+
+## Automations, phase 9 backend (2026-10-26)
+
+Plan: `AIKIDO_EMAIL_Automations_Build_Map.md` section 19, Phase 9. API: `docs/API.md` section 30 ("Phase 9").
+
+Built: `code.js` (`src/automations/engine/code_node.rs`, `rquickjs =0.12.2` of 2026-07-27: 1 s, 32 MB, no network or files), `flow.execute_workflow` (`engine/sub_workflow.rs`: runs inside the node, published version in production, draft in test, depth 5, loop guard), AI agent tools (`engine/ai_tools.rs`: JSON tool protocol on the existing `AiBackend`, `tools` and `max_tool_calls`), `settings.error_workflow_id` (`engine/error_workflow.rs`, started from `worker::finish`), `pagination` of `http.request` (`engine/web_nodes.rs`), validator rules, catalog specs with notes. No migration. Also fixed: all non-manual trigger nodes were stubs that failed with `not_implemented` in a run.
+
+Checked: `cargo test --lib`, `cargo test --no-run` (see the final report for the counts).
+**Not run:** `tests/automations_phase9.rs` (5 DB tests: error workflow, chain stop, published vs draft sub-workflow, self call), the SQL of `error_workflow.rs` and `DbWorkflows`, any real LLM with tools, any real paginated API.
+
+## Automations, phase 8 backend: the AI box (2026-10-26)
+
+Plan: `AIKIDO_EMAIL_Automations_Build_Map.md` section 16. API: `docs/API.md` section 30 ("Phase 8"). No migration (the tables and `llm_calls` purposes were there).
+
+Built: `src/automations/copilot/` (`diff.rs` diff, positions and pins; `prompt.rs` system text, state block, summary folding, rate limit; `turn.rs` model call, parse, one repair try; `routes.rs` threads, messages, undo) and `src/automations/copilot_prompt.md` (Appendix B). Tests: unit tests in the module; `tests/automations_copilot.rs` (5 DB tests).
+
+**Not run:** the DB tests, the SQL of `copilot/routes.rs`, a real provider, prompt caching on the live Anthropic API, the quality of real model answers. No server was started.

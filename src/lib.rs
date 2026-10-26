@@ -4,6 +4,7 @@ pub mod accounts;
 pub mod admin;
 pub mod app_settings;
 pub mod auth;
+pub mod automations;
 pub mod campaigns;
 pub mod config;
 pub mod crypto;

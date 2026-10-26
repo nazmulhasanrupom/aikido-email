@@ -241,6 +241,26 @@ async fn serve() -> anyhow::Result<()> {
         None
     };
 
+    // The automations worker: runs queued workflow runs, wakes waiting ones, cleans old ones.
+    let automations_cancel = tokio_util::sync::CancellationToken::new();
+    let automations_task = if aikido_email::automations::engine::worker::enabled_by_env() {
+        aikido_email::automations::engine::worker::mark_enabled(true);
+        Some(tokio::spawn(aikido_email::automations::engine::worker::run(
+            state.clone(),
+            automations_cancel.clone(),
+            aikido_email::automations::engine::worker::WorkerOpts::from_env(),
+        )))
+    } else {
+        tracing::warn!("AIKIDO_AUTOMATIONS_ENABLED is off: automation runs are not processed on this copy");
+        None
+    };
+    // The triggers of active workflows: time triggers fire, event triggers read new events.
+    let automation_triggers_task = if aikido_email::automations::engine::worker::enabled_by_env() {
+        Some(tokio::spawn(aikido_email::automations::production::tick::run(state.clone(), automations_cancel.clone())))
+    } else {
+        None
+    };
+
     // Open tracking: the domain check loop, the certificates and the public listeners of the tracking domains.
     let tracking_cancel = tokio_util::sync::CancellationToken::new();
     let mut tracking_tasks = Vec::new();
@@ -277,6 +297,7 @@ async fn serve() -> anyhow::Result<()> {
     let generator_cancel = generator_engine.cancel.clone();
     let verify_cancel = verify_engine.cancel.clone();
     let tracking_cancel_on_stop = tracking_cancel.clone();
+    let automations_cancel_on_stop = automations_cancel.clone();
     axum::serve(listener, docs::app(state).into_make_service_with_connect_info::<std::net::SocketAddr>())
         .with_graceful_shutdown(async move {
             shutdown_signal().await;
@@ -288,6 +309,7 @@ async fn serve() -> anyhow::Result<()> {
             generator_cancel.cancel();
             verify_cancel.cancel();
             tracking_cancel_on_stop.cancel();
+            automations_cancel_on_stop.cancel();
         })
         .await?;
 
@@ -322,6 +344,15 @@ async fn serve() -> anyhow::Result<()> {
         if tokio::time::timeout(Duration::from_secs(130), v).await.is_err() {
             tracing::warn!("verify tick still running after 130 seconds: exiting anyway");
         }
+    }
+    if let Some(a) = automations_task {
+        // runs in flight keep their lease; another copy (or this one after a restart) goes on from the last saved step
+        if tokio::time::timeout(Duration::from_secs(10), a).await.is_err() {
+            tracing::warn!("automations worker still running after 10 seconds: exiting anyway");
+        }
+    }
+    if let Some(t) = automation_triggers_task {
+        let _ = tokio::time::timeout(Duration::from_secs(10), t).await;
     }
     for t in tracking_tasks {
         let _ = tokio::time::timeout(Duration::from_secs(10), t).await;

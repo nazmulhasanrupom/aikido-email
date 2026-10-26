@@ -1,0 +1,105 @@
+{
+  "format": "aikido-workflow",
+  "version": 1,
+  "name": "Daily reply digest to Slack",
+  "description": "Every weekday at 08:00, list replies with no interest set, summarize each, post one message to Slack.",
+  "settings": {
+    "timezone": "UTC"
+  },
+  "nodes": [
+    {
+      "id": "every_morning",
+      "type": "trigger.schedule",
+      "params": {
+        "mode": "daily",
+        "time": "08:00",
+        "days": [
+          "mon",
+          "tue",
+          "wed",
+          "thu",
+          "fri"
+        ]
+      }
+    },
+    {
+      "id": "open_replies",
+      "type": "aikido.reply.list",
+      "params": {
+        "label": "reply",
+        "handled": false,
+        "since": "${{ now() | add_days(-1) }}",
+        "max_results": 50
+      }
+    },
+    {
+      "id": "summarize",
+      "type": "ai.agent",
+      "batch": {
+        "size": 1,
+        "delay_ms": 200
+      },
+      "params": {
+        "provider": "default_slot",
+        "prompt": "Summarize this reply in one line, max 20 words:\n${{ json.reply_text | default('') | truncate(2000) }}",
+        "output": {
+          "format": "text"
+        }
+      }
+    },
+    {
+      "id": "lines",
+      "type": "data.set",
+      "params": {
+        "keep": "none",
+        "fields": {
+          "line": "- ${{ nodes.open_replies.json.from_email }}: ${{ json.text }}"
+        }
+      }
+    },
+    {
+      "id": "all_lines",
+      "type": "data.aggregate",
+      "params": {
+        "mode": "fields",
+        "fields": [
+          "line"
+        ]
+      }
+    },
+    {
+      "id": "post_slack",
+      "type": "http.request",
+      "params": {
+        "method": "POST",
+        "url": "${{ secret('SLACK_WEBHOOK_URL') }}",
+        "body_type": "json",
+        "body": {
+          "text": "Replies to check:\n${{ json.line | join('\n') }}"
+        }
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "every_morning",
+      "to": "open_replies"
+    },
+    {
+      "from": "open_replies",
+      "to": "summarize"
+    },
+    {
+      "from": "summarize",
+      "to": "lines"
+    },
+    {
+      "from": "lines",
+      "to": "all_lines"
+    },
+    {
+      "from": "all_lines",
+      "to": "post_slack"
+    }
+  ]
+}

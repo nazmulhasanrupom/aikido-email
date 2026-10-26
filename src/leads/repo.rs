@@ -423,12 +423,13 @@ pub async fn add_to_campaign(conn: &mut PgConnection, campaign_id: Uuid, ids: &[
              WHERE EXISTS (SELECT 1 FROM campaigns WHERE id = $1 AND status IN ('draft', 'active', 'paused'))
             ON CONFLICT DO NOTHING RETURNING lead_id
          ), ev AS (
-            INSERT INTO lead_events (lead_id, kind, ref_id, detail, at) SELECT lead_id, 'campaign_added', $1, '{}'::jsonb, $3 FROM ins RETURNING 1
+            INSERT INTO lead_events (lead_id, kind, ref_id, detail, at) SELECT lead_id, 'campaign_added', $1, $4, $3 FROM ins RETURNING 1
          ) SELECT count(*) FROM ev",
     )
     .bind(campaign_id)
     .bind(ids)
     .bind(now)
+    .bind(crate::automations::actor::tag(serde_json::json!({})))
     .fetch_one(conn)
     .await?;
     Ok(n)

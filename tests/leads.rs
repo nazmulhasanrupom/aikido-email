@@ -78,7 +78,7 @@ async fn migration_adds_only_new_tables(pool: PgPool) {
         .await
         .unwrap();
     let names: Vec<&str> = tables.iter().map(|t| t.0.as_str()).collect();
-    assert_eq!(names, ["lead_defaults", "lead_email_runs", "lead_emails", "lead_events", "lead_fields", "lead_import_files", "lead_imports", "lead_list_members", "lead_lists", "leads"]);
+    assert_eq!(names, ["lead_defaults", "lead_email_runs", "lead_emails", "lead_events", "lead_fields", "lead_import_files", "lead_imports", "lead_list_members", "lead_list_rows", "lead_lists", "leads"]);
     // the old tables did not change
     let (n,): (i64,) = sqlx::query_as("SELECT count(*) FROM information_schema.columns WHERE table_name = 'enrollments'").fetch_one(&pool).await.unwrap();
     // 16 before the lead tables; the Email Generator (0006) added wait_reason and wait_since

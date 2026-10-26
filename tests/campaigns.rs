@@ -454,10 +454,16 @@ async fn pause_resume_and_archive(pool: PgPool) {
         async move { c.api("POST", &format!("/v1/campaigns/{camp}/{action}"), None).await }
     };
     // wrong states
-    for action in ["pause", "resume", "archive"] {
+    for action in ["pause", "resume"] {
         let r = post(action).await;
         assert_eq!((r.status, code(&r).as_str()), (StatusCode::CONFLICT, "invalid_status"), "{action} of a draft");
     }
+    // a draft can be archived (the UI archive/delete feature); a second archive is refused
+    let draft = id(&c.campaign(&[a], json!({})).await);
+    let r = c.api("POST", &format!("/v1/campaigns/{draft}/archive"), None).await;
+    assert_eq!((r.status, r.body["status"].as_str()), (StatusCode::OK, Some("archived")));
+    let r = c.api("POST", &format!("/v1/campaigns/{draft}/archive"), None).await;
+    assert_eq!((r.status, code(&r).as_str()), (StatusCode::CONFLICT, "invalid_status"));
     c.launch(&camp).await;
     assert_eq!(post("resume").await.status, StatusCode::CONFLICT);
     assert_eq!(post("archive").await.status, StatusCode::CONFLICT, "an active campaign must be paused first");

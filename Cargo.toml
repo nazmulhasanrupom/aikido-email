@@ -31,6 +31,7 @@ tower-http = { version = "0.7.1", features = ["cors", "trace", "timeout"] }
 sqlx = { version = "0.8.6", default-features = false, features = ["runtime-tokio", "tls-rustls-ring-webpki", "postgres", "uuid", "chrono", "json", "migrate", "macros"] }
 chrono = { version = "0.4.45", features = ["serde"] }
 chrono-tz = "0.10.4"
+croner = "=4.0.1"
 uuid = { version = "1.28.0", features = ["v7", "serde"] }
 rand = "0.8"
 subtle = "2.6.1"
@@ -64,9 +65,19 @@ png = "0.18.1"
 instant-acme = { version = "0.8.5", default-features = false, features = ["ring", "hyper-rustls", "rcgen"] }
 x509-parser = "0.18.1"
 pem = "4.0.0"
+minijinja = { version = "=2.24.0", features = ["custom_syntax", "json", "fuel", "builtins", "multi_template"] }
+schemars = { version = "=1.2.2", features = ["uuid1", "chrono04"] }
+md-5 = "0.11.0"
+jsonschema = { version = "=0.58.6", default-features = false }
+flate2 = "1.1.10"
+# The JavaScript engine of the code node (`code.js`). Pinned: the newest releases are too young to trust.
+rquickjs = { version = "=0.12.2" }
+# `util` gives `ServiceExt::oneshot`: automation nodes call the app router in-process.
+tower = { version = "0.5.3", features = ["util"] }
 
 [dev-dependencies]
-tower = { version = "0.5.3", features = ["util"] }
+# paused clocks in the AI Agent timeout test
+tokio = { version = "1.53.2", features = ["test-util"] }
 
 # Password hashing and the like are slow in an unoptimized build. Keep them fast in tests.
 [profile.dev.package.argon2]
@@ -75,3 +86,6 @@ opt-level = 3
 opt-level = 3
 [profile.dev.package.zxcvbn]
 opt-level = 3
+
+[profile.dev]
+debug = "line-tables-only"

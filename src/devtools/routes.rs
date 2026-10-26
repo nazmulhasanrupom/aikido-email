@@ -477,14 +477,15 @@ async fn info(State(st): State<AppState>) -> ApiResult<ApiJson<InfoReply>> {
 
 // ---------- controls ----------
 
-/// The controls: `followups_tick`, `feeder_tick`, `sending_tick`, `tracking_tick`, `reload_certs`, `test_log`.
-pub const ACTIONS: [&str; 6] = ["followups_tick", "feeder_tick", "sending_tick", "tracking_tick", "reload_certs", "test_log"];
+/// The controls: `followups_tick`, `feeder_tick`, `sending_tick`, `tracking_tick`, `reload_certs`, `test_log`, `automations_tick`, `automations_trigger_tick`.
+pub const ACTIONS: [&str; 8] = ["followups_tick", "feeder_tick", "sending_tick", "tracking_tick", "reload_certs", "test_log", "automations_tick", "automations_trigger_tick"];
 
 /// Run a control now.
-#[utoipa::path(post, path = "/v1/dev/actions/{name}", tag = "dev", params(("name" = String, Path, description = "`followups_tick`, `feeder_tick`, `sending_tick`, `tracking_tick`, `reload_certs` or `test_log`")),
+#[utoipa::path(post, path = "/v1/dev/actions/{name}", tag = "dev", params(("name" = String, Path, description = "`followups_tick`, `feeder_tick`, `sending_tick`, `tracking_tick`, `reload_certs`, `test_log`, `automations_tick` or `automations_trigger_tick`")),
     responses((status = 200, body = Done), (status = 404, description = "`unknown_action`")), security(("api_key" = ["admin"]), ("session" = [])),
     description = "Scope: `admin`. Runs one round of an engine now, without waiting for its timer: `followups_tick` (make the jobs of due steps), `feeder_tick` (enroll campaign leads), \
-        `sending_tick` (send what the rules allow), `tracking_tick` (check tracking domains), `reload_certs` (read the tracking certificates again), `test_log` (write a line of each level).")]
+        `sending_tick` (send what the rules allow), `tracking_tick` (check tracking domains), `reload_certs` (read the tracking certificates again), `test_log` (write a line of each level), \
+        `automations_tick` (claim and run the queued automation runs), `automations_trigger_tick` (fire due time triggers and read new events for event triggers).")]
 async fn action(State(st): State<AppState>, ApiPath(name): ApiPath<String>) -> ApiResult<ApiJson<Done>> {
     tracing::info!(action = %name, "developer panel: control run");
     let message = match name.as_str() {
@@ -499,6 +500,11 @@ async fn action(State(st): State<AppState>, ApiPath(name): ApiPath<String>) -> A
         }
         "tracking_tick" => format!("{} domain(s) checked", crate::tracking::domains::tick(&st).await?),
         "reload_certs" => format!("{} certificate(s) loaded", st.certs.refresh(&st).await?),
+        "automations_tick" => format!("{} run(s) processed", crate::automations::engine::worker::tick(&st, &crate::automations::engine::worker::WorkerOpts::from_env()).await?),
+        "automations_trigger_tick" => {
+            let (time, event) = crate::automations::production::tick::tick_all(&st).await?;
+            format!("time triggers: {time:?}; event triggers: {event:?}")
+        }
         "test_log" => {
             tracing::debug!("test line: debug");
             tracing::info!("test line: info");

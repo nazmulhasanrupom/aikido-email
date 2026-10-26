@@ -29,6 +29,7 @@ The engine stores connected email accounts and sends queued emails one at a time
 20. [Email Generator (`generator`)](#20-email-generator-generator)
 21. [Web app: login, team, helpers, reports](#21-web-app-login-team-helpers-reports)
 29. [Settings → Environment (`admin`)](#29-settings--environment-admin)
+30. [Automations (`automations`)](#30-automations-automations)
 25. [Email optimization (`personalization`, `campaigns`, `leads`)](#25-email-optimization-personalization-campaigns-leads)
 
 ---
@@ -116,6 +117,7 @@ Section keys are optional. A section key works only on routes of its own scope.
 | `generator` | `/v1/generator/*` | Yes |
 | `integrations` | `/v1/integrations/*`, `/v1/verify/*` | Yes |
 | `personalization` | `/v1/personalization/*` | Yes |
+| `automations` | `/v1/automations/*` | No. Make a key in Settings → API, or set `AIKIDO_AUTOMATIONS_API_KEY`. |
 
 **Routes that need no key:** `GET /health`, `GET /docs`, `GET /openapi.json`, `GET /v1/accounts/oauth/{provider}/callback` (protected by a sealed `state` value), and `/v1/auth/*` (the web login, [section 21](#21-web-app-login-team-helpers-reports)).
 
@@ -1948,7 +1950,7 @@ Settings > Developer turns on a panel at the bottom of the web app (off by defau
 | GET | `/v1/dev/tables` | Tables of the `public` schema with an estimated row count and the size. |
 | GET | `/v1/dev/tables/{name}` | Columns of a table. |
 | GET | `/v1/dev/info` | Version, uptime, database size and version, pool, settings without secrets, counts (queued, sending, stuck, failed and sent jobs, open and failed sequences, accounts, leads, opens, tracking domains not green). |
-| POST | `/v1/dev/actions/{name}` | Run one round now: `followups_tick`, `feeder_tick`, `sending_tick` (respects the rules), `tracking_tick`, `reload_certs`, `test_log`. |
+| POST | `/v1/dev/actions/{name}` | Run one round now: `followups_tick`, `feeder_tick`, `sending_tick` (respects the rules), `tracking_tick`, `reload_certs`, `test_log`, `automations_tick`, `automations_trigger_tick`. |
 
 **The log.** A tracing layer keeps the last 5000 events in memory with a growing id: time, level, target, message, fields and the request they happened in (`http{method=POST path=/v1/...}`). It is empty after a restart. Lines that exist now: every request (`error` for 5xx, `warn` for 4xx, `info` for changes, `debug` for reads; the panel's own polling and `/health` are left out), each send and its result, retries and failures, follow-up, feeder and reply-check rounds, stored inbound emails (label and match), imports, AI calls, verification runs, tracking domain changes, certificate steps, tracker inserted or skipped, opens, "Send now", and every SQL run of the panel.
 
@@ -1969,3 +1971,315 @@ Scope `admin` (owner and admin sessions, or an `admin` key).
 Keys the app can save: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` (secret), `MS_CLIENT_ID`, `MS_CLIENT_SECRET` (secret), `MS_TENANT` (default `common`; letters, digits, dots and dashes). `GET /v1/ui/config` (`oauth.gmail`, `oauth.microsoft`) follows a save at once.
 
 Not in the app, because the server needs them before it can read the database or they change the listener: `DATABASE_URL`, `AIKIDO_ENCRYPTION_KEY`, `AIKIDO_DATA_DIR`, `AIKIDO_BIND_ADDR`, `AIKIDO_PUBLIC_URL`, `AIKIDO_INSECURE_COOKIES`, `AIKIDO_TRUST_PROXY`, the tracking addresses, the `*_ENABLED` switches and the tick numbers. Also `AIKIDO_DRY_RUN` and the open-tracking values (`AIKIDO_TRACKING_CNAME_TARGET`, `AIKIDO_ACME_EMAIL`) stay in `.env`: the sender and the tracking server read them one time at start.
+
+## 30. Automations (`automations`)
+
+A node editor for email work: drag nodes, connect them, pass data from one node to the next. The full plan is `AIKIDO_EMAIL_Automations_Build_Map.md`. Build progress is in `automationsetp.md`.
+
+**What exists now (phases 1 to 9; the AI box is described under "Phase 8"):** the workflow file format, the node catalog, the validator, the expression engine, the routes to save drafts, the engine (test runs of the draft, a worker, run pages, run events, cancel, pause), **the nodes that talk to the outside**: the 25 curated AIKIDO nodes, the generic `aikido.api` node, `http.request` and `web.fetch_page`, plus secrets and settings, **and the AI Agent node** (`ai.agent`). The nodes that run are the manual trigger, all `flow.*`, all `data.*`, all `aikido.*`, `http.request`, `web.fetch_page` and `ai.agent`. **Phase 5 added production:** publish, versions, restore, draft history, activate and deactivate, time triggers (schedule, cron), event triggers (11 kinds), webhooks (production and test URL), manual production runs and retry. The editor page came in phase 6 (below).
+
+Scope `automations` (members and every session may use it). The `admin` key passes too. Migration `0025` makes all tables of the feature.
+
+### The workflow file (`aikido-workflow`, version 1)
+
+One JSON object: `format`, `version`, `name`, `description`, `variables`, `settings`, `nodes`, `edges`, `notes`, `pins`, `meta`. The same object is the draft, a version and the download file.
+
+- A **node** has `id` (`^[a-z][a-z0-9_]{0,39}$`, not a reserved word), `type`, `name`, `params`, and optional `on_error` (`stop`, `continue`, `error_port`), `retry`, `batch`, `disabled`, `position`, `notes`.
+- An **edge** is `{ "from": "<node id>", "port": "main", "to": "<node id>" }`. `port` is only needed when it is not `main`.
+- A node reads earlier nodes with `${{ nodes.<id>.json.<field> }}`, the trigger with `${{ trigger.<field> }}`, variables with `${{ vars.<key> }}`. `{{first_name}}` (email template tags) is plain text and is never changed.
+- A param that is exactly one `${{ expr }}` gives the real value (list, object, number, true/false). Text around it gives a string. A missing value is an error; use `| default('')`.
+
+### Routes
+
+| Method | Path | Use |
+| --- | --- | --- |
+| GET | `/v1/automations/workflows` | `{workflows, next_cursor}`. Filters: `q`, `active`, `tag`, `archived` (default `false`: archived ones are hidden), `cursor`, `limit` (1 to 200, default 50). Newest first. Each row: `id, name, description, active, published_version, draft_changed, draft_valid, last_run {status, at}, runs_24h {success, error}, tags, archived_at, updated_at`. |
+| POST | `/v1/automations/workflows` | `{ name, definition? , template? }`. No `definition`: a draft with one `trigger.manual`. The draft is saved even with errors. `201` with the workflow. `422 invalid_name`, `invalid_format`, `draft_too_large`, `unknown_template` (use `POST /v1/automations/templates/{id}/create` for a template). |
+| GET | `/v1/automations/workflows/{id}` | The workflow with `draft`, `draft_hash`, `validation` (the check of the draft now), `published` (`{version, note, at}`, `null` until the first publish), `active`, `tags`. `404 workflow_not_found`. |
+| PATCH | `/v1/automations/workflows/{id}` | `{ draft?, if_hash?, name?, description?, tags?, archived? }`. Saves the draft (errors allowed). Send the `draft_hash` you last saw as `if_hash`: if the draft changed, `409 draft_conflict` and the error holds the newest `draft` and `draft_hash`. `name` and `description` are also written into the draft. `archived: false` brings an archived workflow back. The last 50 saves are kept (`automation_draft_history`). Answers like `GET`. |
+| DELETE | `/v1/automations/workflows/{id}` | Archive (and switch off). `?hard=true` deletes it for good (owner/admin: `403 admin_only`). `204`. |
+| POST | `/v1/automations/workflows/{id}/duplicate` | A copy named `<name> (copy)`: new draft, not published, not active. `201`. |
+| POST | `/v1/automations/validate` | `{ definition, for_publish? }`. Writes nothing. Always `200` with `{ ok, errors, warnings }`. Each issue: `code`, `node_id?`, `path?`, `message`. `for_publish: true` also fails a required variable with no value and a missing secret. |
+| GET | `/v1/automations/nodes` | The catalog: for each node type `type, label, category, description, params_schema` (JSON Schema with `x-ui` hints), `ports, mode, side_effect, admin_only, output_example, docs_notes`. 59 types: 15 triggers, 26 AIKIDO (25 curated + `aikido.api`), 1 AI, 2 web, 7 flow, 8 data. |
+| GET | `/v1/automations/schema.json` | JSON Schema (draft 2020-12) of the whole file. Each node's `params` are in a `oneOf` keyed by `type`. Open to any valid key or session. |
+
+### Validation codes
+
+Errors: `endpoint_not_allowed` and `unknown_operation` (`aikido.api`, see below), `invalid_format`, `format_too_new`, `invalid_name`, `too_many_nodes`, `invalid_node_id`, `reserved_node_id`, `duplicate_node_id`, `unknown_node_type` (with the closest names), `invalid_params` (with the path inside `params`), `missing_trigger`, `too_many_triggers`, `trigger_has_input`, `trigger_param_not_static`, `unknown_edge_node`, `unknown_port`, `duplicate_edge`, `cycle_detected` (names the loop), `expression_syntax`, `unknown_reference` (a node that is not upstream, with "did you mean"), `unknown_variable`, `variable_missing` (publish only), `unknown_provider`, `unknown_secret` (a warning in a draft, an error on publish), `admin_node_not_allowed` (publish by a member).
+
+Warnings: `unreachable_node`, `multiple_inputs`, `unknown_field_ignored`, `no_positions`, `pinned_data_in_production`, `expression_maybe_empty` (a field the node does not give), `ambiguous_reference` (reading a node through an Aggregate or Merge).
+
+A draft save is allowed with errors. Publish and activate (phase 5) need `ok: true`. A test run needs no errors **on the tested path** (see below).
+
+### Running a workflow (phase 2)
+
+**Items.** A node gets a list of items and gives a list of items. A per-item node runs once for each item. An all-items node (`flow.merge`, `data.aggregate`, `data.limit`, `data.dedupe`, `data.sort`) runs once with all of them. A node that gets 0 items does not run (`skipped`) and its children are skipped too. A node with 2 input edges runs once per edge; `flow.merge` runs once. Nodes run one at a time, in file order among the ready ones.
+
+**Reading earlier nodes.** `nodes.<id>.json` is the item of node `<id>` that the current item came from. `nodes.<id>.items` is the list of all output items of that node. `trigger` is the trigger item of the run. After `data.aggregate` or `flow.merge` in `append` mode, the link to the earlier items is cut: `nodes.x.json` then fails with `ambiguous_reference` (use `nodes.x.items`). A node on another branch fails with `no_paired_item`. `run.item_index` is the position of the item.
+
+**Errors.** Per node: `on_error: stop` (default; the run ends in `error`), `continue` (the item goes on with an `error` field `{code, message, node_id, item_index}`) or `error_port` (the item goes to the `error` port). `retry: {max, delay_ms}` runs first. A node call times out after 120 s (`node_timeout`). `batch: {size, delay_ms}` runs items in groups. The workflow `settings.on_error` is the default. Limits: 10000 items per node run (`too_many_items`), 1 MB per item (`item_too_large`), `settings.run_timeout_secs` of working time (`run_timeout`; time in a long Wait does not count).
+
+**Wait.** Up to 60 s the node waits inside the task. Longer, the run is saved as `waiting` with `resume_at` and the worker queues it again at that time. Up to 30 days (`wait_too_long`). Many items in one Wait node all wait for the longest time.
+
+**Saved steps.** After each node the run saves its state (gzip JSON in `automation_runs.state`, at most 20 MB, `run_state_too_large`). A server copy claims a run with a 60 s lease and renews it every 20 s. If a copy dies, another one takes the run when the lease is over and goes on from the last saved node. The node that was running runs again (event `node_restarted`).
+
+**Test runs.** They run the **draft**, active or not. Pins (`pins` in the file) replace the node they belong to: the node is not called. Nodes with a side effect (`side_effect: true` in the catalog) run **dry**: status `dry`, output `{ dry_run: true, would_call }`; send `real_writes: true` to run them for real. For the AIKIDO nodes `would_call` is `{ method, path, query?, body? }` (the call the node would make). For another node with a side effect it is `{ node_type, params }`. A dry node sends nothing and changes nothing. Reads (`aikido.lead.get`, `aikido.lead.find`, ...), `http.request` and `web.fetch_page` always run for real; a test run with a `POST`, `PUT`, `PATCH` or `DELETE` HTTP Request writes a line to the run log ("this POST request to host was really sent"). Test runs keep all data. The newest 20 test runs of a workflow are kept, none older than 7 days.
+
+### Run routes (phase 2)
+
+| Method | Path | Use |
+| --- | --- | --- |
+| POST | `/v1/automations/workflows/{id}/test` | `{ trigger_node_id?, trigger_item?, only_node?, real_writes?, variables? }`. Queues a test run of the draft: `202 { run_id }`. The trigger item is `trigger_item`, else the pin of the trigger, else (manual trigger) `{ started_by, input: {} }`, else the catalog example. `only_node` runs only the path from the trigger to that node (test step). `variables` gives values for this run. `422 workflow_has_errors` (the answer holds `validation`; only errors on the tested path count), `invalid_trigger_node`, `invalid_only_node`, `invalid_trigger_item`, `variable_missing`. `404 workflow_not_found`. |
+| GET | `/v1/automations/runs` | `{runs, next_cursor}`. Filters: `workflow_id`, `mode` (`test`, `production`), `status`, `since`, `cursor`, `limit` (1 to 200, default 50). Newest first. Row: `id, workflow_id, version, mode, status, trigger_node_id, queued_at, started_at, finished_at, duration_ms, error_code`. |
+| GET | `/v1/automations/runs/{id}` | The run: the row fields plus `trigger_item, options, error, resume_at, cancel_requested, active_ms` and `nodes`: one row per node execution `{ node_id, seq, status (running, success, error, skipped, dry), input_count, output_count {port: n}, output {port: [items]}, truncated_items {port: n}, truncated, error, started_at, finished_at }`. Outputs are cut to 20 items per port. `404 run_not_found`. |
+| GET | `/v1/automations/runs/{id}/nodes/{node_id}` | The stored output of one node. `?seq=` (default the last), `?port=`, `?offset=`, `?limit=` (1 to 1000, default 100). `404 node_not_in_run`. The stored output is cut at 512 KB (`truncated`). |
+| GET | `/v1/automations/runs/{id}/events` | `{ status, events: [{id, at, kind, node_id, detail}] }`, oldest first. `?after=<event id>` for live polling, `?limit=` (1 to 500). Kinds: `node_started`, `node_finished`, `node_error`, `waiting`, `resumed`, `node_restarted`, `log`. Stop polling when `status` is `success`, `error` or `cancelled`. |
+| POST | `/v1/automations/runs/{id}/cancel` | A queued or waiting run is `cancelled` at once. A running run stops between items and between nodes. `409 run_finished`. |
+| GET | `/v1/automations/status` | `{ paused, worker_enabled, last_tick_at, queue [{status, mode, count}], active_workflows }`. `worker_enabled` and `last_tick_at` are about the server copy that answers. |
+| POST | `/v1/automations/engine/pause`, `/resume` | Owner/admin (or the `admin` key): `403 admin_only` otherwise. While paused, queued **production** runs wait. Test runs still run. Answers like `status`. |
+
+Run statuses: `queued`, `running`, `waiting`, `success`, `error`, `cancelled`. The run `error` is `{ code, message, node_id?, item_index?, status? }`. Codes the engine makes: `stopped_by_node`, `run_timeout`, `node_timeout`, `run_state_too_large`, `too_many_items`, `item_too_large`, `wait_too_long`, `invalid_definition`, `invalid_checkpoint`, `version_not_found`, `invalid_plan`. Nodes add their own: `invalid_params`, `invalid_param_value`, `path_not_a_list`, `invalid_json`, `ambiguous_reference`, `no_paired_item`, `expression_error`, `expression_syntax`, `not_implemented`.
+
+### The nodes that talk to the outside (phase 3)
+
+**AIKIDO nodes** call the real routes of this app, inside the server (no network, no key). The call acts as a user: a production run as the user who published, a test run as the user who pressed Test. A test started with an API key has no user: it acts as the oldest active owner, with the rights of a member. An owner or admin acts as the `admin` scope; a member as every scope except `admin` (so a member's workflow gets `403` on admin routes, node error `aikido_admin_only`). The user is passed in the request extensions, never in a header, so a call from outside can not fake it (a request with `X-Internal-*` headers and no key is `401`). If the user is disabled, a production run fails with `run_as_user_inactive`.
+
+| Node | Route |
+| --- | --- |
+| `aikido.lead.get` / `.context` / `.events` | `GET /v1/leads/{id}` / `/context` / `/events` (events: up to 1000, pages followed) |
+| `aikido.lead.find` | `GET /v1/leads` with `filter` as query; pages of 500 followed until `max_results` (default 100, up to 10000) |
+| `aikido.lead.create` | `POST /v1/leads` (the params are the lead fields) |
+| `aikido.lead.upsert` | `POST /v1/leads/bulk` with one lead. Output `{ status, lead_id, error }`. `dedupe_mode`: `skip`, `fill_empty`, `overwrite` |
+| `aikido.lead.update` | `PATCH /v1/leads/{id}` with `fields` |
+| `aikido.lead.add_note` | `POST /v1/leads/{id}/notes` |
+| `aikido.lead.action` | `POST /v1/leads/actions` (`add_to_list`, `remove_from_list`, `add_tags`, `remove_tags`, `set_interest`, `verify`; `delete` is refused) |
+| `aikido.list.create` | `POST /v1/leads/lists` |
+| `aikido.campaign.get` / `.stats` | `GET /v1/campaigns/{id}` / `/stats` |
+| `aikido.campaign.leads` | `GET /v1/campaigns/{id}/leads` (`state`, `max_results`) |
+| `aikido.campaign.add_leads` | `POST /v1/campaigns/{id}/leads` (`lead_ids` or `filter`) |
+| `aikido.campaign.save_lead_email` / `.get_lead_email` | `PATCH` / `GET /v1/campaigns/{id}/leads/{lead_id}/emails/{step}` |
+| `aikido.campaign.status` | `POST /v1/campaigns/{id}/launch`, `pause` or `resume` (admin-only node) |
+| `aikido.email.send` | `POST /v1/sending/jobs` with one job, `kind: manual`. Output `{ status, job, error }`. The default `idempotency_key` is `wf:{run_id}:{node_id}:{item_index}`, so a repeat after a crash makes no second job |
+| `aikido.email.reply` | the same route, filled from `message` (`${{ trigger.message }}`): `in_reply_to`, `references`, `provider_thread_id`, `account_id`, `lead_id`, `campaign_id`, `priority 100`, `to_email` = `from_email` |
+| `aikido.reply.list` / `.set_label` | `GET /v1/replies/messages` (`label`, `account_id`, `lead_id`, `campaign_id`, `since`, `handled`, `max_results`) / `PATCH /v1/replies/messages/{id}` (`label`) |
+| `aikido.suppression.add` | `POST /v1/sending/suppressions` (`kind` is `email` when the value has `@`, else `domain`) |
+| `aikido.enrollment.stop` | `POST /v1/followups/enrollments/{id}/stop` |
+| `aikido.generator.campaign_test` | `POST /v1/campaigns/{id}/emails/test` (`lead_id`, `step` default 1). Saves nothing, costs tokens |
+| `aikido.verify.reoon` | `POST /v1/verify/reoon/runs` |
+
+Ids (`lead_id`, `campaign_id`, ...) must be UUIDs: a value like `../keys` is refused (`invalid_param_value`). A route that answers with an error makes a node error `aikido_<route code>` (for example `aikido_email_exists`) with the HTTP `status` and the message. A list route gives one item per row.
+
+**`aikido.api`** (admin-only node) calls any route. `operation` is `METHOD /path` (for example `GET /v1/leads/{id}`); the `operationId` also works when it is unique. `path` fills `{id}`; `query`, `body` and `split` (a path into the answer: one item per element) are optional. In a test run a `GET` runs, every other method is dry. Not offered (refused at validate with `endpoint_not_allowed`, and again at run time, node error `endpoint_not_allowed`, status 403): `/v1/keys*`, `/v1/auth*`, `/v1/users*`, `/v1/dev*`, `/v1/settings/environment*`, `/v1/automations*`, `/v1/integrations/apps*`, OAuth routes, and `DELETE /v1/leads/{id}` (unless the setting `allow_lead_erase` is on). An unknown operation is `unknown_operation` with "did you mean".
+
+**Lead events.** A lead timeline event written by a call of a workflow has `detail.actor = "automation:<workflow id>"` and `detail.automation_run_id`. The event triggers (phase 5) use it to skip a workflow's own changes.
+
+**`http.request`** calls any web API: `method`, `url`, `query`, `headers` (`Host` and `Content-Length` are refused), `body_type` (`json`, `form`, `text`, `none`), `body`, `auth` (`bearer`, `basic`, `header`, each with a secret **name**), `timeout_secs` (1 to 120), `follow_redirects` (max 5), `response_format`, `fail_on_status` (default true: status 400 or more is the node error `http_status_<code>`), `split`. Output `{ status, headers, body, url }` (no `set-cookie`). Body at most 5 MB (`http_response_too_large`). Safe fetch rules: any port, but loopback, private, link-local (`169.254.169.254`), CGNAT and unique-local addresses are refused (`http_blocked`), the connection goes to the checked address, every redirect is checked again, and keys never follow a redirect to another host. The owner setting `allow_private_network` lets a self-hosted service (Ollama, n8n on the LAN) through. Other errors: `invalid_url`, `http_error`, `http_too_many_redirects`, `http_bad_json`, `split_not_a_list`.
+
+**`web.fetch_page`** reads a public page: `url` (a bare domain gets `https://`), `max_chars` (500 to 50000, default 8000), `extract` (`text`, `markdown`, `html`; `markdown` reads like `text`), `include_links` (up to 100), `respect_robots`. Output `{ url, final_url, status, title, description, text, links?, truncated }`. It sends the user agent `AikidoEmail-Automation/<version> (+<public url>)`, reads `/robots.txt` once per run and obeys it (`web_robots_disallowed`; a missing file allows everything, a server error disallows everything), refuses the hosts of `fetch_blocked_domains` and their sub-domains, also after a redirect (`web_domain_blocked`; default `linkedin.com`, `www.linkedin.com`), never connects to private addresses, never logs in, and takes `text/html`, `text/plain` and `application/xhtml+xml` only (`web_not_text`). At most 2 MB and 10 s. LinkedIn data must come through an API whose terms allow it (use `http.request`), never by scraping. A run may make at most 2000 outside calls (`too_many_calls`).
+
+### Secrets and settings (phase 3)
+
+| Method | Path | Use |
+| --- | --- | --- |
+| GET | `/v1/automations/secrets` | `{ secrets: [{ name, last4, updated_at }] }`. Values are never given back. Members can read the names. |
+| POST | `/v1/automations/secrets` | `{ name, value }`. Adds a secret or replaces its value. Owner/admin or the `admin` key (`403 admin_only`). `name` is `^[A-Z][A-Z0-9_]{0,63}$`, `value` is 4 to 10000 characters (`422 invalid_secret`). The value is sealed with AES-256-GCM (the name is bound to it). |
+| DELETE | `/v1/automations/secrets/{name}` | `204`, `404 secret_not_found`. Owner/admin or the `admin` key. A workflow that uses the name shows `unknown_secret`. |
+| GET | `/v1/automations/settings` | The settings (below). |
+| PATCH | `/v1/automations/settings` | Send only the keys to change. Owner/admin or the `admin` key. `422 invalid_setting` or `unknown_setting`. |
+
+A secret is used as `${{ secret('NAME') }}` in any param, or in the `auth.secret` of HTTP Request (better). A missing secret is the node error `secret_not_found`. **Redaction:** before a node output, an error or a log line of a run is stored or shown, every secret value the run can use, and its base64, base64url and URL-encoded forms (and, for basic auth, the base64 of `user:secret`), is replaced with `[secret:NAME]`. The same holds for the data that later nodes read. A dry run shows the redacted call. An export never has secret values.
+
+Settings: `allow_private_network` (false), `allow_lead_erase` (false), `fetch_respect_robots` (true: forces robots.txt on for every Fetch page node), `fetch_blocked_domains` (`linkedin.com`, `www.linkedin.com`; up to 200), `retention_days` (30; 1 to 365), `test_runs_kept` (20; 1 to 100), `webhook_rate_per_min` (60), `event_tick_secs` (5), `ai_budget_wait_hours` (24), `copilot_provider` (`default_draft`), `copilot_enabled` (true), `max_parallel_runs` (10). The retention and test-run settings are read by the cleanup job. The others are used by later phases.
+
+### The AI Agent node (phase 4)
+
+**`ai.agent`** asks an AI model to write text or a JSON object. It uses the providers of the generator (`/v1/generator/providers`): the same client, retries, key store and `auth_failed` rule. There is no second LLM client and no key to set up in Automations. Text in the prompt is sent to that provider (same privacy note as section 20).
+
+| Param | Rule |
+| --- | --- |
+| `provider` | `default_draft` (the generator's draft provider, default), `default_slot` (the slot provider), a provider **name** (any case), or a provider id. Not set up: node error `ai_not_configured`; unknown name: `ai_provider_not_found`; key refused: `ai_provider_auth_failed`. |
+| `system` | Up to 20000 characters. Expressions allowed. |
+| `prompt` | Required, up to 50000 characters after the expressions are read (`prompt_too_long`). |
+| `output.format` | `text` (default) or `json`. |
+| `output.fields` | For `json`: `{ key, type, description?, required? }`, up to 30. `type` is `string`, `number`, `boolean`, `array` or `object`; `required` defaults to `true`. A key is 1 to 40 letters, digits or `_`, and not used twice (the validator says `invalid_params` at `params.output.fields`). The server adds the keys, their types, descriptions and a JSON Schema to the system text. |
+| `temperature` | 0 to 2, default 0.7. Left out for the model families that do not take it. |
+| `max_tokens` | 50 to 8000, default 1000. |
+| `timeout_secs` | 5 to 600, default 120. This is the limit of one call; the node may use two (answer and repair) plus 30 s. |
+| `strip_dashes` | Default `true`: em and en dashes become commas, in text and in every text value of the JSON. |
+
+Output: text gives `{ "text": "..." }`. JSON gives the declared keys only (an extra key is dropped; an optional key that is missing is `null`; a number or boolean that came as text is converted). With no `fields`, any JSON object is accepted as it is. The answer may be wrapped in a code fence or a sentence.
+
+**Repair.** For `json`, an answer that is not valid JSON, misses a required key or has a wrong type gets **one** more call that says why (never the bad answer). Still bad: node error `ai_bad_output`. An empty text answer is `ai_bad_output` at once.
+
+**Other node errors:** `ai_provider_unavailable` (rate limit, server error, connection; the client already retried), `ai_timeout`, `ai_auth_failed` (the provider is marked `auth_failed`, like the generator does), `ai_bad_request`, `ai_refused`, `ai_bad_response`. Each call counts as one outside call of the run (limit 2000).
+
+**`llm_calls`.** Every call writes one row with purpose `automation`, the provider, model, token counts, and the new nullable columns `automation_run_id`, `workflow_id`, `node_id` (migration 0026). No prompt and no answer is stored. `GET /v1/generator/usage` groups them as `automation` in `by_purpose`. The purposes `automation_copilot` and `automation_copilot_summary` are allowed by the table now and used by phase 8.
+
+**Daily token budget.** The calls count in the generator's `daily_token_budget` (input + output tokens of today, UTC, over all purposes). The budget is checked before every call. When it is used up, the node does **not** fail: the run goes to `waiting` with `resume_at` 10 minutes ahead, the node row has status `waiting` (error `ai_budget_reached`), and the node runs again from the start when the run wakes up (items the node already wrote in that try are written again). `on_error` and `retry` do not apply. After `ai_budget_wait_hours` (setting, default 24) of waiting in total, the run fails with `ai_budget_reached`. With `0` it fails at once. The wait is counted per run, and it is cleared when the node finishes. In a test run the node calls the model for real (it costs tokens but changes no data, so "Real writes" is not needed).
+
+### Worker settings
+
+| Env var | Default | Use |
+| --- | --- | --- |
+| `AIKIDO_AUTOMATIONS_ENABLED` | `true` | `false`: this server copy runs no automation runs (another copy may). |
+| `AIKIDO_AUTOMATIONS_MAX_PARALLEL` | `10` | Runs at the same time on this copy. |
+| `AIKIDO_AUTOMATIONS_TICK_MS` | `500` | How often the worker looks for runs. |
+
+`max_concurrent_runs` of a workflow (default 5) limits its **production** runs at the same time across all copies. Cleanup runs every hour: production runs older than `retention_days` (default 30, row in `automation_settings`), test runs beyond the newest 20 or older than 7 days, expired webhook listens, and draft history beyond 50 per workflow.
+
+### Production (phase 5)
+
+Production runs use the **published version**, never the draft. They act as the user who published it (`run_as_user_id`). A workflow published with an API key has no user: its runs act as the oldest active owner with the rights of a **member**. Publish with a session to run with your own rights. If that user is disabled, runs fail with `run_as_user_inactive` and the bell shows `automation_run_as_inactive`.
+
+| Method | Path | Use |
+| --- | --- | --- |
+| POST | `/v1/automations/workflows/{id}/publish` | `{ note? }` (up to 500 characters). Checks the draft as for production, copies it into version N+1 and makes it the published one. `422 workflow_has_errors` (the error holds `validation`), `invalid_trigger`, `invalid_note`. `409 workflow_archived`. Answers `{ version, workflow }`. If the workflow is active, its triggers switch to the new version at once (see below). |
+| POST | `/v1/automations/workflows/{id}/activate` | `{ backfill_hours? }` (0 to 168). Needs a published version that still passes the publish checks. Writes one `automation_triggers` row per trigger node (not for `trigger.manual`). Answers `{ workflow, triggers: [{node_id, kind, node_type, webhook_url, next_run_at}] }`. `409 not_published`, `workflow_archived`, `webhook_path_taken`. `422 workflow_has_errors`, `invalid_trigger`, `invalid_backfill`. A workflow with only a manual trigger can be active: that lets `POST .../run` start it. |
+| POST | `/v1/automations/workflows/{id}/deactivate` | `{ cancel_runs? }`. Removes the triggers. Queued and running runs go on; `cancel_runs: true` cancels them. |
+| GET | `/v1/automations/workflows/{id}/versions` | `{versions}`, newest first: `version, note, published_by, published_at, is_published`. |
+| GET | `/v1/automations/workflows/{id}/versions/{version}` | One version with its `definition`. `404 version_not_found`. |
+| POST | `/v1/automations/workflows/{id}/versions/{version}/restore` | Copies that version into the **draft**. It does not publish. The old draft stays in the draft history (`source: restore`). |
+| GET | `/v1/automations/workflows/{id}/draft-history` | The last 50 saves: `id, source, draft_hash, created_by, created_at`. |
+| POST | `/v1/automations/workflows/{id}/draft-history/{hid}/restore` | Puts that saved draft back. `404 history_not_found`. |
+| POST | `/v1/automations/workflows/{id}/run` | `{ input?, trigger_node_id? }`. A production run by hand or from another tool. Needs an active workflow with a `trigger.manual` node. `202 { run_id }`. `409 workflow_not_active`. `422 invalid_trigger_node`, `invalid_input`. `429 rate_limited`. `input` becomes `trigger.input`. |
+| POST | `/v1/automations/runs/{id}/retry` | A new run with the same trigger item and version, from a production run in `error`. `202 { run_id }`. `409 run_not_retryable` (a test run, or not failed). `429 rate_limited`. Nodes that already sent email or changed data do it again. |
+| POST | `/v1/automations/workflows/{id}/listen` | `{ node_id }`. Starts a 120 second test listen on a `trigger.webhook` node of the draft. Answers `{ test_url, path, until }`. |
+| GET | `/v1/automations/cron/preview` | `?expression=&timezone=&count=` (1 to 20, default 5): the next times, `{ timezone, next, local }`. `422 invalid_cron`, `invalid_timezone`. |
+
+`POST .../test` also takes `test_event: { lead_id, campaign_id, list_id, message_id }`: the trigger item is built from that real lead, campaign, list or message, the way a real event would build it (`event.id` is `test`). `422 invalid_test_event` if it does not fit. An explicit `trigger_item` wins, then `test_event`, then the pin, then the catalog example.
+
+**Swap on publish.** While a workflow is active, publish keeps each trigger row that has the same node id and kind: its event cursor, its generated webhook path, and its next time (if the schedule did not change). Runs that are queued already keep their old version.
+
+**Time triggers** (`trigger.schedule`, `trigger.cron`). The loop looks every 15 seconds. A due trigger makes one run and plans its next time. The time zone is the trigger's `timezone`, else the workflow `settings.timezone`, else the sending default. An interval keeps its rhythm (a day is 24 hours). Daily times and cron follow daylight saving time; a daily time that does not exist that day runs at the next valid minute. After downtime a trigger makes **one** run for the missed time (`catch_up: once`, the default) or none (`catch_up: skip`), never a burst. The run item is `{ fired_at, scheduled_for, timezone }`. Cron has 5 fields (no seconds).
+
+**Event triggers.** The loop reads new events every `event_tick_secs` (default 5) with a cursor, up to 200 per trigger per tick. They read the timelines the other engines already write: `lead_events` for the lead triggers, `inbound_messages` for `trigger.reply_received`, `campaign_events` for `trigger.campaign_status_changed` (new table, written by launch, pause, resume, archive and by the feeder when a campaign completes), and finished `lead_imports` for `trigger.import_finished`. A trigger starts at the newest event when it is switched on (`backfill_hours` goes back). One event makes one run; the idempotency key is `trigger:<trigger id>:event:<event id>`, so a repeat makes no second run. The `lead` in the item is read when the run is made. If the lead is gone, no run is made and `skipped_deleted` of the trigger counts it. Events younger than 2 seconds wait for the next tick (a slow transaction shows up late). Lead triggers skip events that this workflow made itself (`detail.actor = automation:<workflow id>`) unless `ignore_own_changes` is `false`. `trigger.lead_bounced` `kinds`: `hard` is a hard bounce, `soft` is a block. `trigger.lead_updated` reads `detail.fields` of the `updated` event.
+
+**Limits.** `max_runs_per_hour` (workflow setting, default 1000) counts production runs of the last hour. When it is reached, the trigger waits (its cursor or next time does not move, nothing is lost), the trigger gets `rate_limited_at`, and the bell shows `automation_rate_limited`. A workflow with 500 or more queued production runs gets no new ones from its triggers (back-pressure). Webhooks and `POST .../run` answer `429 rate_limited` in both cases. `max_concurrent_runs` limits runs that go at the same time.
+
+### Webhooks (public, no key)
+
+| Method | Path | Use |
+| --- | --- | --- |
+| ANY | `/hooks/{path}` | The production URL. Works only while the workflow is active. `202 { run_id }`, or with `response: when_done` it waits up to 30 seconds and answers the output of the last node (one item as an object, several as a list), `500` with the run error, or `202` if the run is not done. `404 webhook_not_found` (the same for unknown and inactive), `401 webhook_unauthorized`, `405 method_not_allowed`, `413 body_too_large` (over 5 MB), `429 rate_limited` (with `Retry-After`). |
+| ANY | `/hooks/test/{path}` | The test URL. Works for 120 seconds after `POST .../listen`, takes **one** request, and starts a **test** run of the draft (also when the workflow is not active, dry as always). `404 webhook_not_listening` otherwise. A test request never starts a production run and the other way round. |
+
+Trigger params: `path` (4 to 64 letters, digits, `_`, `-`; unique on the install; left out: 16 random characters at activation), `method` (`POST` default, `GET`, `PUT`, `ANY`), `auth` (`none`, or `header` with `header_name` and `secret` = the NAME of a secret, compared in constant time), `response` (`immediately`, `when_done`). The item is `{ method, path, query, headers, body, received_at }`: header names are lower case; `Authorization`, `Cookie` and the secret header are left out. A JSON body is parsed, a form body becomes an object, anything else is kept as text. The rate limit is `webhook_rate_per_min` (default 60) per path, counted in memory on each server copy. The webhook path is part of the URL, so with `auth: none` anyone who knows it can call it: use `auth: header` for anything that matters. `/hooks/*` never returns the web app page.
+
+### Status, alerts, developer panel
+
+`GET /v1/automations/status` also answers `active_triggers`, `trigger_problems` (`workflow_id, workflow_name, node_id, kind, last_error, rate_limited_at`) and `warnings` (plain sentences). Alert kinds in `GET /v1/ui/alerts`: `automation_failed` (production runs in `error` in the last 24 hours, one per workflow), `automation_trigger_error`, `automation_rate_limited`, `automation_run_as_inactive`, `automation_engine_paused`. Developer panel actions: `automations_tick` (claim and run what is queued) and `automations_trigger_tick` (fire due time triggers, read new events).
+
+### The editor (phase 6)
+
+The editor page lives in the web app (`/w/<workspace>/automations`). Two small routes serve it, and `GET /v1/ui/config` has `features.automations` (the value of `AIKIDO_AUTOMATIONS_ENABLED`, default on).
+
+| Method | Path | Use |
+| --- | --- | --- |
+| POST | `/v1/automations/expression/preview` | `{ workflow_id, node_id, text, run_id?, item_index? }`. Reads `text` with the data of a test run (default: the newest test run of the workflow) and answers `{ value, type, error, run_id }`. `type` is `string`, `number`, `boolean`, `array`, `object` or `null`. `error` is `{ code, message }`. With no test run yet, `run_id` is `null` and nothing is read. `json` is the first item (or `item_index`) the node gets from its first parent; `nodes.<id>.json` is the item of that node at the same position. The stored items keep no lineage, so after Split out or Aggregate this is a guide, not the exact item the engine would pair. `secret()` does not work here. `404 workflow_not_found`, `run_not_found`, `node_not_found`. |
+| GET | `/v1/automations/nodes/aikido-api/operations` | `{ operations: [{ operation, method, path, tag, summary, path_params, query_params, has_body }] }`: the routes the `aikido.api` node may call (the deny list is applied), sorted by tag. For the operation picker. |
+
+### Import, export, templates, LLM guide (phase 7)
+
+All behind scope `automations`. The logic is in `src/automations/transfer.rs` (pure), `templates.rs` and `workprocess.rs`.
+
+| Method | Path | Use |
+| --- | --- | --- |
+| GET | `/v1/automations/workflows/{id}/export` | The workflow file: JSON text, pretty printed, keys in a fixed order (`format, version, name, description, variables, settings, nodes, edges, notes, pins, meta`). `Content-Disposition: attachment; filename="<slug>.aikido-workflow.json"`. `?version=N` exports a published version (default: the draft), `?include_pins=true` keeps the pins (default: left out, they can hold lead data). AI provider ids become names, the values of campaign/list/sequence/account/provider/custom-field variables become `null`, `settings.error_workflow_id` is removed, and `meta` is written: `exported_at`, `app_version`, `exported_from_version` (`null` for the draft) and `requires` (`node_types`, `secrets` (names), `providers`, `variables` (`[{key, kind, hint}]`, the hint is the name), `apps`). Never in the file: secret values, API keys, user ids, run data. `404 workflow_not_found`, `version_not_found`; `422 invalid_format` if the draft is too broken to read. |
+| POST | `/v1/automations/import` | Body: exactly one of `text` (the text of a file or pasted text), `definition` (a JSON object) or `url` (http/https, at most 2 MB, safe fetch: public hosts only, a GitHub `blob` address is turned into the raw address); plus optional `name` (replaces the name in the file) and `variables` (`{ "<key>": "<id>" }`, the person's choices). `201 { workflow, report }`: `workflow` is like `GET /workflows/{id}`, always a **new inactive draft**, saved even when it has errors (draft history source `import`). Never published, never active. |
+| POST | `/v1/automations/import/check` | The same body and the same fix-ups, nothing saved. `200 { definition, report }`. For pasting a workflow onto an open draft: the editor shows the report and the choice Replace / Add nodes / Cancel, then saves with `PATCH`. |
+| GET | `/v1/automations/templates` | `{ templates: [{ id, name, description, node_count, node_types, variables: [{key, label, kind, required}], secrets }] }`. Four are built in: `research-lead-write-email`, `tag-hot-replies`, `website-form-to-lead`, `daily-reply-digest-to-slack`. |
+| GET | `/v1/automations/templates/{id}` | The template as a workflow definition (not mapped to this install). `404 template_not_found`. |
+| POST | `/v1/automations/templates/{id}/create` | Body (optional): `{ name?, variables? }`. Same code as an import: `201 { workflow, report }`. |
+| GET | `/v1/automations/workprocess.md` | `text/markdown`: `docs/workprocess.md` with the `<!-- NODE_CATALOG -->` line replaced by a catalog made from the node specs (every node: type, label, mode, ports, params table, output example, notes). `?install=true` adds a "This install" section: names and ids of campaigns and lists, AI provider names, custom field keys and secret names (never values). Give it to any LLM; its answer is a file that `POST /v1/automations/import` accepts. |
+
+**Import report** (`201` and `check`):
+
+```json
+{
+  "fixed": ["removed the markdown code fence around the JSON", "added format", "node id 'Fetch Site' renamed to 'fetch_site'"],
+  "needs_you": [
+    { "kind": "variable", "key": "campaign_id", "var_kind": "campaign", "hint": "Q4 SaaS founders", "message": "Pick the campaign for 'campaign_id' (the file says 'Q4 SaaS founders')." },
+    { "kind": "secret", "name": "SEARCH_API_KEY", "message": "Add the secret SEARCH_API_KEY in Automations > Secrets." },
+    { "kind": "provider", "name": "gpt-elsewhere", "node_id": "write_email", "message": "..." },
+    { "kind": "app", "name": "reoon", "message": "..." }
+  ],
+  "warnings": ["This is an n8n workflow, converted as well as possible. ..."],
+  "validation": { "ok": false, "errors": [], "warnings": [] },
+  "source": { "exported_at": "...", "app_version": "..." }
+}
+```
+
+**What the importer does, in order.** (1) Not JSON: `422 invalid_json` with `error.line` and `error.column` (counted in the pasted text, also inside a code fence). A byte order mark and a markdown code fence are removed. More than 2 MB: `422 import_too_large`. A URL that cannot be read: `422 import_fetch_failed`. (2) `{ "workflow": {...} }` is opened. (3) An n8n file (`connections` and no `edges`) is converted as well as possible: manual trigger, HTTP request, webhook, If, Switch and No-op map to AIKIDO nodes, other nodes keep their n8n type (the validator names the closest types) and their n8n parameters go in the node notes; a warning says so. (4) Version: missing or `"1"` fixed, `0` goes through the upgrade hook, a higher number is `422 format_too_new`. (5) Safe fix-ups: missing `format` (also `Aikido_Workflow` spelled differently), missing `name` ("Imported workflow") and `edges`, node ids with upper case, spaces or reserved words and missing or duplicate ids are made into snake_case ids (and `nodes.<old>`, `nodes['Old Id']`, `vars.<old>` are rewritten inside `${{ }}` and `${% %}`, in `pins` keys and in edges), nodes without a `name` get the type label (or the old id), edges written as `{source, target}` or `[from, to]` are renamed, `sourceHandle` becomes `port`, edge ends that name a node by its label are matched, duplicate edges are removed. `meta` is dropped (`source` in the report keeps its dates). (6) Mapping: id-kind variables (campaign, list, sequence, account, provider, custom_field) by your `variables` choice, else by the name hint (`meta.requires.variables[].hint`, case does not matter, exactly one match), else `null` and listed in `needs_you`; AI providers (`ai.agent`) by name (the id of this install also works), else `default_draft` and listed; secrets used in the file and not on this install are listed; an app a node needs (`aikido.verify.reoon` needs `reoon`) that is not installed is listed. (7) Validate, save as a new inactive draft.
+
+### Phase 9: code node, sub-workflows, agent tools, error workflow, pagination
+
+No new routes. Four new params and two new node types; the catalog (`GET /v1/automations/nodes`) lists them with their schemas.
+
+**`code.js` (Code, category `data`, all items).** Param `code` (required, up to 50000 characters): JavaScript, the body of a function with two names, `items` (list of the input items as plain objects) and `vars` (the workflow variables). It returns a list of objects (or one object). QuickJS (`rquickjs 0.12.2`), a fresh engine for each call: 1 second of running time, 32 MB of memory, a small stack; no network, no files, no `require`/`import`, no timers, no promises (no `async`/`await`). Errors: `code_syntax` (also found by the validator while editing, `params.code`, with the line), `code_error` (a thrown error, with the line), `code_timeout`, `code_memory`, `code_bad_return` (not a list of objects, or nothing returned), `code_too_long`. `${{ }}` is not read in `code` (a template string `${{a: 1}.a}` is code). The same number of items out as in keeps the link to earlier nodes (item `i` is linked to input `i`); another count cuts it (read earlier nodes with `nodes.x.items`). Any member may publish a workflow with this node (it has no rights the code can use).
+
+**`flow.execute_workflow` (Execute workflow, category `flow`, all items).** Runs another workflow inside the node and gives back its result.
+
+| Param | Rule |
+| --- | --- |
+| `workflow_id` | Required. The id of the workflow. A literal must be a UUID (validator `invalid_params`). |
+| `input` | `each` (default): one sub-run per input item (at most 500, `too_many_sub_runs`); the trigger item of the sub-run is that item. `all`: one sub-run; the trigger item is `{ "items": [all input items] }`. |
+| `trigger` | The id of the trigger node of the sub-workflow to start from. Default: its manual trigger, else its first trigger. |
+| `return_node` | The id of the node whose items come back. Default: the last node (in run order, trigger excluded) that made items, all its ports together. A sub-workflow with no items gives none. |
+
+A production run uses the **published** version of the other workflow (it need not be active); a test run uses its **draft**, in test mode (its side-effect nodes are dry unless "Real writes" is on, its pins are used). The sub-workflow runs in the same task with the same user, the same Cancel and the same counter of outside calls (2000 per run); it has no run row of its own: the log of the calling run has one line per sub-run with each node and its status. Depth limit 5 (`sub_workflow_depth`); a workflow that is already running higher up in the chain can not be called again (`sub_workflow_loop`, also for a workflow that calls itself). A sub-workflow can wait at most 60 seconds (`sub_workflow_waiting`). Its failure fails the node with `sub_workflow_failed` (the message names the failed node and the inner code); `on_error: continue` keeps the run going. Other codes: `workflow_not_found`, `workflow_archived`, `workflow_not_published`. Result items of `each` are linked to their input item; of `all` the link is cut.
+
+**`ai.agent` tools.** New params:
+
+| Param | Rule |
+| --- | --- |
+| `tools` | Up to 10 of `{ name, description, node, params?, args? }`. `name`: `^[a-z][a-z0-9_]{0,39}$`, unique. `description`: 1 to 500 characters (the AI reads it). `node`: a node type, only `aikido.*` (not the admin-only `aikido.api` and `aikido.campaign.status`), `http.request`, `web.fetch_page`. `params`: fixed params of that node (`${{ }}` works, read once). `args`: the params the AI fills in, same shape as `output.fields`. |
+| `max_tool_calls` | 1 to 20, default 5. |
+
+Because the LLM client has one call shape (system and user text in, text out), tools use a JSON protocol: the AI answers with `{"tool_call": {"name": "...", "arguments": {...}}}` or `{"final": <answer>}` (a string for output `text`, an object with the declared fields for `json`). Each turn is one call (and one `llm_calls` row, one count of the daily budget); the prompt is sent again with the earlier tool calls and results added. Only the keys declared in `args` are taken from the AI, with their type checked; the values from `params` replace the same keys (shallow), so put ids and limits in `params`. What the AI sends is data: a `${{`, `${%` or `${#` in it is refused (`tool_bad_arguments`), so it can not read a secret or another node. A tool result is cut at 6000 characters and has secret values hidden. A problem with one tool call (unknown name, bad arguments, a failing node) is told to the AI, not the node. In a test run a tool node that changes data is dry (the AI is told what it would have done) unless "Real writes" is on. Past `max_tool_calls` the AI is told to answer now; a further tool call fails the node with `ai_bad_output`. One bad reply gets one repair try. The output is the same as without tools; what each tool call did is in the run log (`Tool call 1: get_lead ok.`). Do not give a tool that sends or deletes to a prompt that reads text from outside, unless you want that.
+
+**`settings.error_workflow_id`.** The id of a workflow (validator: `invalid_format` if it is not one). When a **production** run ends in `error`, the **published** version of that workflow is queued as a new production run (it acts as the user who published it; it need not be active; it obeys its own `max_runs_per_hour` and the queue limit). Its trigger item (manual trigger, else its first trigger) is `{ workflow_id, workflow_name, workflow_version, run_id, run_started_at, failed_at, failed_node_id, failed_node_name, error_code, error_message, error }` (`error` is the whole run error object). No chain: the new run has `options.error_run_for` (the failed run id), and when it fails no error workflow is started. Cancelled runs and test runs start nothing. One failed run starts at most one error run. The failed run gets a log event `error_workflow_started` or `error_workflow_skipped` with the reason (archived, not published, at its limit, a chain).
+
+**`http.request` `pagination`.** Optional object; not set means one request.
+
+| Field | Rule |
+| --- | --- |
+| `mode` | `next_url` (the answer holds the address of the next page), `page` (a page number goes up by 1), `offset` (goes up by `step`), `cursor` (the answer holds a cursor). |
+| `next` | Where the next address or cursor is, a path into `{ status, headers, body, url }`. Default `body.next` (`next_url`), `body.next_cursor` (`cursor`). A relative address is resolved against the page address. |
+| `param` | The name of the page, offset or cursor param. Needed for `page`, `offset`, `cursor`. |
+| `location` | `query` (default) or `body` (top level of the JSON object body; `body_type` must be `json`). |
+| `start` | The first page number (default 1) or offset (default 0). |
+| `step` | `offset` only. Default: the number of items on the last page (needs `split`). |
+| `stop_when` | An expression, true after a page means no more pages. It reads `page.number` (from 1), `page.status`, `page.headers`, `page.body`, `page.url`, `page.items` (the `split` list) and `page.count`. It is evaluated after each page (the page that makes it true is kept). |
+| `max_pages` | 1 to 100, default 10. Reaching it is not an error; the log says "Stopped because max_pages was reached". |
+| `delay_ms` | 0 to 10000, wait between two pages. |
+
+Stops: `stop_when` true, no next address or cursor, the next address was seen before, an empty `split` list (`page` and `offset`), `max_pages`. `page` and `offset` need `split` or `stop_when`; `offset` needs `step` or `split` (`invalid_param_value`, also checked by the validator at `params.pagination`). A next address on another host or port is refused (`pagination_cross_origin`) so that the `auth` header is not sent there. Every page is a call (2000 per run) and goes through the safe fetcher. With `split` the output is one item per element of all pages together; without it, one item per page with `page` (its number) added. A page that fails (status, `split_not_a_list`) fails the node. A stop condition that cannot be read: `pagination_stop_error`. At most 10000 items (`too_many_items`).
+
+**Also fixed:** every trigger node (`trigger.webhook`, `trigger.schedule`, ...) was a stub that answered `not_implemented` when a production run started at it; they now give their item on, like the manual trigger.
+
+### Phase 8: the AI box (copilot)
+
+A chat that builds and changes workflows. All routes need scope `automations`. A session sees its own chats; an API key sees all chats. Setting `copilot_provider` (a provider name, `default_draft` or `default_slot`; default `default_draft`) picks the model; `copilot_enabled` turns the box off.
+
+| Method | Path | Use |
+| --- | --- | --- |
+| GET | `/v1/automations/copilot/threads` | `?workflow_id=`. `{ threads: [{ id, workflow_id, title, message_count, created_at, updated_at }] }`, newest first. Open the first one of a workflow. |
+| POST | `/v1/automations/copilot/threads` | Body (optional) `{ workflow_id? }`. `201` thread. No `workflow_id`: a chat for the list page. "New chat" is this call. `404 workflow_not_found`. |
+| DELETE | `/v1/automations/copilot/threads/{id}` | `204`. `404 thread_not_found`. Changes already applied stay. |
+| GET | `/v1/automations/copilot/threads/{id}/messages` | `?after=<message id>&limit=`. `{ thread, messages: [{ id, role, content, applied, has_workflow, created_at }] }`, oldest first. |
+| POST | `/v1/automations/copilot/threads/{id}/messages` | `{ text, workflow_id?, apply? }`. Answer `{ thread, user_message, message, workflow_id, draft_hash }`. |
+| POST | `/v1/automations/copilot/messages/{id}/undo` | `{ message, workflow }` (the `WorkflowDetail` after the undo). |
+
+**A turn.** The model gets the guide (`workprocess.md` with this install's names), a rolling summary, the chat, and a state block: the real current draft (hand edits included; pins are left out and kept by the server), its validation, and the newest test run (node errors and item counts per node). It answers `{ reply, action: "none"|"create"|"replace", workflow }`. A bad answer (no JSON, or a workflow with validation errors) gets one repair try. When the chat grows past about 24000 tokens the old turns are folded into the summary (one extra call, purpose `automation_copilot_summary`) and the newest 12 messages stay.
+
+**Apply.** `replace` saves the old draft in the draft history (source `copilot`), then the new draft; nodes that still exist keep their `position` and `pins`, new nodes are placed right of their parent. `create` makes a new workflow (draft history source `copilot`) and binds the chat to it (`workflow_id` in the answer; open it in the editor). The AI never publishes, activates, runs, or adds secrets. `apply: false` changes nothing and returns `applied.mode = "proposed"`.
+
+`message.applied` of an assistant message: `null` (only an answer), or `{ workflow_id, mode: "create"|"replace"|"proposed", diff: { added, removed, changed, edges_added, edges_removed, fields_changed }, draft_history_id?, undone? }`, or on failure (HTTP 200) `{ error, error_code: "invalid_workflow"|"bad_answer", errors: [{ code, node_id?, path?, message }] }`. For the "Try to fix" button, send the errors as the next message.
+
+**Undo** restores the draft saved in `applied.draft_history_id` (the draft before the change); the draft as it is now goes to the history first (source `restore`). Sets `applied.undone: true`. Only `replace` messages can be undone (`409 nothing_to_undo`); `404 history_not_found` if the 50-entry history no longer holds it.
+
+**Errors of send.** `422 empty_message`, `422 message_too_long` (8000 characters), `429 rate_limited` (10 messages a minute per user, `Retry-After`), `409 ai_not_configured` ("Set up an AI provider in Settings > AI."), `409 ai_provider_not_found`, `409 ai_provider_auth_failed`, `409 daily_budget_reached` (shared with the generator), `409 copilot_disabled`, `409 thread_workflow_mismatch`, `404 thread_not_found`, `404 workflow_not_found`, `502 ai_provider_unavailable | ai_bad_request | ai_refused | ai_bad_response`. Every call writes `llm_calls` (purpose `automation_copilot`).
+
+### Not built yet
+
+The editor can download a draft and create a workflow from a file by itself (plain `GET` and `POST` on the workflow routes); the routes above add the fix-ups and the report.

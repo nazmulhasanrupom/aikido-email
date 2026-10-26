@@ -17,7 +17,22 @@ struct Assets;
 /// Paths that belong to the server, not to the app.
 fn is_server_path(path: &str) -> bool {
     let starts = |p: &str| path == p || path.starts_with(&format!("{p}/"));
-    starts("/v1") || starts("/docs") || starts("/openapi.json") || starts("/health")
+    starts("/v1") || starts("/docs") || starts("/openapi.json") || starts("/health") || starts("/hooks")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_server_path;
+
+    #[test]
+    fn webhook_paths_belong_to_the_server() {
+        assert!(is_server_path("/hooks/abc"));
+        assert!(is_server_path("/hooks/test/abc"));
+        assert!(is_server_path("/hooks"));
+        assert!(!is_server_path("/hookshot"));
+        assert!(is_server_path("/v1/leads"));
+        assert!(!is_server_path("/w/default/automations"));
+    }
 }
 
 #[cfg(feature = "ui")]

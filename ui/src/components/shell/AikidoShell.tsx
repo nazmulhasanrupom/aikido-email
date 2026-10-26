@@ -20,6 +20,7 @@ import { messageOf } from "@/api/errors";
 import { http, type S } from "@/api/http";
 import { q } from "@/api/queries";
 import { AddAccount } from "@/features/accounts/AddAccount";
+import { useAutomationsOn } from "@/features/automations/api";
 import { NewCampaign } from "@/features/campaigns/NewCampaign";
 import { DevPanel } from "@/features/developer/DevPanel";
 import { useDeveloperMode } from "@/features/developer/api";
@@ -61,6 +62,7 @@ interface NavItem {
     | "/w/$ws/inbox"
     | "/w/$ws/accounts"
     | "/w/$ws/personalization"
+    | "/w/$ws/automations"
     | "/w/$ws/reports";
   label: string;
   exact?: boolean;
@@ -69,12 +71,19 @@ interface NavItem {
 const NAV: NavItem[] = [
   { to: "/w/$ws", label: "Home", exact: true },
   { to: "/w/$ws/campaigns", label: "Campaigns" },
+  { to: "/w/$ws/automations", label: "Automations" },
   { to: "/w/$ws/leads", label: "Leads" },
   { to: "/w/$ws/inbox", label: "Inbox" },
   { to: "/w/$ws/accounts", label: "Accounts" },
   { to: "/w/$ws/personalization", label: "Personalisation" },
   { to: "/w/$ws/reports", label: "Reports" },
 ];
+
+/** The page links, without Automations when the feature is off. */
+function useNav(): NavItem[] {
+  const on = useAutomationsOn();
+  return NAV.filter((item) => on || item.to !== "/w/$ws/automations");
+}
 
 /** A page link of the top bar. The page you are on is white with a red line under it. */
 const NAV_LINK =
@@ -124,7 +133,7 @@ function TopNav(p: FrameProps) {
       <WorkspaceButton name={p.state.workspace_name} logo={p.state.workspace_logo} />
       <span aria-hidden="true" className="mx-1.5 hidden h-5 w-px bg-(--topnav-border) lg:block" />
       <nav aria-label="Pages" className="hidden h-full items-stretch lg:flex">
-        {NAV.map((item) => (
+        {useNav().map((item) => (
           <Link
             key={item.to}
             to={item.to}
@@ -266,7 +275,7 @@ function PhoneMenu({ ws, inbox }: { ws: string; inbox: number }) {
         <MenuIcon size={18} aria-hidden="true" />
       </MenuTrigger>
       <MenuContent align="start" className="w-60">
-        {NAV.map((item) => (
+        {useNav().map((item) => (
           <MenuItem key={item.to} asChild>
             <Link
               to={item.to}

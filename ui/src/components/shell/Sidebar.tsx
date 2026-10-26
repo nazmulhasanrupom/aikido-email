@@ -20,12 +20,14 @@ import {
   Swords,
   UserRoundCog,
   Users,
+  Workflow,
 } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { toast } from "sonner";
 import { type AuthState, authStateKey, type User } from "@/api/auth";
 import { messageOf } from "@/api/errors";
 import { http, type S } from "@/api/http";
+import { useAutomationsOn } from "@/features/automations/api";
 import { useReoon } from "@/features/reoon/api";
 import { useUser } from "@/features/settings/useUser";
 import { cn } from "@/lib/cn";
@@ -60,6 +62,7 @@ interface NavItem {
     | "/w/$ws/inbox"
     | "/w/$ws/accounts"
     | "/w/$ws/personalization"
+    | "/w/$ws/automations"
     | "/w/$ws/reports";
   label: string;
   icon: typeof Send;
@@ -69,6 +72,7 @@ interface NavItem {
 const NAV: NavItem[] = [
   { to: "/w/$ws/ai", label: "Aikido AI", icon: Sparkles, soon: true },
   { to: "/w/$ws/campaigns", label: "Campaigns", icon: Send },
+  { to: "/w/$ws/automations", label: "Automations", icon: Workflow },
   { to: "/w/$ws/leads", label: "Leads", icon: Users },
   { to: "/w/$ws/inbox", label: "Inbox", icon: Inbox },
   { to: "/w/$ws/accounts", label: "Email Accounts", icon: Mail },
@@ -116,6 +120,7 @@ export function Sidebar(p: Props) {
   const slim = p.collapsed;
   const inboxCount = useUnreadReplies(p.user);
   const reoon = useReoon();
+  const automations = useAutomationsOn();
   return (
     <>
       {p.drawerOpen && (
@@ -141,7 +146,7 @@ export function Sidebar(p: Props) {
         </div>
 
         <nav aria-label="Pages" className="flex flex-1 flex-col gap-0.5 px-2 py-2">
-          {NAV.map((item) => (
+          {NAV.filter((item) => automations || item.to !== "/w/$ws/automations").map((item) => (
             <Link
               key={item.to}
               to={item.to}

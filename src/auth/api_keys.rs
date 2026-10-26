@@ -28,10 +28,11 @@ pub enum Scope {
     Integrations,
     Personalization,
     Tracking,
+    Automations,
 }
 
 impl Scope {
-    pub const ALL: &'static [Scope] = &[Scope::Admin, Scope::Accounts, Scope::Sending, Scope::Replies, Scope::Followups, Scope::Leads, Scope::Campaigns, Scope::Generator, Scope::Integrations, Scope::Personalization, Scope::Tracking];
+    pub const ALL: &'static [Scope] = &[Scope::Admin, Scope::Accounts, Scope::Sending, Scope::Replies, Scope::Followups, Scope::Leads, Scope::Campaigns, Scope::Generator, Scope::Integrations, Scope::Personalization, Scope::Tracking, Scope::Automations];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -46,6 +47,7 @@ impl Scope {
             Scope::Integrations => "integrations",
             Scope::Personalization => "personalization",
             Scope::Tracking => "tracking",
+            Scope::Automations => "automations",
         }
     }
 

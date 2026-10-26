@@ -41,6 +41,12 @@
       "tailwindDirectives": true
     }
   },
+  "overrides": [
+    {
+      "includes": ["src/features/automations/**", "e2e/phase9_u8_automations.spec.ts"],
+      "linter": { "rules": { "suspicious": { "noTemplateCurlyInString": "off" } } }
+    }
+  ],
   "assist": {
     "enabled": true,
     "actions": {

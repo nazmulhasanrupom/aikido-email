@@ -66,6 +66,7 @@ export function Palette({ open, onClose, ws }: { open: boolean; onClose: () => v
         ? [p("p-reoon", "Pages and settings", "Reoon", "/w/$ws/apps/reoon")]
         : []),
       p("p-camp", "Pages and settings", "Campaigns", "/w/$ws/campaigns"),
+      p("p-auto", "Pages and settings", "Automations", "/w/$ws/automations"),
       p("p-leads", "Pages and settings", "Leads", "/w/$ws/leads"),
       p("p-lists", "Pages and settings", "Leads: Lists", "/w/$ws/leads", {}, undefined, {
         tab: "lists",

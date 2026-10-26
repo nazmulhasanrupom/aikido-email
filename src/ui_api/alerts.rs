@@ -20,7 +20,8 @@ pub struct Alert {
     pub id: String,
     /// `account_disconnected`, `account_error`, `account_reconnect_needed`, `campaign_warning`,
     /// `campaign_no_healthy_account`, `generation_awaiting_review`, `provider_auth_failed`, `ai_budget_reached`,
-    /// `import_failed`, `emails_not_ready`, `jobs_stuck`, `engine_paused`, `integration_auth_failed`, `verification_out_of_credits`.
+    /// `import_failed`, `emails_not_ready`, `jobs_stuck`, `engine_paused`, `integration_auth_failed`, `verification_out_of_credits`,
+    /// `automation_failed`, `automation_trigger_error`, `automation_rate_limited`, `automation_run_as_inactive`, `automation_engine_paused`.
     pub kind: String,
     pub severity: Severity,
     pub title: String,
@@ -46,6 +47,11 @@ pub const KINDS: &[&str] = &[
     "engine_paused",
     "integration_auth_failed",
     "verification_out_of_credits",
+    "automation_failed",
+    "automation_trigger_error",
+    "automation_rate_limited",
+    "automation_run_as_inactive",
+    "automation_engine_paused",
 ];
 
 const WS: &str = "/w/default";
@@ -307,6 +313,92 @@ pub async fn collect(st: &AppState) -> Result<Vec<Alert>, sqlx::Error> {
                 at,
             ));
         }
+    }
+
+    // automations: production runs that failed, triggers that cannot fire, workflows held back, a publisher who is gone, the pause
+    let rows: Vec<(uuid::Uuid, String, i64, DateTime<Utc>)> = sqlx::query_as(
+        "SELECT w.id, w.name, count(*), max(COALESCE(r.finished_at, r.queued_at))
+           FROM automation_runs r JOIN automation_workflows w ON w.id = r.workflow_id
+          WHERE r.mode = 'production' AND r.status = 'error' AND r.queued_at > $1 - interval '24 hours' AND w.archived_at IS NULL
+          GROUP BY w.id, w.name",
+    )
+    .bind(now)
+    .fetch_all(p)
+    .await?;
+    for (id, name, n, at) in rows {
+        out.push(alert(
+            "automation_failed",
+            &id.to_string(),
+            Severity::Warning,
+            format!("{n} {} of {name} failed in the last 24 hours", if n == 1 { "run" } else { "runs" }),
+            "Open the runs of the workflow to see why. A failed run can be run again.".into(),
+            format!("{WS}/automations/{id}/executions"),
+            at,
+        ));
+    }
+    let rows: Vec<(uuid::Uuid, String, String, String)> = sqlx::query_as(
+        "SELECT w.id, w.name, t.node_id, t.last_error FROM automation_triggers t JOIN automation_workflows w ON w.id = t.workflow_id
+          WHERE t.last_error IS NOT NULL AND w.active AND w.archived_at IS NULL ORDER BY w.name, t.node_id",
+    )
+    .fetch_all(p)
+    .await?;
+    for (id, name, node, error) in rows {
+        out.push(alert(
+            "automation_trigger_error",
+            &format!("{id}:{node}"),
+            Severity::Error,
+            format!("A trigger of {name} cannot fire"),
+            format!("Trigger {node}: {error}"),
+            format!("{WS}/automations/{id}"),
+            now,
+        ));
+    }
+    let rows: Vec<(uuid::Uuid, String, DateTime<Utc>)> = sqlx::query_as(
+        "SELECT w.id, w.name, min(t.rate_limited_at) FROM automation_triggers t JOIN automation_workflows w ON w.id = t.workflow_id
+          WHERE t.rate_limited_at IS NOT NULL AND w.active AND w.archived_at IS NULL GROUP BY w.id, w.name",
+    )
+    .fetch_all(p)
+    .await?;
+    for (id, name, at) in rows {
+        out.push(alert(
+            "automation_rate_limited",
+            &id.to_string(),
+            Severity::Warning,
+            format!("{name} reached its hourly run limit"),
+            "New runs wait. Events are not lost: the trigger goes on when the limit allows. Raise `max_runs_per_hour` in the workflow settings, or check for a loop.".into(),
+            format!("{WS}/automations/{id}"),
+            at,
+        ));
+    }
+    let rows: Vec<(uuid::Uuid, String, DateTime<Utc>)> = sqlx::query_as(
+        "SELECT w.id, w.name, w.updated_at FROM automation_workflows w
+          WHERE w.active AND w.archived_at IS NULL AND w.run_as_user_id IS NOT NULL
+            AND NOT EXISTS (SELECT 1 FROM users u WHERE u.id = w.run_as_user_id AND u.status = 'active')",
+    )
+    .fetch_all(p)
+    .await?;
+    for (id, name, at) in rows {
+        out.push(alert(
+            "automation_run_as_inactive",
+            &id.to_string(),
+            Severity::Error,
+            format!("{name} runs as a user who is disabled"),
+            "Its runs fail. Publish the workflow again as an active user.".into(),
+            format!("{WS}/automations/{id}"),
+            at,
+        ));
+    }
+    let paused: Option<bool> = sqlx::query_scalar("SELECT paused FROM automation_settings LIMIT 1").fetch_optional(p).await?;
+    if paused == Some(true) {
+        out.push(alert(
+            "automation_engine_paused",
+            "automations",
+            Severity::Warning,
+            "Automations are paused for everyone".into(),
+            "Production runs wait in the queue. Test runs still run.".into(),
+            format!("{WS}/automations"),
+            now,
+        ));
     }
 
     out.sort_by(|a, b| a.severity.cmp(&b.severity).then(b.since.cmp(&a.since)).then(a.id.cmp(&b.id)));

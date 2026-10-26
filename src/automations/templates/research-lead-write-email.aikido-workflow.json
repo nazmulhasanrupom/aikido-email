@@ -1,0 +1,153 @@
+{
+  "format": "aikido-workflow",
+  "version": 1,
+  "name": "Research lead and write first email",
+  "description": "When a lead joins the campaign: read its website, search the web, write the primary email with AI, save it and the research.",
+  "variables": [
+    {
+      "key": "campaign_id",
+      "label": "Campaign",
+      "kind": "campaign",
+      "value": null,
+      "required": true
+    }
+  ],
+  "settings": {
+    "timezone": "UTC",
+    "max_concurrent_runs": 3
+  },
+  "nodes": [
+    {
+      "id": "on_lead_added",
+      "type": "trigger.lead_added_to_campaign",
+      "params": {
+        "campaign_id": "${{ vars.campaign_id }}"
+      }
+    },
+    {
+      "id": "fetch_site",
+      "type": "web.fetch_page",
+      "name": "Read website",
+      "on_error": "continue",
+      "params": {
+        "url": "${{ trigger.lead.website | default('') }}",
+        "max_chars": 6000
+      }
+    },
+    {
+      "id": "search_web",
+      "type": "http.request",
+      "name": "Search the web",
+      "on_error": "continue",
+      "batch": {
+        "size": 1,
+        "delay_ms": 1100
+      },
+      "params": {
+        "method": "GET",
+        "url": "https://api.search.brave.com/res/v1/web/search",
+        "query": {
+          "q": "${{ trigger.lead.first_name }} ${{ trigger.lead.last_name | default('') }} ${{ trigger.lead.company_name | default('') }}",
+          "count": "5"
+        },
+        "auth": {
+          "type": "header",
+          "header_name": "X-Subscription-Token",
+          "secret": "BRAVE_SEARCH_API_KEY"
+        }
+      }
+    },
+    {
+      "id": "research",
+      "type": "data.set",
+      "name": "Collect research",
+      "params": {
+        "keep": "none",
+        "fields": {
+          "site_title": "${{ get(nodes.fetch_site.json, 'title', '') }}",
+          "site_text": "${{ get(nodes.fetch_site.json, 'text', '') }}",
+          "results": "${{ get(nodes.search_web.json, 'body.web.results', []) | map(attribute='description') | list }}"
+        }
+      }
+    },
+    {
+      "id": "write_email",
+      "type": "ai.agent",
+      "name": "Write email",
+      "params": {
+        "provider": "default_draft",
+        "system": "You write short cold emails. Plain text. No links. Use only facts from the research. If the research is empty, write a short honest email without made-up facts.",
+        "prompt": "Lead: ${{ trigger.lead.first_name }}, ${{ trigger.lead.job_title | default('') }} at ${{ trigger.lead.company_name | default('their company') }}.\nWebsite title: ${{ json.site_title }}\nWebsite text:\n${{ json.site_text | truncate(4000) }}\nWeb results:\n${% for r in json.results %}- ${{ r }}\n${% endfor %}\nWrite the first email.",
+        "output": {
+          "format": "json",
+          "fields": [
+            {
+              "key": "subject",
+              "type": "string",
+              "description": "3 to 7 words, no clickbait"
+            },
+            {
+              "key": "body",
+              "type": "string",
+              "description": "Under 110 words. Start with 'Hi {{first_name}},'. End with a soft question."
+            },
+            {
+              "key": "personalization_note",
+              "type": "string",
+              "description": "One sentence: the fact you used"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "save_email",
+      "type": "aikido.campaign.save_lead_email",
+      "name": "Save primary email",
+      "params": {
+        "campaign_id": "${{ trigger.campaign.id }}",
+        "lead_id": "${{ trigger.lead.id }}",
+        "step": 1,
+        "subject": "${{ nodes.write_email.json.subject }}",
+        "body_text": "${{ nodes.write_email.json.body }}"
+      }
+    },
+    {
+      "id": "save_research",
+      "type": "aikido.lead.update",
+      "name": "Save research on lead",
+      "params": {
+        "lead_id": "${{ trigger.lead.id }}",
+        "fields": {
+          "personalization_note": "${{ nodes.write_email.json.personalization_note }}"
+        }
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "on_lead_added",
+      "to": "fetch_site"
+    },
+    {
+      "from": "fetch_site",
+      "to": "search_web"
+    },
+    {
+      "from": "search_web",
+      "to": "research"
+    },
+    {
+      "from": "research",
+      "to": "write_email"
+    },
+    {
+      "from": "write_email",
+      "to": "save_email"
+    },
+    {
+      "from": "save_email",
+      "to": "save_research"
+    }
+  ]
+}

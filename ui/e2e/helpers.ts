@@ -1,4 +1,5 @@
 import {
+  type APIRequestContext,
   type Browser,
   type BrowserContext,
   test as base,
@@ -41,6 +42,20 @@ export async function apiLogin(
     headers: { origin: BASE },
   });
   expect(res.ok(), await res.text()).toBe(true);
+}
+
+/** Make the owner account when the server is fresh, so a spec can run alone. A server that has it already says 409. */
+export async function ensureOwner(request: APIRequestContext) {
+  const res = await request.post(`${BASE}/v1/auth/setup`, {
+    data: {
+      name: OWNER.name,
+      email: OWNER.email,
+      password: OWNER.password,
+      workspace_name: OWNER.workspace,
+    },
+    headers: { origin: BASE },
+  });
+  expect([201, 409], await res.text()).toContain(res.status());
 }
 
 /** A new browser window with its own cookies, already logged in unless told otherwise. */

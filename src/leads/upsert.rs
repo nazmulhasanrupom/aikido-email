@@ -193,7 +193,7 @@ pub async fn upsert_batch(conn: &mut PgConnection, rows: &[LeadInput], ctx: &Ups
         .bind(&ev_leads)
         .bind(&ev_kinds)
         .bind(ctx.ref_id)
-        .bind(json!({ "source": ctx.source.as_str(), "source_ref": ctx.source_ref, "mode": ctx.mode.as_str() }))
+        .bind(crate::automations::actor::tag(json!({ "source": ctx.source.as_str(), "source_ref": ctx.source_ref, "mode": ctx.mode.as_str() })))
         .bind(ctx.now)
         .execute(&mut *conn)
         .await?;

@@ -54,6 +54,8 @@ pub struct Features {
     pub followups: bool,
     pub leads: bool,
     pub generator: bool,
+    /// Automations (the node editor) are on (`AIKIDO_AUTOMATIONS_ENABLED`, default on).
+    pub automations: bool,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -94,6 +96,7 @@ async fn get_config(State(st): State<AppState>) -> ApiJson<UiConfig> {
             followups: cfg.followups_enabled,
             leads: cfg.leads_enabled,
             generator: cfg.generator_enabled,
+            automations: crate::automations::engine::worker::enabled_by_env(),
         },
     })
 }

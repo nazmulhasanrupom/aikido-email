@@ -121,6 +121,63 @@ pub struct FetchedImage {
     pub bytes: Vec<u8>,
 }
 
+/// A request for `SafeFetcher::request`.
+#[derive(Debug, Clone)]
+pub struct RawRequest {
+    pub method: reqwest::Method,
+    pub url: String,
+    pub headers: Vec<(String, String)>,
+    pub body: Option<Vec<u8>>,
+}
+
+impl RawRequest {
+    pub fn get(url: &str) -> Self {
+        RawRequest { method: reqwest::Method::GET, url: url.to_string(), headers: vec![], body: None }
+    }
+}
+
+/// Called with every URL before a connection is made (the first one and each redirect). An `Err` stops the request.
+pub type HopCheck = Arc<dyn Fn(&Url) -> Result<(), FetchError> + Send + Sync>;
+
+#[derive(Clone)]
+pub struct RequestOptions {
+    /// Every port from 1 to 65535. Off: only the ports of the fetcher (80 and 443).
+    pub any_port: bool,
+    /// Private, loopback and link-local addresses are allowed.
+    pub allow_private: bool,
+    /// 0: a redirect is not followed (it is the answer).
+    pub max_redirects: usize,
+    pub max_bytes: usize,
+    pub timeout: Duration,
+    pub user_agent: String,
+    pub hop_check: Option<HopCheck>,
+}
+
+impl Default for RequestOptions {
+    fn default() -> Self {
+        RequestOptions {
+            any_port: false,
+            allow_private: false,
+            max_redirects: MAX_REDIRECTS,
+            max_bytes: MAX_BODY_BYTES,
+            timeout: TIMEOUT,
+            user_agent: "Mozilla/5.0 (compatible; AikidoEmailBot/1.0)".into(),
+            hop_check: None,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct RawResponse {
+    pub status: u16,
+    /// Lower-case names. `set-cookie` is left out.
+    pub headers: Vec<(String, String)>,
+    pub content_type: String,
+    pub body: Vec<u8>,
+    /// The URL after the redirects.
+    pub url: Url,
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Kind {
     Text,
@@ -147,6 +204,12 @@ impl SafeFetcher {
 
     /// Check a URL and give the address to connect to.
     async fn vet(&self, url: &Url) -> Result<SocketAddr, FetchError> {
+        self.vet_with(url, false, false).await
+    }
+
+    /// `any_port`: every port 1 to 65535 is allowed. `allow_private`: private and loopback addresses are allowed
+    /// (the owner turned that on for local services such as Ollama).
+    async fn vet_with(&self, url: &Url, any_port: bool, allow_private: bool) -> Result<SocketAddr, FetchError> {
         if !matches!(url.scheme(), "http" | "https") {
             return Err(FetchError::BadUrl("only http and https are allowed".into()));
         }
@@ -155,7 +218,7 @@ impl SafeFetcher {
         }
         let host = url.host_str().ok_or_else(|| FetchError::BadUrl("no host".into()))?.to_string();
         let port = url.port_or_known_default().ok_or_else(|| FetchError::BadUrl("no port".into()))?;
-        if !self.ports.contains(&port) {
+        if !any_port && !self.ports.contains(&port) {
             return Err(FetchError::BadUrl("only ports 80 and 443 are allowed".into()));
         }
         let host_clean = host.trim_start_matches('[').trim_end_matches(']');
@@ -167,7 +230,7 @@ impl SafeFetcher {
             return Err(FetchError::Network("the host has no address".into()));
         }
         // every address counts: one private address among public ones is enough to refuse
-        if let Some(bad) = ips.iter().find(|ip| (self.block)(ip)) {
+        if let Some(bad) = ips.iter().find(|ip| !allow_private && (self.block)(ip)) {
             return Err(FetchError::Blocked(format!("{host} points at a private address ({bad})")));
         }
         Ok(SocketAddr::new(ips[0], port))
@@ -182,6 +245,84 @@ impl SafeFetcher {
     pub async fn fetch_image(&self, start: &str) -> Result<FetchedImage, FetchError> {
         let (url, content_type, bytes) = self.fetch_raw(start, Kind::Image).await?;
         Ok(FetchedImage { url, content_type, bytes })
+    }
+
+    /// A general request for the automation nodes (HTTP Request, Fetch page): any method, headers and body,
+    /// any port when the options say so. The safety rules are the same as for `fetch`: the host is resolved and
+    /// checked first, the connection goes to the checked address, and every redirect is checked again.
+    pub async fn request(&self, req: RawRequest, opts: &RequestOptions) -> Result<RawResponse, FetchError> {
+        match tokio::time::timeout(opts.timeout, self.request_inner(req, opts)).await {
+            Ok(r) => r,
+            Err(_) => Err(FetchError::Network(format!("no answer after {} seconds", opts.timeout.as_secs()))),
+        }
+    }
+
+    async fn request_inner(&self, req: RawRequest, opts: &RequestOptions) -> Result<RawResponse, FetchError> {
+        let mut url = Url::parse(req.url.trim()).map_err(|_| FetchError::BadUrl("not a valid address".into()))?;
+        let mut method = req.method;
+        let mut body = req.body;
+        let mut headers = req.headers;
+        for hop in 0..=opts.max_redirects {
+            if let Some(check) = &opts.hop_check {
+                check(&url)?;
+            }
+            let addr = self.vet_with(&url, opts.any_port, opts.allow_private).await?;
+            let host = url.host_str().unwrap_or_default().trim_start_matches('[').trim_end_matches(']').to_string();
+            let client = reqwest::Client::builder()
+                .redirect(reqwest::redirect::Policy::none())
+                .timeout(opts.timeout)
+                .resolve_to_addrs(&host, &[addr])
+                .user_agent(opts.user_agent.as_str())
+                .build()
+                .map_err(|e| FetchError::Network(e.to_string()))?;
+            let mut rb = client.request(method.clone(), url.clone());
+            for (k, v) in &headers {
+                rb = rb.header(k.as_str(), v.as_str());
+            }
+            if let Some(b) = &body {
+                rb = rb.body(b.clone());
+            }
+            let mut resp = rb.send().await.map_err(|e| FetchError::Network(e.without_url().to_string()))?;
+            let status = resp.status();
+            if status.is_redirection() && opts.max_redirects > 0 {
+                let Some(loc) = resp.headers().get("location").and_then(|v| v.to_str().ok()) else {
+                    return Err(FetchError::Status(status.as_u16()));
+                };
+                if hop == opts.max_redirects {
+                    return Err(FetchError::TooManyRedirects);
+                }
+                let next = url.join(loc).map_err(|_| FetchError::BadUrl("the redirect address is not valid".into()))?;
+                // keys and cookies never follow a redirect to another host
+                if next.host_str() != url.host_str() || next.port_or_known_default() != url.port_or_known_default() {
+                    headers.clear();
+                }
+                // 301, 302 and 303 turn a POST into a GET, as browsers do
+                if matches!(status.as_u16(), 301..=303) && method != reqwest::Method::GET && method != reqwest::Method::HEAD {
+                    method = reqwest::Method::GET;
+                    body = None;
+                    headers.retain(|(k, _)| !k.eq_ignore_ascii_case("content-type") && !k.eq_ignore_ascii_case("content-length"));
+                }
+                url = next;
+                continue;
+            }
+            let out_headers: Vec<(String, String)> =
+                resp.headers().iter().filter(|(k, _)| k.as_str() != "set-cookie").filter_map(|(k, v)| Some((k.as_str().to_lowercase(), v.to_str().ok()?.to_string()))).collect();
+            let content_type = resp.headers().get("content-type").and_then(|v| v.to_str().ok()).unwrap_or("").to_lowercase();
+            if resp.content_length().is_some_and(|n| n as usize > opts.max_bytes) {
+                return Err(FetchError::TooLarge);
+            }
+            let mut bytes: Vec<u8> = Vec::new();
+            if method != reqwest::Method::HEAD {
+                while let Some(chunk) = resp.chunk().await.map_err(|e| FetchError::Network(e.without_url().to_string()))? {
+                    if bytes.len() + chunk.len() > opts.max_bytes {
+                        return Err(FetchError::TooLarge);
+                    }
+                    bytes.extend_from_slice(&chunk);
+                }
+            }
+            return Ok(RawResponse { status: status.as_u16(), headers: out_headers, content_type, body: bytes, url });
+        }
+        Err(FetchError::TooManyRedirects)
     }
 
     async fn fetch_raw(&self, start: &str, kind: Kind) -> Result<(Url, String, Vec<u8>), FetchError> {
@@ -356,6 +497,92 @@ mod tests {
         assert!(matches!(f.fetch(&format!("http://local.test:{port}/img")).await, Err(FetchError::NotText(_))));
         assert!(matches!(f.fetch(&format!("http://local.test:{port}/big")).await, Err(FetchError::TooLarge)));
         assert_eq!(f.fetch(&format!("http://local.test:{port}/txt")).await.unwrap().body, "plain text");
+    }
+
+    fn any_port_opts() -> RequestOptions {
+        RequestOptions { any_port: true, ..Default::default() }
+    }
+
+    #[tokio::test]
+    async fn request_refuses_private_hosts_unless_allowed_and_any_port_needs_the_option() {
+        let f = fetcher(vec![("evil.test", vec!["10.0.0.5"]), ("ok.test", vec!["8.8.8.8"])]);
+        for url in ["http://127.0.0.1:8080/", "http://169.254.169.254/latest/meta-data/", "http://10.0.0.1/", "http://evil.test:9000/", "http://[::1]:3000/"] {
+            let r = f.request(RawRequest::get(url), &any_port_opts()).await;
+            assert!(matches!(r, Err(FetchError::Blocked(_))), "{url}: {r:?}");
+        }
+        // a port other than 80 and 443 is refused without `any_port`
+        let r = f.request(RawRequest::get("http://ok.test:8080/"), &RequestOptions::default()).await;
+        assert!(matches!(r, Err(FetchError::BadUrl(_))), "{r:?}");
+        assert!(matches!(f.request(RawRequest::get("ftp://ok.test/"), &any_port_opts()).await, Err(FetchError::BadUrl(_))));
+    }
+
+    #[tokio::test]
+    async fn request_sends_method_headers_and_body_and_returns_status_and_headers() {
+        use axum::routing::post;
+        let app = axum::Router::new().route(
+            "/echo",
+            post(|h: axum::http::HeaderMap, b: String| async move {
+                let key = h.get("x-key").and_then(|v| v.to_str().ok()).unwrap_or("none").to_string();
+                axum::response::Response::builder()
+                    .status(201)
+                    .header("content-type", "application/json")
+                    .header("set-cookie", "a=b")
+                    .header("x-seen", key)
+                    .body(axum::body::Body::from(format!("{{\"got\":{b:?}}}")))
+                    .unwrap()
+            }),
+        );
+        let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = l.local_addr().unwrap().port();
+        tokio::spawn(async move { axum::serve(l, app).await.unwrap() });
+        let m: HashMap<&'static str, Vec<IpAddr>> = [("local.test", vec!["127.0.0.1".parse().unwrap()])].into();
+        let f = SafeFetcher::with(Arc::new(Fake(m)), Arc::new(ip_blocked), vec![80, 443]);
+        let req = RawRequest {
+            method: reqwest::Method::POST,
+            url: format!("http://local.test:{port}/echo"),
+            headers: vec![("X-Key".into(), "k1".into())],
+            body: Some(b"hello".to_vec()),
+        };
+        // loopback is refused, even with any_port
+        assert!(matches!(f.request(req.clone(), &any_port_opts()).await, Err(FetchError::Blocked(_))));
+        // the owner setting lets it through
+        let r = f.request(req, &RequestOptions { any_port: true, allow_private: true, ..Default::default() }).await.unwrap();
+        assert_eq!(r.status, 201);
+        assert_eq!(String::from_utf8(r.body).unwrap(), "{\"got\":\"hello\"}");
+        assert!(r.headers.iter().any(|(k, v)| k == "x-seen" && v == "k1"));
+        assert!(!r.headers.iter().any(|(k, _)| k == "set-cookie"), "cookies are not given back");
+    }
+
+    #[tokio::test]
+    async fn request_checks_each_redirect_and_the_hop_check() {
+        // a redirect to a private name is blocked
+        let port = redirector(|p| format!("http://evil.test:{p}/x")).await;
+        let m: HashMap<&'static str, Vec<IpAddr>> = [("local.test", vec!["127.0.0.1".parse().unwrap()]), ("evil.test", vec!["10.0.0.5".parse().unwrap()])].into();
+        let block: Arc<dyn Fn(&IpAddr) -> bool + Send + Sync> = Arc::new(|ip: &IpAddr| !ip.is_loopback() && ip_blocked(ip));
+        let f = SafeFetcher::with(Arc::new(Fake(m)), block, vec![port]);
+        let r = f.request(RawRequest::get(&format!("http://local.test:{port}/go")), &any_port_opts()).await;
+        assert!(matches!(r, Err(FetchError::Blocked(_))), "{r:?}");
+        // the hop check sees the first URL
+        let opts = RequestOptions {
+            any_port: true,
+            hop_check: Some(Arc::new(|u: &Url| if u.host_str() == Some("local.test") { Err(FetchError::Blocked("blocked by test".into())) } else { Ok(()) })),
+            ..Default::default()
+        };
+        let r = f.request(RawRequest::get(&format!("http://local.test:{port}/go")), &opts).await;
+        assert!(matches!(r, Err(FetchError::Blocked(m)) if m == "blocked by test"));
+        // max_redirects 0: the redirect is the answer
+        let opts = RequestOptions { any_port: true, max_redirects: 0, ..Default::default() };
+        let r = f.request(RawRequest::get(&format!("http://local.test:{port}/go")), &opts).await.unwrap();
+        assert_eq!(r.status, 302);
+    }
+
+    #[tokio::test]
+    async fn request_stops_a_body_over_the_limit() {
+        let big = "x".repeat(5000);
+        let port = server(vec![("/big", page("text/plain", &big))]).await;
+        let f = local_fetcher(port);
+        let opts = RequestOptions { any_port: true, max_bytes: 1000, ..Default::default() };
+        assert_eq!(f.request(RawRequest::get(&format!("http://local.test:{port}/big")), &opts).await.err(), Some(FetchError::TooLarge));
     }
 
     #[tokio::test]

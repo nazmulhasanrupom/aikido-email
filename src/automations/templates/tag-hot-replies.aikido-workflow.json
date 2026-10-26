@@ -1,0 +1,96 @@
+{
+  "format": "aikido-workflow",
+  "version": 1,
+  "name": "Tag hot replies",
+  "description": "When a person replies, AI reads the reply. Interested leads get interest 'interested' and a note.",
+  "settings": {
+    "timezone": "UTC"
+  },
+  "nodes": [
+    {
+      "id": "on_reply",
+      "type": "trigger.reply_received",
+      "params": {
+        "labels": [
+          "reply"
+        ]
+      }
+    },
+    {
+      "id": "classify",
+      "type": "ai.agent",
+      "name": "Read the reply",
+      "params": {
+        "provider": "default_slot",
+        "system": "You sort replies to cold emails. Be strict: 'interested' only when the person wants to talk, see more, or asks a buying question.",
+        "prompt": "Reply text:\n${{ trigger.message.text | default('') | truncate(3000) }}",
+        "output": {
+          "format": "json",
+          "fields": [
+            {
+              "key": "interest",
+              "type": "string",
+              "description": "one of: interested, not_interested, wrong_person, unclear"
+            },
+            {
+              "key": "reason",
+              "type": "string",
+              "description": "One short sentence"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "is_hot",
+      "type": "flow.if",
+      "params": {
+        "conditions": [
+          {
+            "left": "${{ json.interest }}",
+            "op": "equals",
+            "right": "interested"
+          }
+        ]
+      }
+    },
+    {
+      "id": "set_interest",
+      "type": "aikido.lead.action",
+      "params": {
+        "action": "set_interest",
+        "lead_ids": [
+          "${{ trigger.lead.id }}"
+        ],
+        "interest": "interested"
+      }
+    },
+    {
+      "id": "add_note",
+      "type": "aikido.lead.add_note",
+      "params": {
+        "lead_id": "${{ trigger.lead.id }}",
+        "text": "AI: ${{ nodes.classify.json.reason }}"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "on_reply",
+      "to": "classify"
+    },
+    {
+      "from": "classify",
+      "to": "is_hot"
+    },
+    {
+      "from": "is_hot",
+      "port": "true",
+      "to": "set_interest"
+    },
+    {
+      "from": "set_interest",
+      "to": "add_note"
+    }
+  ]
+}

@@ -604,7 +604,7 @@ async fn add_leads(State(st): State<AppState>, ApiPath(id): ApiPath<Uuid>, ApiJs
     qb.push_bind(id).push(", m.id, ").push_bind(now).push(" FROM (");
     push_select_ids(&mut qb, &sel);
     qb.push(" ORDER BY created_at, id) m ON CONFLICT DO NOTHING RETURNING lead_id), ev AS (INSERT INTO lead_events (lead_id, kind, ref_id, detail, at) SELECT lead_id, 'campaign_added', ");
-    qb.push_bind(id).push(", '{}'::jsonb, ").push_bind(now).push(" FROM ins RETURNING 1) SELECT count(*) FROM ev");
+    qb.push_bind(id).push(", ").push_bind(crate::automations::actor::tag(serde_json::json!({}))).push(", ").push_bind(now).push(" FROM ins RETURNING 1) SELECT count(*) FROM ev");
     let (added,): (i64,) = qb.build_query_as().fetch_one(&mut *tx).await?;
     // After the first Save, a new lead gets its emails at once (template mode costs nothing).
     if added > 0 && c.emails_saved_at.is_some() && c.content_mode == "template" {
@@ -777,7 +777,7 @@ async fn list_campaign_leads(State(st): State<AppState>, ApiPath(id): ApiPath<Uu
                   WHEN EXISTS (SELECT 1 FROM generations g WHERE g.enrollment_id = e.id AND g.step_number = e.next_step AND g.status = 'pending_review')
                     THEN 'waiting_ai_review'
                   WHEN e.status = 'waiting_send' THEN 'queued'
-                  WHEN e.next_due_at > now() THEN 'waiting_delay'
+                  WHEN e.next_due_at > $8 THEN 'waiting_delay'
                   ELSE NULL
                 END AS wait_reason
            FROM campaign_leads cl JOIN leads l ON l.id = cl.lead_id LEFT JOIN enrollments e ON e.id = cl.enrollment_id
@@ -794,6 +794,7 @@ async fn list_campaign_leads(State(st): State<AppState>, ApiPath(id): ApiPath<Uu
     .bind(after.map(|a| a.1))
     .bind(limit + 1)
     .bind(&statuses)
+    .bind(st.now())
     .fetch_all(&mut *conn)
     .await?;
     let next_cursor = if leads.len() as i64 > limit {
@@ -865,8 +866,16 @@ async fn set_status(conn: &mut PgConnection, c: &Campaign, status: CampaignStatu
     .bind(c.id)
     .bind(status)
     .bind(now)
-    .execute(conn)
+    .execute(&mut *conn)
     .await?;
+    // the record that `trigger.campaign_status_changed` reads
+    sqlx::query("INSERT INTO campaign_events (campaign_id, from_status, to_status, at) VALUES ($1, $2, $3, $4)")
+        .bind(c.id)
+        .bind(c.status.as_str())
+        .bind(status.as_str())
+        .bind(now)
+        .execute(conn)
+        .await?;
     Ok(())
 }
 

@@ -19,6 +19,7 @@ import { Route as WWsRouteImport } from './routes/w.$ws'
 import { Route as WWsIndexRouteImport } from './routes/w.$ws.index'
 import { Route as WWsAccountsRouteImport } from './routes/w.$ws.accounts'
 import { Route as WWsAiRouteImport } from './routes/w.$ws.ai'
+import { Route as WWsAutomationsRouteImport } from './routes/w.$ws.automations'
 import { Route as WWsCampaignsRouteImport } from './routes/w.$ws.campaigns'
 import { Route as WWsGuideRouteImport } from './routes/w.$ws.guide'
 import { Route as WWsInboxRouteImport } from './routes/w.$ws.inbox'
@@ -30,6 +31,11 @@ import { Route as WWsStatusRouteImport } from './routes/w.$ws.status'
 import { Route as WWsAccountsIndexRouteImport } from './routes/w.$ws.accounts.index'
 import { Route as WWsAccountsIdRouteImport } from './routes/w.$ws.accounts.$id'
 import { Route as WWsAppsReoonRouteImport } from './routes/w.$ws.apps.reoon'
+import { Route as WWsAutomationsIndexRouteImport } from './routes/w.$ws.automations.index'
+import { Route as WWsAutomationsIdRouteImport } from './routes/w.$ws.automations.$id'
+import { Route as WWsAutomationsNewRouteImport } from './routes/w.$ws.automations.new'
+import { Route as WWsAutomationsSecretsRouteImport } from './routes/w.$ws.automations.secrets'
+import { Route as WWsAutomationsSettingsRouteImport } from './routes/w.$ws.automations.settings'
 import { Route as WWsCampaignsIndexRouteImport } from './routes/w.$ws.campaigns.index'
 import { Route as WWsCampaignsIdRouteImport } from './routes/w.$ws.campaigns.$id'
 import { Route as WWsSettingsIndexRouteImport } from './routes/w.$ws.settings.index'
@@ -45,6 +51,8 @@ import { Route as WWsAccountsIdIndexRouteImport } from './routes/w.$ws.accounts.
 import { Route as WWsAccountsIdActivityRouteImport } from './routes/w.$ws.accounts.$id.activity'
 import { Route as WWsAccountsIdReplyCheckRouteImport } from './routes/w.$ws.accounts.$id.reply-check'
 import { Route as WWsAccountsIdSendingRouteImport } from './routes/w.$ws.accounts.$id.sending'
+import { Route as WWsAutomationsIdIndexRouteImport } from './routes/w.$ws.automations.$id.index'
+import { Route as WWsAutomationsIdExecutionsRouteImport } from './routes/w.$ws.automations.$id.executions'
 import { Route as WWsCampaignsIdIndexRouteImport } from './routes/w.$ws.campaigns.$id.index'
 import { Route as WWsCampaignsIdEditorRouteImport } from './routes/w.$ws.campaigns.$id.editor'
 import { Route as WWsCampaignsIdFollowupsRouteImport } from './routes/w.$ws.campaigns.$id.followups'
@@ -53,6 +61,7 @@ import { Route as WWsCampaignsIdReportsRouteImport } from './routes/w.$ws.campai
 import { Route as WWsCampaignsIdSettingsRouteImport } from './routes/w.$ws.campaigns.$id.settings'
 import { Route as WWsSettingsIntegrationsIndexRouteImport } from './routes/w.$ws.settings.integrations.index'
 import { Route as WWsSettingsIntegrationsIdRouteImport } from './routes/w.$ws.settings.integrations.$id'
+import { Route as WWsAutomationsIdExecutionsRunIdRouteImport } from './routes/w.$ws.automations.$id.executions.$runId'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -102,6 +111,11 @@ const WWsAccountsRoute = WWsAccountsRouteImport.update({
 const WWsAiRoute = WWsAiRouteImport.update({
   id: '/ai',
   path: '/ai',
+  getParentRoute: () => WWsRoute,
+} as any)
+const WWsAutomationsRoute = WWsAutomationsRouteImport.update({
+  id: '/automations',
+  path: '/automations',
   getParentRoute: () => WWsRoute,
 } as any)
 const WWsCampaignsRoute = WWsCampaignsRouteImport.update({
@@ -158,6 +172,31 @@ const WWsAppsReoonRoute = WWsAppsReoonRouteImport.update({
   id: '/apps/reoon',
   path: '/apps/reoon',
   getParentRoute: () => WWsRoute,
+} as any)
+const WWsAutomationsIndexRoute = WWsAutomationsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => WWsAutomationsRoute,
+} as any)
+const WWsAutomationsIdRoute = WWsAutomationsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => WWsAutomationsRoute,
+} as any)
+const WWsAutomationsNewRoute = WWsAutomationsNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => WWsAutomationsRoute,
+} as any)
+const WWsAutomationsSecretsRoute = WWsAutomationsSecretsRouteImport.update({
+  id: '/secrets',
+  path: '/secrets',
+  getParentRoute: () => WWsAutomationsRoute,
+} as any)
+const WWsAutomationsSettingsRoute = WWsAutomationsSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => WWsAutomationsRoute,
 } as any)
 const WWsCampaignsIndexRoute = WWsCampaignsIndexRouteImport.update({
   id: '/',
@@ -235,6 +274,17 @@ const WWsAccountsIdSendingRoute = WWsAccountsIdSendingRouteImport.update({
   path: '/sending',
   getParentRoute: () => WWsAccountsIdRoute,
 } as any)
+const WWsAutomationsIdIndexRoute = WWsAutomationsIdIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => WWsAutomationsIdRoute,
+} as any)
+const WWsAutomationsIdExecutionsRoute =
+  WWsAutomationsIdExecutionsRouteImport.update({
+    id: '/executions',
+    path: '/executions',
+    getParentRoute: () => WWsAutomationsIdRoute,
+  } as any)
 const WWsCampaignsIdIndexRoute = WWsCampaignsIdIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -277,6 +327,12 @@ const WWsSettingsIntegrationsIdRoute =
     path: '/$id',
     getParentRoute: () => WWsSettingsIntegrationsRoute,
   } as any)
+const WWsAutomationsIdExecutionsRunIdRoute =
+  WWsAutomationsIdExecutionsRunIdRouteImport.update({
+    id: '/$runId',
+    path: '/$runId',
+    getParentRoute: () => WWsAutomationsIdExecutionsRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -288,6 +344,7 @@ export interface FileRoutesByFullPath {
   '/w/$ws': typeof WWsRouteWithChildren
   '/w/$ws/accounts': typeof WWsAccountsRouteWithChildren
   '/w/$ws/ai': typeof WWsAiRoute
+  '/w/$ws/automations': typeof WWsAutomationsRouteWithChildren
   '/w/$ws/campaigns': typeof WWsCampaignsRouteWithChildren
   '/w/$ws/guide': typeof WWsGuideRoute
   '/w/$ws/inbox': typeof WWsInboxRoute
@@ -299,6 +356,10 @@ export interface FileRoutesByFullPath {
   '/w/$ws/': typeof WWsIndexRoute
   '/w/$ws/accounts/$id': typeof WWsAccountsIdRouteWithChildren
   '/w/$ws/apps/reoon': typeof WWsAppsReoonRoute
+  '/w/$ws/automations/$id': typeof WWsAutomationsIdRouteWithChildren
+  '/w/$ws/automations/new': typeof WWsAutomationsNewRoute
+  '/w/$ws/automations/secrets': typeof WWsAutomationsSecretsRoute
+  '/w/$ws/automations/settings': typeof WWsAutomationsSettingsRoute
   '/w/$ws/campaigns/$id': typeof WWsCampaignsIdRouteWithChildren
   '/w/$ws/settings/account': typeof WWsSettingsAccountRoute
   '/w/$ws/settings/api': typeof WWsSettingsApiRoute
@@ -309,11 +370,13 @@ export interface FileRoutesByFullPath {
   '/w/$ws/settings/sending': typeof WWsSettingsSendingRoute
   '/w/$ws/settings/team': typeof WWsSettingsTeamRoute
   '/w/$ws/accounts/': typeof WWsAccountsIndexRoute
+  '/w/$ws/automations/': typeof WWsAutomationsIndexRoute
   '/w/$ws/campaigns/': typeof WWsCampaignsIndexRoute
   '/w/$ws/settings/': typeof WWsSettingsIndexRoute
   '/w/$ws/accounts/$id/activity': typeof WWsAccountsIdActivityRoute
   '/w/$ws/accounts/$id/reply-check': typeof WWsAccountsIdReplyCheckRoute
   '/w/$ws/accounts/$id/sending': typeof WWsAccountsIdSendingRoute
+  '/w/$ws/automations/$id/executions': typeof WWsAutomationsIdExecutionsRouteWithChildren
   '/w/$ws/campaigns/$id/editor': typeof WWsCampaignsIdEditorRoute
   '/w/$ws/campaigns/$id/followups': typeof WWsCampaignsIdFollowupsRoute
   '/w/$ws/campaigns/$id/leads': typeof WWsCampaignsIdLeadsRoute
@@ -321,8 +384,10 @@ export interface FileRoutesByFullPath {
   '/w/$ws/campaigns/$id/settings': typeof WWsCampaignsIdSettingsRoute
   '/w/$ws/settings/integrations/$id': typeof WWsSettingsIntegrationsIdRoute
   '/w/$ws/accounts/$id/': typeof WWsAccountsIdIndexRoute
+  '/w/$ws/automations/$id/': typeof WWsAutomationsIdIndexRoute
   '/w/$ws/campaigns/$id/': typeof WWsCampaignsIdIndexRoute
   '/w/$ws/settings/integrations/': typeof WWsSettingsIntegrationsIndexRoute
+  '/w/$ws/automations/$id/executions/$runId': typeof WWsAutomationsIdExecutionsRunIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -340,6 +405,9 @@ export interface FileRoutesByTo {
   '/w/$ws/status': typeof WWsStatusRoute
   '/w/$ws': typeof WWsIndexRoute
   '/w/$ws/apps/reoon': typeof WWsAppsReoonRoute
+  '/w/$ws/automations/new': typeof WWsAutomationsNewRoute
+  '/w/$ws/automations/secrets': typeof WWsAutomationsSecretsRoute
+  '/w/$ws/automations/settings': typeof WWsAutomationsSettingsRoute
   '/w/$ws/settings/account': typeof WWsSettingsAccountRoute
   '/w/$ws/settings/api': typeof WWsSettingsApiRoute
   '/w/$ws/settings/developer': typeof WWsSettingsDeveloperRoute
@@ -348,11 +416,13 @@ export interface FileRoutesByTo {
   '/w/$ws/settings/sending': typeof WWsSettingsSendingRoute
   '/w/$ws/settings/team': typeof WWsSettingsTeamRoute
   '/w/$ws/accounts': typeof WWsAccountsIndexRoute
+  '/w/$ws/automations': typeof WWsAutomationsIndexRoute
   '/w/$ws/campaigns': typeof WWsCampaignsIndexRoute
   '/w/$ws/settings': typeof WWsSettingsIndexRoute
   '/w/$ws/accounts/$id/activity': typeof WWsAccountsIdActivityRoute
   '/w/$ws/accounts/$id/reply-check': typeof WWsAccountsIdReplyCheckRoute
   '/w/$ws/accounts/$id/sending': typeof WWsAccountsIdSendingRoute
+  '/w/$ws/automations/$id/executions': typeof WWsAutomationsIdExecutionsRouteWithChildren
   '/w/$ws/campaigns/$id/editor': typeof WWsCampaignsIdEditorRoute
   '/w/$ws/campaigns/$id/followups': typeof WWsCampaignsIdFollowupsRoute
   '/w/$ws/campaigns/$id/leads': typeof WWsCampaignsIdLeadsRoute
@@ -360,8 +430,10 @@ export interface FileRoutesByTo {
   '/w/$ws/campaigns/$id/settings': typeof WWsCampaignsIdSettingsRoute
   '/w/$ws/settings/integrations/$id': typeof WWsSettingsIntegrationsIdRoute
   '/w/$ws/accounts/$id': typeof WWsAccountsIdIndexRoute
+  '/w/$ws/automations/$id': typeof WWsAutomationsIdIndexRoute
   '/w/$ws/campaigns/$id': typeof WWsCampaignsIdIndexRoute
   '/w/$ws/settings/integrations': typeof WWsSettingsIntegrationsIndexRoute
+  '/w/$ws/automations/$id/executions/$runId': typeof WWsAutomationsIdExecutionsRunIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -374,6 +446,7 @@ export interface FileRoutesById {
   '/w/$ws': typeof WWsRouteWithChildren
   '/w/$ws/accounts': typeof WWsAccountsRouteWithChildren
   '/w/$ws/ai': typeof WWsAiRoute
+  '/w/$ws/automations': typeof WWsAutomationsRouteWithChildren
   '/w/$ws/campaigns': typeof WWsCampaignsRouteWithChildren
   '/w/$ws/guide': typeof WWsGuideRoute
   '/w/$ws/inbox': typeof WWsInboxRoute
@@ -385,6 +458,10 @@ export interface FileRoutesById {
   '/w/$ws/': typeof WWsIndexRoute
   '/w/$ws/accounts/$id': typeof WWsAccountsIdRouteWithChildren
   '/w/$ws/apps/reoon': typeof WWsAppsReoonRoute
+  '/w/$ws/automations/$id': typeof WWsAutomationsIdRouteWithChildren
+  '/w/$ws/automations/new': typeof WWsAutomationsNewRoute
+  '/w/$ws/automations/secrets': typeof WWsAutomationsSecretsRoute
+  '/w/$ws/automations/settings': typeof WWsAutomationsSettingsRoute
   '/w/$ws/campaigns/$id': typeof WWsCampaignsIdRouteWithChildren
   '/w/$ws/settings/account': typeof WWsSettingsAccountRoute
   '/w/$ws/settings/api': typeof WWsSettingsApiRoute
@@ -395,11 +472,13 @@ export interface FileRoutesById {
   '/w/$ws/settings/sending': typeof WWsSettingsSendingRoute
   '/w/$ws/settings/team': typeof WWsSettingsTeamRoute
   '/w/$ws/accounts/': typeof WWsAccountsIndexRoute
+  '/w/$ws/automations/': typeof WWsAutomationsIndexRoute
   '/w/$ws/campaigns/': typeof WWsCampaignsIndexRoute
   '/w/$ws/settings/': typeof WWsSettingsIndexRoute
   '/w/$ws/accounts/$id/activity': typeof WWsAccountsIdActivityRoute
   '/w/$ws/accounts/$id/reply-check': typeof WWsAccountsIdReplyCheckRoute
   '/w/$ws/accounts/$id/sending': typeof WWsAccountsIdSendingRoute
+  '/w/$ws/automations/$id/executions': typeof WWsAutomationsIdExecutionsRouteWithChildren
   '/w/$ws/campaigns/$id/editor': typeof WWsCampaignsIdEditorRoute
   '/w/$ws/campaigns/$id/followups': typeof WWsCampaignsIdFollowupsRoute
   '/w/$ws/campaigns/$id/leads': typeof WWsCampaignsIdLeadsRoute
@@ -407,8 +486,10 @@ export interface FileRoutesById {
   '/w/$ws/campaigns/$id/settings': typeof WWsCampaignsIdSettingsRoute
   '/w/$ws/settings/integrations/$id': typeof WWsSettingsIntegrationsIdRoute
   '/w/$ws/accounts/$id/': typeof WWsAccountsIdIndexRoute
+  '/w/$ws/automations/$id/': typeof WWsAutomationsIdIndexRoute
   '/w/$ws/campaigns/$id/': typeof WWsCampaignsIdIndexRoute
   '/w/$ws/settings/integrations/': typeof WWsSettingsIntegrationsIndexRoute
+  '/w/$ws/automations/$id/executions/$runId': typeof WWsAutomationsIdExecutionsRunIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -422,6 +503,7 @@ export interface FileRouteTypes {
     | '/w/$ws'
     | '/w/$ws/accounts'
     | '/w/$ws/ai'
+    | '/w/$ws/automations'
     | '/w/$ws/campaigns'
     | '/w/$ws/guide'
     | '/w/$ws/inbox'
@@ -433,6 +515,10 @@ export interface FileRouteTypes {
     | '/w/$ws/'
     | '/w/$ws/accounts/$id'
     | '/w/$ws/apps/reoon'
+    | '/w/$ws/automations/$id'
+    | '/w/$ws/automations/new'
+    | '/w/$ws/automations/secrets'
+    | '/w/$ws/automations/settings'
     | '/w/$ws/campaigns/$id'
     | '/w/$ws/settings/account'
     | '/w/$ws/settings/api'
@@ -443,11 +529,13 @@ export interface FileRouteTypes {
     | '/w/$ws/settings/sending'
     | '/w/$ws/settings/team'
     | '/w/$ws/accounts/'
+    | '/w/$ws/automations/'
     | '/w/$ws/campaigns/'
     | '/w/$ws/settings/'
     | '/w/$ws/accounts/$id/activity'
     | '/w/$ws/accounts/$id/reply-check'
     | '/w/$ws/accounts/$id/sending'
+    | '/w/$ws/automations/$id/executions'
     | '/w/$ws/campaigns/$id/editor'
     | '/w/$ws/campaigns/$id/followups'
     | '/w/$ws/campaigns/$id/leads'
@@ -455,8 +543,10 @@ export interface FileRouteTypes {
     | '/w/$ws/campaigns/$id/settings'
     | '/w/$ws/settings/integrations/$id'
     | '/w/$ws/accounts/$id/'
+    | '/w/$ws/automations/$id/'
     | '/w/$ws/campaigns/$id/'
     | '/w/$ws/settings/integrations/'
+    | '/w/$ws/automations/$id/executions/$runId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -474,6 +564,9 @@ export interface FileRouteTypes {
     | '/w/$ws/status'
     | '/w/$ws'
     | '/w/$ws/apps/reoon'
+    | '/w/$ws/automations/new'
+    | '/w/$ws/automations/secrets'
+    | '/w/$ws/automations/settings'
     | '/w/$ws/settings/account'
     | '/w/$ws/settings/api'
     | '/w/$ws/settings/developer'
@@ -482,11 +575,13 @@ export interface FileRouteTypes {
     | '/w/$ws/settings/sending'
     | '/w/$ws/settings/team'
     | '/w/$ws/accounts'
+    | '/w/$ws/automations'
     | '/w/$ws/campaigns'
     | '/w/$ws/settings'
     | '/w/$ws/accounts/$id/activity'
     | '/w/$ws/accounts/$id/reply-check'
     | '/w/$ws/accounts/$id/sending'
+    | '/w/$ws/automations/$id/executions'
     | '/w/$ws/campaigns/$id/editor'
     | '/w/$ws/campaigns/$id/followups'
     | '/w/$ws/campaigns/$id/leads'
@@ -494,8 +589,10 @@ export interface FileRouteTypes {
     | '/w/$ws/campaigns/$id/settings'
     | '/w/$ws/settings/integrations/$id'
     | '/w/$ws/accounts/$id'
+    | '/w/$ws/automations/$id'
     | '/w/$ws/campaigns/$id'
     | '/w/$ws/settings/integrations'
+    | '/w/$ws/automations/$id/executions/$runId'
   id:
     | '__root__'
     | '/'
@@ -507,6 +604,7 @@ export interface FileRouteTypes {
     | '/w/$ws'
     | '/w/$ws/accounts'
     | '/w/$ws/ai'
+    | '/w/$ws/automations'
     | '/w/$ws/campaigns'
     | '/w/$ws/guide'
     | '/w/$ws/inbox'
@@ -518,6 +616,10 @@ export interface FileRouteTypes {
     | '/w/$ws/'
     | '/w/$ws/accounts/$id'
     | '/w/$ws/apps/reoon'
+    | '/w/$ws/automations/$id'
+    | '/w/$ws/automations/new'
+    | '/w/$ws/automations/secrets'
+    | '/w/$ws/automations/settings'
     | '/w/$ws/campaigns/$id'
     | '/w/$ws/settings/account'
     | '/w/$ws/settings/api'
@@ -528,11 +630,13 @@ export interface FileRouteTypes {
     | '/w/$ws/settings/sending'
     | '/w/$ws/settings/team'
     | '/w/$ws/accounts/'
+    | '/w/$ws/automations/'
     | '/w/$ws/campaigns/'
     | '/w/$ws/settings/'
     | '/w/$ws/accounts/$id/activity'
     | '/w/$ws/accounts/$id/reply-check'
     | '/w/$ws/accounts/$id/sending'
+    | '/w/$ws/automations/$id/executions'
     | '/w/$ws/campaigns/$id/editor'
     | '/w/$ws/campaigns/$id/followups'
     | '/w/$ws/campaigns/$id/leads'
@@ -540,8 +644,10 @@ export interface FileRouteTypes {
     | '/w/$ws/campaigns/$id/settings'
     | '/w/$ws/settings/integrations/$id'
     | '/w/$ws/accounts/$id/'
+    | '/w/$ws/automations/$id/'
     | '/w/$ws/campaigns/$id/'
     | '/w/$ws/settings/integrations/'
+    | '/w/$ws/automations/$id/executions/$runId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -626,6 +732,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WWsAiRouteImport
       parentRoute: typeof WWsRoute
     }
+    '/w/$ws/automations': {
+      id: '/w/$ws/automations'
+      path: '/automations'
+      fullPath: '/w/$ws/automations'
+      preLoaderRoute: typeof WWsAutomationsRouteImport
+      parentRoute: typeof WWsRoute
+    }
     '/w/$ws/campaigns': {
       id: '/w/$ws/campaigns'
       path: '/campaigns'
@@ -702,6 +815,41 @@ declare module '@tanstack/react-router' {
       fullPath: '/w/$ws/apps/reoon'
       preLoaderRoute: typeof WWsAppsReoonRouteImport
       parentRoute: typeof WWsRoute
+    }
+    '/w/$ws/automations/': {
+      id: '/w/$ws/automations/'
+      path: '/'
+      fullPath: '/w/$ws/automations/'
+      preLoaderRoute: typeof WWsAutomationsIndexRouteImport
+      parentRoute: typeof WWsAutomationsRoute
+    }
+    '/w/$ws/automations/$id': {
+      id: '/w/$ws/automations/$id'
+      path: '/$id'
+      fullPath: '/w/$ws/automations/$id'
+      preLoaderRoute: typeof WWsAutomationsIdRouteImport
+      parentRoute: typeof WWsAutomationsRoute
+    }
+    '/w/$ws/automations/new': {
+      id: '/w/$ws/automations/new'
+      path: '/new'
+      fullPath: '/w/$ws/automations/new'
+      preLoaderRoute: typeof WWsAutomationsNewRouteImport
+      parentRoute: typeof WWsAutomationsRoute
+    }
+    '/w/$ws/automations/secrets': {
+      id: '/w/$ws/automations/secrets'
+      path: '/secrets'
+      fullPath: '/w/$ws/automations/secrets'
+      preLoaderRoute: typeof WWsAutomationsSecretsRouteImport
+      parentRoute: typeof WWsAutomationsRoute
+    }
+    '/w/$ws/automations/settings': {
+      id: '/w/$ws/automations/settings'
+      path: '/settings'
+      fullPath: '/w/$ws/automations/settings'
+      preLoaderRoute: typeof WWsAutomationsSettingsRouteImport
+      parentRoute: typeof WWsAutomationsRoute
     }
     '/w/$ws/campaigns/': {
       id: '/w/$ws/campaigns/'
@@ -808,6 +956,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WWsAccountsIdSendingRouteImport
       parentRoute: typeof WWsAccountsIdRoute
     }
+    '/w/$ws/automations/$id/': {
+      id: '/w/$ws/automations/$id/'
+      path: '/'
+      fullPath: '/w/$ws/automations/$id/'
+      preLoaderRoute: typeof WWsAutomationsIdIndexRouteImport
+      parentRoute: typeof WWsAutomationsIdRoute
+    }
+    '/w/$ws/automations/$id/executions': {
+      id: '/w/$ws/automations/$id/executions'
+      path: '/executions'
+      fullPath: '/w/$ws/automations/$id/executions'
+      preLoaderRoute: typeof WWsAutomationsIdExecutionsRouteImport
+      parentRoute: typeof WWsAutomationsIdRoute
+    }
     '/w/$ws/campaigns/$id/': {
       id: '/w/$ws/campaigns/$id/'
       path: '/'
@@ -864,6 +1026,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WWsSettingsIntegrationsIdRouteImport
       parentRoute: typeof WWsSettingsIntegrationsRoute
     }
+    '/w/$ws/automations/$id/executions/$runId': {
+      id: '/w/$ws/automations/$id/executions/$runId'
+      path: '/$runId'
+      fullPath: '/w/$ws/automations/$id/executions/$runId'
+      preLoaderRoute: typeof WWsAutomationsIdExecutionsRunIdRouteImport
+      parentRoute: typeof WWsAutomationsIdExecutionsRoute
+    }
   }
 }
 
@@ -897,6 +1066,53 @@ const WWsAccountsRouteChildren: WWsAccountsRouteChildren = {
 
 const WWsAccountsRouteWithChildren = WWsAccountsRoute._addFileChildren(
   WWsAccountsRouteChildren,
+)
+
+interface WWsAutomationsIdExecutionsRouteChildren {
+  WWsAutomationsIdExecutionsRunIdRoute: typeof WWsAutomationsIdExecutionsRunIdRoute
+}
+
+const WWsAutomationsIdExecutionsRouteChildren: WWsAutomationsIdExecutionsRouteChildren =
+  {
+    WWsAutomationsIdExecutionsRunIdRoute: WWsAutomationsIdExecutionsRunIdRoute,
+  }
+
+const WWsAutomationsIdExecutionsRouteWithChildren =
+  WWsAutomationsIdExecutionsRoute._addFileChildren(
+    WWsAutomationsIdExecutionsRouteChildren,
+  )
+
+interface WWsAutomationsIdRouteChildren {
+  WWsAutomationsIdExecutionsRoute: typeof WWsAutomationsIdExecutionsRouteWithChildren
+  WWsAutomationsIdIndexRoute: typeof WWsAutomationsIdIndexRoute
+}
+
+const WWsAutomationsIdRouteChildren: WWsAutomationsIdRouteChildren = {
+  WWsAutomationsIdExecutionsRoute: WWsAutomationsIdExecutionsRouteWithChildren,
+  WWsAutomationsIdIndexRoute: WWsAutomationsIdIndexRoute,
+}
+
+const WWsAutomationsIdRouteWithChildren =
+  WWsAutomationsIdRoute._addFileChildren(WWsAutomationsIdRouteChildren)
+
+interface WWsAutomationsRouteChildren {
+  WWsAutomationsIdRoute: typeof WWsAutomationsIdRouteWithChildren
+  WWsAutomationsNewRoute: typeof WWsAutomationsNewRoute
+  WWsAutomationsSecretsRoute: typeof WWsAutomationsSecretsRoute
+  WWsAutomationsSettingsRoute: typeof WWsAutomationsSettingsRoute
+  WWsAutomationsIndexRoute: typeof WWsAutomationsIndexRoute
+}
+
+const WWsAutomationsRouteChildren: WWsAutomationsRouteChildren = {
+  WWsAutomationsIdRoute: WWsAutomationsIdRouteWithChildren,
+  WWsAutomationsNewRoute: WWsAutomationsNewRoute,
+  WWsAutomationsSecretsRoute: WWsAutomationsSecretsRoute,
+  WWsAutomationsSettingsRoute: WWsAutomationsSettingsRoute,
+  WWsAutomationsIndexRoute: WWsAutomationsIndexRoute,
+}
+
+const WWsAutomationsRouteWithChildren = WWsAutomationsRoute._addFileChildren(
+  WWsAutomationsRouteChildren,
 )
 
 interface WWsCampaignsIdRouteChildren {
@@ -982,6 +1198,7 @@ const WWsSettingsRouteWithChildren = WWsSettingsRoute._addFileChildren(
 interface WWsRouteChildren {
   WWsAccountsRoute: typeof WWsAccountsRouteWithChildren
   WWsAiRoute: typeof WWsAiRoute
+  WWsAutomationsRoute: typeof WWsAutomationsRouteWithChildren
   WWsCampaignsRoute: typeof WWsCampaignsRouteWithChildren
   WWsGuideRoute: typeof WWsGuideRoute
   WWsInboxRoute: typeof WWsInboxRoute
@@ -997,6 +1214,7 @@ interface WWsRouteChildren {
 const WWsRouteChildren: WWsRouteChildren = {
   WWsAccountsRoute: WWsAccountsRouteWithChildren,
   WWsAiRoute: WWsAiRoute,
+  WWsAutomationsRoute: WWsAutomationsRouteWithChildren,
   WWsCampaignsRoute: WWsCampaignsRouteWithChildren,
   WWsGuideRoute: WWsGuideRoute,
   WWsInboxRoute: WWsInboxRoute,

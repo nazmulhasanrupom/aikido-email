@@ -41,6 +41,8 @@ pub struct AppState {
     pub certs: Arc<crate::tracking::tls::CertStore>,
     /// The web address the browser last used (a copy of `app_state.site_url`). See `site_url`.
     pub learned_site_url: Arc<RwLock<Option<String>>>,
+    /// The app router, for the automation nodes that call the routes in the same process. Made on first use.
+    pub internal_router: Arc<crate::automations::internal_call::InternalRouter>,
 }
 
 pub type Clock = Arc<dyn Fn() -> DateTime<Utc> + Send + Sync>;
@@ -67,6 +69,7 @@ impl AppState {
             cname: Arc::new(crate::tracking::dns::SystemCname::default()),
             certs: Arc::new(crate::tracking::tls::CertStore::default()),
             learned_site_url: Arc::new(RwLock::new(None)),
+            internal_router: Arc::new(Default::default()),
         }
     }
 

@@ -167,12 +167,16 @@ async fn feed_campaign(st: &AppState, id: Uuid, now: DateTime<Utc>) -> Result<Ca
 /// Done when nothing is pending and every enrollment of the campaign ended. A campaign with no lead at all is not done.
 async fn complete_if_done(st: &AppState, id: Uuid, now: DateTime<Utc>) -> Result<bool, sqlx::Error> {
     let done = sqlx::query(
-        "UPDATE campaigns SET status = 'completed', completed_at = $2, updated_at = $2, warning = NULL
-          WHERE id = $1 AND status = 'active'
-            AND EXISTS (SELECT 1 FROM campaign_leads WHERE campaign_id = $1)
-            AND NOT EXISTS (SELECT 1 FROM campaign_leads WHERE campaign_id = $1 AND state = 'pending')
-            AND NOT EXISTS (SELECT 1 FROM campaign_leads cl JOIN enrollments e ON e.id = cl.enrollment_id
-                             WHERE cl.campaign_id = $1 AND e.status IN ('active', 'waiting_send', 'paused'))",
+        "WITH done AS (
+            UPDATE campaigns SET status = 'completed', completed_at = $2, updated_at = $2, warning = NULL
+             WHERE id = $1 AND status = 'active'
+               AND EXISTS (SELECT 1 FROM campaign_leads WHERE campaign_id = $1)
+               AND NOT EXISTS (SELECT 1 FROM campaign_leads WHERE campaign_id = $1 AND state = 'pending')
+               AND NOT EXISTS (SELECT 1 FROM campaign_leads cl JOIN enrollments e ON e.id = cl.enrollment_id
+                                WHERE cl.campaign_id = $1 AND e.status IN ('active', 'waiting_send', 'paused'))
+            RETURNING id
+         )
+         INSERT INTO campaign_events (campaign_id, from_status, to_status, at) SELECT id, 'active', 'completed', $2 FROM done",
     )
     .bind(id)
     .bind(now)

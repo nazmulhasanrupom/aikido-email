@@ -11,7 +11,7 @@ pub async fn log(conn: &mut PgConnection, lead_id: Uuid, kind: &str, ref_id: Opt
         .bind(lead_id)
         .bind(kind)
         .bind(ref_id)
-        .bind(detail)
+        .bind(crate::automations::actor::tag(detail))
         .bind(at)
         .execute(conn)
         .await?;
@@ -27,7 +27,7 @@ pub async fn log_many(conn: &mut PgConnection, lead_ids: &[Uuid], kind: &str, re
         .bind(lead_ids)
         .bind(kind)
         .bind(ref_id)
-        .bind(detail)
+        .bind(crate::automations::actor::tag(detail))
         .bind(at)
         .execute(conn)
         .await?;

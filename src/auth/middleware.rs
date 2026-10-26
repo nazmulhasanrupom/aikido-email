@@ -36,6 +36,16 @@ impl LastUsedTracker {
 #[derive(Clone, Copy, Debug)]
 pub struct KeyScope(pub Scope);
 
+/// The user an automation run acts as (build map 8.8). Only the automation engine puts this in the
+/// request extensions, on a request it sends to the app router in the same process. It is never read from
+/// a header, so a caller from outside can not make one: a request that comes in over the network has no way
+/// to fill the extensions.
+#[derive(Clone, Debug)]
+pub struct InternalPrincipal {
+    pub user_id: Uuid,
+    pub role: crate::users::model::Role,
+}
+
 /// `Authorization: Bearer <key>`, or `X-API-Key: <key>`.
 pub fn extract_key(headers: &HeaderMap) -> Option<String> {
     if let Some(v) = headers.get(axum::http::header::AUTHORIZATION).and_then(|v| v.to_str().ok()) {
@@ -67,6 +77,19 @@ pub async fn require_any(State(state): State<AppState>, req: Request, next: Next
 }
 
 async fn authorize(state: AppState, required: Option<Scope>, mut req: Request, next: Next) -> Response {
+    // An automation run calls the routes as a user. It counts as a session of that user, with no cookie and no
+    // CSRF check (there is no browser). An owner or admin acts as the `admin` scope. A member acts as every scope
+    // except `admin`, and is refused on the system switches, like a member session.
+    if let Some(p) = req.extensions().get::<InternalPrincipal>().cloned() {
+        let wants_admin = required == Some(Scope::Admin) || session::admin_only_for_sessions(req.method(), req.uri().path());
+        if wants_admin && !p.role.is_admin() {
+            return ApiError::forbidden("admin_only", "Only an owner or an admin can do this.").into_response();
+        }
+        let ctx = session::SessionCtx { session_id: Uuid::nil(), user_id: p.user_id, role: p.role };
+        req.extensions_mut().insert(ctx.user_id);
+        req.extensions_mut().insert(ctx);
+        return next.run(req).await;
+    }
     let Some(key) = extract_key(req.headers()) else {
         return match session::resolve(&state, req.method(), req.headers()).await {
             Ok(Some(ctx)) => {
@@ -107,4 +130,68 @@ async fn authorize(state: AppState, required: Option<Scope>, mut req: Request, n
     req.extensions_mut().insert(auth.id);
     req.extensions_mut().insert(KeyScope(auth.scope));
     next.run(req).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::users::model::Role;
+    use axum::Router;
+    use axum::body::Body;
+    use axum::http::{Request as HttpRequest, StatusCode};
+    use axum::routing::{get, post};
+    use tower::ServiceExt;
+
+    fn state() -> AppState {
+        crate::automations::testkit::lazy_state()
+    }
+
+    fn app(scope: Scope) -> Router {
+        let st = state();
+        Router::new()
+            .route("/probe", get(|| async { "ok" }))
+            .route("/v1/sending/engine/pause", post(|| async { "paused" }))
+            .route_layer(axum::middleware::from_fn_with_state((st.clone(), scope), require_scope))
+            .with_state(st)
+    }
+
+    fn req(method: &str, path: &str) -> HttpRequest<Body> {
+        HttpRequest::builder().method(method).uri(path).body(Body::empty()).unwrap()
+    }
+
+    #[tokio::test]
+    async fn an_internal_principal_in_the_extensions_is_a_session_of_that_user() {
+        let mut r = req("GET", "/probe");
+        r.extensions_mut().insert(InternalPrincipal { user_id: Uuid::now_v7(), role: Role::Member });
+        // a member may use every scope except admin
+        assert_eq!(app(Scope::Automations).oneshot(r).await.unwrap().status(), StatusCode::OK);
+        let mut r = req("GET", "/probe");
+        r.extensions_mut().insert(InternalPrincipal { user_id: Uuid::now_v7(), role: Role::Member });
+        assert_eq!(app(Scope::Admin).oneshot(r).await.unwrap().status(), StatusCode::FORBIDDEN);
+        // an owner acts as admin
+        let mut r = req("GET", "/probe");
+        r.extensions_mut().insert(InternalPrincipal { user_id: Uuid::now_v7(), role: Role::Owner });
+        assert_eq!(app(Scope::Admin).oneshot(r).await.unwrap().status(), StatusCode::OK);
+        // a member is refused on the system switches, like a member session
+        let mut r = req("POST", "/v1/sending/engine/pause");
+        r.extensions_mut().insert(InternalPrincipal { user_id: Uuid::now_v7(), role: Role::Member });
+        assert_eq!(app(Scope::Sending).oneshot(r).await.unwrap().status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn a_caller_from_outside_can_not_fake_an_internal_principal() {
+        // headers that look like an internal call, with or without a key: nothing gets in
+        for headers in [
+            vec![("x-internal-user", "0192f3a0-0000-7000-8000-000000000001"), ("x-internal-role", "owner")],
+            vec![("x-automation-principal", "owner"), ("x-user-id", "0192f3a0-0000-7000-8000-000000000001")],
+            vec![("x-internal-principal", "owner")],
+        ] {
+            let mut b = HttpRequest::builder().method("GET").uri("/probe");
+            for (k, v) in headers {
+                b = b.header(k, v);
+            }
+            let resp = app(Scope::Automations).oneshot(b.body(Body::empty()).unwrap()).await.unwrap();
+            assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+        }
+    }
 }

@@ -24,6 +24,16 @@ pub fn response(text: impl Into<String>) -> LlmResponse {
     LlmResponse { text: text.into(), input_tokens: 100, output_tokens: 20, cached_tokens: 0, model: "fake-model".into(), stop_reason: Some("end_turn".into()) }
 }
 
+/// An agent turn that calls a tool: `{"tool_call": {"name": ..., "arguments": ...}}` (see `automations::engine::ai_tools`).
+pub fn tool_call_response(name: &str, arguments: Value) -> LlmResponse {
+    response(json!({ "tool_call": { "name": name, "arguments": arguments } }).to_string())
+}
+
+/// An agent turn that ends: `{"final": ...}`.
+pub fn final_response(answer: Value) -> LlmResponse {
+    response(json!({ "final": answer }).to_string())
+}
+
 /// `{"slots": {...}}` as the model would answer.
 pub fn slots_response(slots: &[(&str, &str)]) -> LlmResponse {
     let map: serde_json::Map<String, Value> = slots.iter().map(|(k, v)| (k.to_string(), json!(v))).collect();

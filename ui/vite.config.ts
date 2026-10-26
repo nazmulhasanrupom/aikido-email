@@ -22,6 +22,8 @@ export default defineConfig({
       "/docs": server,
       "/openapi.json": server,
       "/health": server,
+      // webhook URLs of automations (the test URL and the production URL)
+      "/hooks": server,
     },
   },
   build: {

@@ -1,0 +1,59 @@
+{
+  "format": "aikido-workflow",
+  "version": 1,
+  "name": "Website form to lead",
+  "description": "A form on your site posts here. The person becomes a lead in a list and a campaign.",
+  "variables": [
+    {
+      "key": "list_id",
+      "label": "List",
+      "kind": "list",
+      "value": null,
+      "required": true
+    },
+    {
+      "key": "campaign_id",
+      "label": "Campaign",
+      "kind": "campaign",
+      "value": null,
+      "required": false
+    }
+  ],
+  "nodes": [
+    {
+      "id": "form_post",
+      "type": "trigger.webhook",
+      "params": {
+        "path": "website-form",
+        "method": "POST",
+        "auth": "header",
+        "header_name": "X-Form-Secret",
+        "secret": "FORM_SECRET"
+      }
+    },
+    {
+      "id": "save_lead",
+      "type": "aikido.lead.upsert",
+      "params": {
+        "lead": {
+          "email": "${{ trigger.body.email }}",
+          "first_name": "${{ trigger.body.name | default('') | first_word }}",
+          "company_name": "${{ trigger.body.company | default('') }}",
+          "notes": "From website form: ${{ trigger.body.message | default('') | truncate(500) }}"
+        },
+        "dedupe_mode": "fill_empty",
+        "list_id": "${{ vars.list_id }}",
+        "campaign_id": "${{ vars.campaign_id | default(none) }}",
+        "tags": [
+          "website-form"
+        ]
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "form_post",
+      "to": "save_lead"
+    }
+  ]
+}

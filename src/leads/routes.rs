@@ -606,7 +606,7 @@ async fn add_note(State(st): State<AppState>, ApiPath(id): ApiPath<Uuid>, ApiJso
     }
     let event: LeadEvent = sqlx::query_as(&format!("INSERT INTO lead_events (lead_id, kind, detail, at) VALUES ($1, 'note', $2, $3) RETURNING {EVENT_COLS}"))
         .bind(id)
-        .bind(json!({ "text": text }))
+        .bind(crate::automations::actor::tag(json!({ "text": text })))
         .bind(st.now())
         .fetch_one(&mut *conn)
         .await?;

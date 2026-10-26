@@ -4664,6 +4664,8 @@ export interface components {
             next_cursor?: number | null;
         };
         Features: {
+            /** @description Automations (the node editor) are on (`AIKIDO_AUTOMATIONS_ENABLED`, default on). */
+            automations: boolean;
             followups: boolean;
             generator: boolean;
             leads: boolean;

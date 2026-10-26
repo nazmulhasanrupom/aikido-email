@@ -37,6 +37,7 @@ const SCOPES = [
   "integrations",
   "personalization",
   "tracking",
+  "automations",
 ];
 
 function Api() {
